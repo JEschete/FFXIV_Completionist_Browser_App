@@ -538,7 +538,17 @@ def rebuild_schema(conn: sqlite3.Connection) -> tuple[list[tuple], list[tuple]]:
 
     existing = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     if "characters" in existing:
-        saved_chars = list(conn.execute("SELECT id, name, created_at FROM characters"))
+        # Try the newer 4-column form first; fall back if the existing DB
+        # predates the starting_class column. The reinsert below pads 3-tuples
+        # to 4 by inserting NULL for starting_class.
+        try:
+            saved_chars = list(conn.execute(
+                "SELECT id, name, starting_class, created_at FROM characters"
+            ))
+        except sqlite3.OperationalError:
+            saved_chars = list(conn.execute(
+                "SELECT id, name, created_at FROM characters"
+            ))
     if "character_progress" in existing:
         try:
             saved_progress = list(

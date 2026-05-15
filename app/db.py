@@ -445,9 +445,10 @@ def sheet_rollups(
     rows instead of an aggregation over the full nodes set.
     """
     _ensure_rollup_seeded(conn, character_id, run_id, starting_class)
-    if not conn.in_transaction:
-        # seeding may have written rows; commit them so they survive the read
-        conn.commit()
+    # Seeding inside _ensure_rollup_seeded opens a transaction on first INSERT.
+    # Commit unconditionally so a read-only caller (e.g. a browse render) still
+    # persists the seed when the connection closes. No-op if nothing changed.
+    conn.commit()
     rows = conn.execute(
         """
         SELECT sheet_name, done, excluded, total
