@@ -1,0 +1,4 @@
+# CODEOWNERS file — code review required from owner before merge
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+* @JEschete
