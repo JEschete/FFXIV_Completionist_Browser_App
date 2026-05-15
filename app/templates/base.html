@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}FFXIV Completion Tracker{% endblock %}</title>
+  <link rel="stylesheet" href="/static/styles.css?v=8" />
+  <script src="/static/vendor/htmx.min.js" defer></script>
+  <script src="/static/vendor/alpine-collapse.min.js" defer></script>
+  <script src="/static/vendor/alpine.min.js" defer></script>
+</head>
+<body hx-headers='{"X-Requested-With": "htmx"}'>
+{% from "macros.html" import tree_node, progress_bar %}
+<div class="layout">
+
+  <aside class="sidebar">
+    <a class="brand" href="/">
+      <span class="brand-mark">XIV</span>
+      <span class="brand-text">
+        <strong>Completion Tracker</strong>
+        <small>{{ '%.2f'|format(overall_pct) }}% complete</small>
+      </span>
+    </a>
+
+    <div class="sidebar-search" x-data="{ open: false }">
+      <input type="search" name="q" placeholder="Search everything…"
+             autocomplete="off"
+             hx-get="/api/search" hx-trigger="input changed delay:250ms, focus"
+             hx-target="#search-results"
+             @focus="open = true" @input="open = true"
+             @keydown.escape="open = false" />
+      <div id="search-results" class="search-results" x-show="open"
+           @click.outside="open = false"></div>
+    </div>
+
+    <nav class="tree">
+      <ul class="tree-root">
+        {% for node in tree %}
+          {{ tree_node(node, active_sheet, 0) }}
+        {% endfor %}
+      </ul>
+    </nav>
+
+    <div class="sidebar-foot">
+      <a href="/chains" class="foot-link {{ 'active' if request.url.path == '/chains' }}">⛓ Chains</a>
+      <a href="/characters" class="foot-link {{ 'active' if request.url.path == '/characters' }}">⚔ Characters</a>
+      <a href="/export/current.csv" class="foot-link">↓ Export CSV</a>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <nav class="crumbs">
+        <a href="/">Overview</a>
+        {% for c in crumbs|default([]) %}
+          <span class="crumb-sep">›</span>
+          {% if loop.last %}
+            <span class="crumb-current">{{ c.title }}</span>
+          {% else %}
+            <a href="/browse/{{ c.sheet_name|urlencode }}">{{ c.title }}</a>
+          {% endif %}
+        {% endfor %}
+      </nav>
+
+      <form class="char-switch" method="post" action="/characters/select">
+        <input type="hidden" name="next_url"
+               value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" />
+        <select name="character_id" onchange="this.form.submit()">
+          {% for c in characters %}
+          <option value="{{ c.id }}" {{ 'selected' if c.id == character.id }}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </form>
+    </header>
+
+    <div id="progress-header"
+         hx-get="/api/progress-header?sheet_name={{ active_sheet|default('')|urlencode }}"
+         hx-trigger="progress-changed from:body, chain-completed from:body"
+         hx-swap="innerHTML">
+      {% include "partials/progress_header.html" with context %}
+    </div>
+
+    <main class="content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+
+<div id="chain-drawer" class="chain-drawer"></div>
+</body>
+</html>

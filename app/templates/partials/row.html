@@ -1,0 +1,55 @@
+{% set is_value = row.row_type == 'value' and sheet.value_key %}
+{% set lvl_raw = (row.progress_percent if row.progress_percent is not none
+                  else (row.data.get(sheet.value_key) or 0)) %}
+{% set lvl = (lvl_raw|float)|round(0, 'floor')|int %}
+<tr id="row-{{ row.row_index }}" class="data-row state-{{ row.eff }} {{ 'is-value' if is_value }}"
+    data-row-index="{{ row.row_index }}"
+    {% if oob|default(false) %}hx-swap-oob="outerHTML"{% endif %}>
+  <td class="cell-status">
+    {% if is_value %}
+      <button class="exclude-toggle status-{{ row.eff }}" type="button"
+              title="{{ 'Restore' if row.eff == 'excluded' else 'Exclude this row' }}"
+              hx-post="/api/toggle-excluded" hx-target="#row-{{ row.row_index }}"
+              hx-swap="outerHTML"
+              hx-vals='{"sheet_name": {{ sheet.sheet_name|tojson }}, "row_index": {{ row.row_index }} }'>
+        {% if row.eff == 'excluded' %}✕{% else %}—{% endif %}
+      </button>
+    {% else %}
+      <button class="status-toggle status-{{ row.eff }}" type="button"
+              title="Click to cycle: To Do → Done → Excluded"
+              hx-post="/api/toggle" hx-target="#row-{{ row.row_index }}" hx-swap="outerHTML"
+              hx-vals='{"sheet_name": {{ sheet.sheet_name|tojson }}, "row_index": {{ row.row_index }} }'>
+        {% if row.eff == 'done' %}✓{% elif row.eff == 'excluded' %}✕{% else %}○{% endif %}
+      </button>
+    {% endif %}
+  </td>
+  {% for col in columns %}
+    {% set val = row.data.get(col.key) %}
+    {% if is_value and col.key == sheet.value_key %}
+      <td class="cell-level state-{{ row.eff }}" style="--level: {{ lvl }}; --hue: {{ (lvl * 1.2)|int }}">
+        <input type="number" class="level-input" name="percent"
+               min="0" max="100" step="1" value="{{ lvl }}"
+               hx-post="/api/set-value" hx-target="#row-{{ row.row_index }}"
+               hx-swap="outerHTML" hx-trigger="change"
+               hx-vals='{"sheet_name": {{ sheet.sheet_name|tojson }}, "row_index": {{ row.row_index }} }'
+               {% if row.eff == 'excluded' %}disabled{% endif %} />
+      </td>
+    {% elif col.key == sheet.label_key %}
+      <td class="cell-data cell-label">
+        <span class="row-label">{{ val or row.label or '—' }}</span>
+        {% if chain and chain.blocked and row.eff != 'done' %}
+          <span class="lock-flag" title="Earlier steps in this chain are not done">🔒</span>
+        {% endif %}
+      </td>
+    {% else %}
+      <td class="cell-data">{{ val or '' }}</td>
+    {% endif %}
+  {% endfor %}
+  <td class="cell-chain">
+    {% if chain and (chain.prereqs or chain.unlocks) %}
+      <button class="chain-btn" type="button" title="Show prerequisite chain"
+              hx-get="/api/chain/{{ sheet.sheet_name|urlencode }}/{{ row.row_index }}"
+              hx-target="#chain-drawer" hx-swap="innerHTML">⛓</button>
+    {% endif %}
+  </td>
+</tr>

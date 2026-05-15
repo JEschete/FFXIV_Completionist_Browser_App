@@ -1,0 +1,64 @@
+{% from "macros.html" import state_badge %}
+<div class="drawer-panel" x-data x-init="$el.classList.add('open')">
+  <div class="drawer-head">
+    <div>
+      <span class="drawer-eyebrow">{{ sheet.title }}</span>
+      <h3>{{ row.label or 'Row ' ~ row.row_index }}</h3>
+    </div>
+    <button class="drawer-close" type="button"
+            onclick="document.getElementById('chain-drawer').innerHTML=''">✕</button>
+  </div>
+
+  <div class="drawer-body">
+    {% if chain.blocked %}
+      <p class="drawer-warn">🔒 This step is gated — earlier steps are not done yet.</p>
+    {% endif %}
+
+    {% if chain.prereqs %}
+    <div class="drawer-section">
+      <h4>Comes after</h4>
+      <ol class="chain-steps">
+        {% for p in chain.prereqs %}
+        <li class="chain-step state-{{ p.state }}">
+          <span class="step-dot"></span>
+          <span class="step-label">{{ p.label or 'Row ' ~ p.row_index }}</span>
+          {{ state_badge(p.state) }}
+        </li>
+        {% endfor %}
+        <li class="chain-step state-{{ row.eff }} is-current">
+          <span class="step-dot"></span>
+          <span class="step-label">{{ row.label }}</span>
+          {{ state_badge(row.eff) }}
+        </li>
+      </ol>
+      <form hx-post="/api/complete-chain" hx-swap="none"
+            hx-on::after-request="document.getElementById('chain-drawer').innerHTML=''">
+        <input type="hidden" name="sheet_name" value="{{ sheet.sheet_name }}" />
+        <input type="hidden" name="row_index" value="{{ row.row_index }}" />
+        <button type="submit" class="btn-primary btn-block">
+          ✓ Complete this & all {{ chain.prereqs|length }} earlier step{{ 's' if chain.prereqs|length != 1 }}
+        </button>
+      </form>
+    </div>
+    {% endif %}
+
+    {% if chain.unlocks %}
+    <div class="drawer-section">
+      <h4>Leads to / unlocks</h4>
+      <ul class="chain-unlocks">
+        {% for u in chain.unlocks %}
+        <li class="state-{{ u.state or 'todo' }}">
+          <span class="unlock-kind">{{ '→' if u.kind == 'sequence' else '★' }}</span>
+          {{ u.label or 'Row ' ~ u.row_index }}
+          {% if u.state %}{{ state_badge(u.state) }}{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if not chain.prereqs and not chain.unlocks %}
+      <p class="drawer-warn">No chain links recorded for this row.</p>
+    {% endif %}
+  </div>
+</div>

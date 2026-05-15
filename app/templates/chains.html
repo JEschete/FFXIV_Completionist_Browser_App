@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Chains · FFXIV Tracker{% endblock %}
+
+{% block content %}
+{% from "macros.html" import progress_bar %}
+
+<div class="page-head">
+  <div>
+    <h1>Prerequisite Chains</h1>
+    <p class="page-sub">
+      Sheets with sequential progression — earlier steps gate later ones.
+      Open any row's ⛓ to see and complete its chain.
+    </p>
+  </div>
+</div>
+
+<div class="chain-list">
+  {% for ch in chains %}
+  <a class="chain-row" href="/browse/{{ ch.sheet_name|urlencode }}">
+    <span class="chain-name">{{ ch.title }}</span>
+    <span class="chain-links">{{ ch.links }} steps</span>
+    {{ progress_bar(ch.roll, ch.pct, "bar-thin") }}
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,19 @@
+{% if q and q|length >= 2 %}
+  {% if results %}
+    <ul class="search-list">
+      {% for r in results %}
+      <li>
+        <a href="/browse/{{ r.sheet_name|urlencode }}">
+          <span class="search-label">{{ r.label }}</span>
+          <span class="search-meta">
+            <span class="status-dot status-{{ r.eff }}"></span>
+            {{ r.sheet_title }}
+          </span>
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="search-empty">No matches for “{{ q }}”.</p>
+  {% endif %}
+{% endif %}

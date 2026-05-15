@@ -1,0 +1,55 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.hypothesis/
+
+# Coverage and test artifacts
+.coverage
+.coverage.*
+htmlcov/
+.pytest_debug.log
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Environment and local config
+.env
+.env.*
+*.local
+
+# Runtime logs / pid files
+*.log
+*.pid
+*.pid.lock
+
+# SQLite / local data outputs
+data/*.sqlite
+data/*.sqlite-shm
+data/*.sqlite-wal
+
+# Spreadsheet inputs (keep only placeholders/docs)
+Spreadsheet/*.xlsx
+Spreadsheet/~$*.xlsx
+
+# Editor / OS clutter
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.claude

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ sheet.title }} · FFXIV Tracker{% endblock %}
+
+{% block content %}
+{% from "macros.html" import category_card %}
+
+<div class="page-head">
+  <div>
+    <h1>{{ sheet.title }}</h1>
+    <p class="page-sub">{{ children|length }} {{ 'section' if children|length == 1 else 'sections' }}</p>
+  </div>
+</div>
+
+{% if children %}
+<section class="cat-grid">
+  {% for child in children %}
+    {{ category_card(child) }}
+  {% endfor %}
+</section>
+{% else %}
+<div class="empty">This menu has no sub-pages.</div>
+{% endif %}
+{% endblock %}

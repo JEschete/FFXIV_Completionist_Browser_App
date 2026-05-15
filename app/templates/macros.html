@@ -1,0 +1,64 @@
+{# ---- progress bar -------------------------------------------------------- #}
+{% macro progress_bar(roll, pct, klass="") %}
+<div class="bar {{ klass }}" role="progressbar" aria-valuenow="{{ pct }}">
+  <div class="bar-fill" style="width: {{ pct }}%"></div>
+  <span class="bar-label">
+    {{ roll.done }} / {{ roll.countable }}
+    <em>{{ '%.1f'|format(pct) }}%</em>
+    {% if roll.excluded %}<small>· {{ roll.excluded }} excluded</small>{% endif %}
+  </span>
+</div>
+{% endmacro %}
+
+{# ---- recursive sidebar tree node ---------------------------------------- #}
+{% macro tree_node(node, active_sheet, depth=0) %}
+{% set is_active = node.sheet_name == active_sheet %}
+{% set has_children = node.children|length > 0 %}
+<li class="tree-item" x-data="{ open: {{ 'true' if (depth < 1 or node.has_active) else 'false' }} }">
+  <div class="tree-row depth-{{ depth }} {{ 'active' if is_active }}">
+    {% if has_children %}
+      <button class="tree-caret" type="button" @click="open = !open"
+              :class="{ 'is-open': open }" aria-label="toggle">▸</button>
+    {% else %}
+      <span class="tree-caret spacer"></span>
+    {% endif %}
+    <a class="tree-link" href="/browse/{{ node.sheet_name|urlencode }}">
+      <span class="tree-title">{{ node.title }}</span>
+      {% if node.roll.countable %}
+        <span class="tree-pct" title="{{ node.roll.done }}/{{ node.roll.countable }}">
+          {{ '%.0f'|format(node.pct) }}%
+        </span>
+      {% endif %}
+    </a>
+  </div>
+  {% if has_children %}
+  <ul class="tree-children" x-show="open" x-collapse>
+    {% for child in node.children %}
+      {{ tree_node(child, active_sheet, depth + 1) }}
+    {% endfor %}
+  </ul>
+  {% endif %}
+</li>
+{% endmacro %}
+
+{# ---- category card (dashboard / menu grids) ----------------------------- #}
+{% macro category_card(item) %}
+<a class="cat-card" href="/browse/{{ item.sheet_name|urlencode }}">
+  <div class="cat-card-head">
+    <h3>{{ item.title }}</h3>
+    {% if item.children %}
+      <span class="cat-tag">{{ item.children }} {{ 'section' if item.children == 1 else 'sections' }}</span>
+    {% elif item.roll.countable %}
+      <span class="cat-tag">{{ item.roll.countable }} rows</span>
+    {% endif %}
+  </div>
+  {{ progress_bar(item.roll, item.pct, "bar-card") }}
+</a>
+{% endmacro %}
+
+{# ---- state badge -------------------------------------------------------- #}
+{% macro state_badge(state) %}
+{% if state == 'done' %}<span class="badge badge-done">Done</span>
+{% elif state == 'excluded' %}<span class="badge badge-excluded">Excluded</span>
+{% else %}<span class="badge badge-todo">To Do</span>{% endif %}
+{% endmacro %}

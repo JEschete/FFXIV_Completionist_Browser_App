@@ -1,0 +1,13 @@
+{% from "macros.html" import progress_bar %}
+<div class="progress-stack">
+  <div class="progress-line">
+    <span class="progress-tag">Overall</span>
+    {{ progress_bar(overall, overall_pct, "bar-overall") }}
+  </div>
+  {% if cur_node and cur_roll and cur_roll.countable %}
+  <div class="progress-line">
+    <span class="progress-tag">{{ cur_node.title }}</span>
+    {{ progress_bar(cur_roll, cur_pct, "bar-current") }}
+  </div>
+  {% endif %}
+</div>

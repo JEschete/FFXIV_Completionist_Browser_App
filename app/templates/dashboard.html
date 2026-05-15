@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Overview · FFXIV Completion Tracker{% endblock %}
+
+{% block content %}
+{% from "macros.html" import category_card, progress_bar %}
+
+<div class="page-head">
+  <div>
+    <h1>{{ character.name }}'s Completion</h1>
+    <p class="page-sub">
+      {{ overall.done }} of {{ overall.countable }} tracked items complete
+      · {{ overall.excluded }} excluded
+    </p>
+  </div>
+</div>
+
+<section class="cat-grid">
+  {% for card in cards %}
+    {{ category_card(card) }}
+  {% endfor %}
+</section>
+
+{% if chains %}
+<section class="dash-block">
+  <h2 class="block-title">Chains in progress</h2>
+  <div class="chain-list">
+    {% for ch in chains %}
+    <a class="chain-row" href="/browse/{{ ch.sheet_name|urlencode }}">
+      <span class="chain-name">{{ ch.title }}</span>
+      <span class="chain-links">{{ ch.links }} steps</span>
+      {{ progress_bar(ch.roll, ch.pct, "bar-thin") }}
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}
