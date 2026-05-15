@@ -5,7 +5,10 @@
 <div class="page-head">
   <div>
     <h1>Characters</h1>
-    <p class="page-sub">Each character keeps its own independent completion progress.</p>
+    <p class="page-sub">
+      Each character keeps independent progress. Pick a starting class to
+      auto-exclude the starter chains and class quests you couldn't have done.
+    </p>
   </div>
 </div>
 
@@ -19,12 +22,29 @@
 <div class="table-wrap">
   <table class="data-table">
     <thead>
-      <tr><th>Name</th><th>Created</th><th>Status</th><th></th></tr>
+      <tr>
+        <th>Name</th>
+        <th>Starting class</th>
+        <th>Created</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
     </thead>
     <tbody>
       {% for c in characters %}
       <tr class="data-row">
         <td class="cell-label"><span class="row-label">{{ c.name }}</span></td>
+        <td class="cell-data">
+          <form method="post" action="/characters/set-class" class="class-picker">
+            <input type="hidden" name="character_id" value="{{ c.id }}" />
+            <select name="starting_class" onchange="this.form.submit()">
+              <option value="" {{ 'selected' if not c.starting_class }}>— not set —</option>
+              {% for cls in starting_classes %}
+              <option value="{{ cls }}" {{ 'selected' if c.starting_class == cls }}>{{ cls|title }}</option>
+              {% endfor %}
+            </select>
+          </form>
+        </td>
         <td class="cell-data">{{ c.created_at }}</td>
         <td class="cell-data">
           {% if c.id == character.id %}
