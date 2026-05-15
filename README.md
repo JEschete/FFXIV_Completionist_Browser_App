@@ -79,6 +79,23 @@ truth — the importer captures:
 
 Re-running ingestion preserves existing character progress.
 
+### Reimporting without deleting the database
+
+If you don't delete the old database before reimporting:
+
+1. Your **characters are preserved** with their names and creation dates intact.
+2. Your **progress is migrated** to the new sheet structure — but only if row positions haven't changed.
+
+**⚠️ Important caveat:** Progress is tied to `(sheet_name, row_index)` coordinates. If you add, remove, or reorder rows in the workbook, your progress may attach to wrong items or cause constraint errors.
+
+**Safe to reimport if:**
+- Only updating completion status values in the spreadsheet (no structural changes).
+
+**Delete the database and reimport if:**
+- Adding or removing content sections.
+- Reordering rows within sheets.
+- Making significant layout changes.
+
 ## Run
 
 ```powershell
