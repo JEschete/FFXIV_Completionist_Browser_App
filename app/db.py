@@ -71,7 +71,13 @@ def now() -> str:
 
 
 def latest_run_id(conn: sqlite3.Connection) -> int | None:
-    row = conn.execute("SELECT MAX(id) AS m FROM ingest_runs").fetchone()
+    """Return the newest ingest run id, or None if there hasn't been one
+    yet. A fresh / never-prepped DB is allowed — the table simply doesn't
+    exist and we treat that the same as "no runs"."""
+    try:
+        row = conn.execute("SELECT MAX(id) AS m FROM ingest_runs").fetchone()
+    except sqlite3.OperationalError:
+        return None
     return int(row["m"]) if row and row["m"] is not None else None
 
 
@@ -256,6 +262,16 @@ def set_row_state(
     if commit:
         conn.commit()
 
+    # Write through to the per-character JSON sidecar after the DB upsert.
+    # progress_io owns the sparse / tiered-identity / atomic-write logic so
+    # this module stays focused on SQL. Lazy import avoids a top-level cycle
+    # if progress_io ever needs anything from db.
+    from app import progress_io
+    progress_io.record_state_change(
+        conn, character_id, run_id, sheet_name, row_index, state,
+        progress_percent=progress_percent,
+    )
+
 
 def effective_state(
     conn: sqlite3.Connection,
@@ -281,6 +297,19 @@ def effective_state(
     return row["eff"] if row else "todo"
 
 
+def is_chain_row(
+    conn: sqlite3.Connection, run_id: int, sheet_name: str, row_index: int
+) -> bool:
+    """A row is part of a real prerequisite chain iff it has an incoming
+    sequence edge (ingest only emits those inside chain sections)."""
+    return conn.execute(
+        """SELECT 1 FROM edges
+           WHERE run_id=? AND sheet_name=? AND edge_type='sequence'
+             AND target_row_index=? LIMIT 1""",
+        (run_id, sheet_name, row_index),
+    ).fetchone() is not None
+
+
 def toggle_row(
     conn: sqlite3.Connection,
     character_id: int,
@@ -288,19 +317,49 @@ def toggle_row(
     sheet_name: str,
     row_index: int,
     starting_class: str | None = None,
-) -> str:
-    """Cycle todo -> done -> excluded -> todo. Returns the new state."""
-    new_state = NEXT_STATE.get(
-        effective_state(
-            conn, character_id, run_id, sheet_name, row_index, starting_class
-        ),
-        "done",
+) -> tuple[str, list[int]]:
+    """Cycle todo -> done -> excluded -> todo. For chain rows, cascade in
+    both directions:
+
+    * **todo → done**: walk backward, marking prereqs done.
+    * **done → excluded** (or done → anything-else): walk forward, reverting
+      any currently-done downstream rows to todo so the chain stays
+      logically consistent.
+    * **excluded → todo**: no cascade (the row was already non-done; chain
+      state unchanged).
+
+    Non-chain rows always return [row_index] with no cascading."""
+    cur = effective_state(
+        conn, character_id, run_id, sheet_name, row_index, starting_class
     )
+    new_state = NEXT_STATE.get(cur, "done")
+    is_chain = is_chain_row(conn, run_id, sheet_name, row_index)
+
+    if is_chain and new_state == "done":
+        changed = complete_with_prerequisites(
+            conn, character_id, run_id, sheet_name, row_index, starting_class
+        )
+        # complete_with_prerequisites only lists *transitions*; if the click
+        # target itself was already done somehow, ensure it shows up so the
+        # UI re-renders it.
+        if row_index not in changed:
+            changed.append(row_index)
+        return new_state, changed
+
+    if is_chain and cur == "done":
+        changed = revert_with_successors(
+            conn, character_id, run_id, sheet_name, row_index, new_state,
+            starting_class,
+        )
+        if row_index not in changed:
+            changed.append(row_index)
+        return new_state, changed
+
     set_row_state(
         conn, character_id, run_id, sheet_name, row_index, new_state,
         starting_class=starting_class,
     )
-    return new_state
+    return new_state, [row_index]
 
 
 def set_row_value(
@@ -405,6 +464,73 @@ def complete_with_prerequisites(
             ) != "done":
                 set_row_state(
                     conn, character_id, run_id, sheet_name, idx, "done",
+                    commit=False, starting_class=starting_class,
+                )
+                changed.append(idx)
+            stack.append(idx)
+
+    if changed:
+        conn.commit()
+    return changed
+
+
+def revert_with_successors(
+    conn: sqlite3.Connection,
+    character_id: int,
+    run_id: int,
+    sheet_name: str,
+    row_index: int,
+    new_state: str,
+    starting_class: str | None = None,
+) -> list[int]:
+    """Set a row to a non-done state (todo or excluded); for any chain row
+    *downstream* via 'sequence' edges that's currently 'done', revert it to
+    'todo' since its prerequisite is no longer satisfied. Mirrors
+    ``complete_with_prerequisites`` for the un-completing direction.
+
+    Excluded successors are left alone — that was an explicit user choice.
+    Returns the list of row_indexes whose state changed."""
+    if new_state not in ("todo", "excluded"):
+        raise ValueError(
+            f"revert_with_successors expects todo|excluded, got {new_state!r}"
+        )
+
+    changed: list[int] = []
+    if effective_state(
+        conn, character_id, run_id, sheet_name, row_index, starting_class
+    ) != new_state:
+        set_row_state(
+            conn, character_id, run_id, sheet_name, row_index, new_state,
+            commit=False, starting_class=starting_class,
+        )
+        changed.append(row_index)
+
+    seen = {row_index}
+    stack = [row_index]
+    while stack:
+        current = stack.pop()
+        successors = conn.execute(
+            """
+            SELECT target_row_index FROM edges
+            WHERE run_id = ? AND sheet_name = ? AND edge_type = 'sequence'
+              AND source_row_index = ? AND target_row_index IS NOT NULL
+            """,
+            (run_id, sheet_name, current),
+        ).fetchall()
+        for nxt in successors:
+            idx = int(nxt["target_row_index"])
+            if idx in seen:
+                continue
+            seen.add(idx)
+            # Only revert successors that are currently done. Leave excluded
+            # ones alone (the user explicitly chose that). Walk past either
+            # way — a downstream done row beyond a non-done gap still needs
+            # to revert because its own prereq path is now broken.
+            if effective_state(
+                conn, character_id, run_id, sheet_name, idx, starting_class
+            ) == "done":
+                set_row_state(
+                    conn, character_id, run_id, sheet_name, idx, "todo",
                     commit=False, starting_class=starting_class,
                 )
                 changed.append(idx)

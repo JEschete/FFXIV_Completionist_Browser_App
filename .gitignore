@@ -53,3 +53,9 @@ Spreadsheet/~$*.xlsx
 .DS_Store
 Thumbs.db
 .claude
+
+# Local Cache of Wiki
+GameDataReferences/
+
+# Per-character progress sidecars — user data, never committed
+data/progress/
