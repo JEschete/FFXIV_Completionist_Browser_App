@@ -19,6 +19,15 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
+import hashlib
+
+
+def _row_hash(row_dict: dict) -> str:
+    """12-hex-char SHA-256 of a row dict's normalized JSON. Mirrors
+    progress_io._hash_row so the per-row identity matches whether the hash
+    was generated at ingest time or in the running app."""
+    norm = json.dumps(row_dict, sort_keys=True, ensure_ascii=True)
+    return hashlib.sha256(norm.encode("utf-8")).hexdigest()[:12]
 
 # --- workbook conventions ---------------------------------------------------
 
@@ -75,6 +84,49 @@ UNLOCK_KEYS = ("unlock", "requires", "required", "prereq", "next")
 # Sheets where each row carries its own user-entered numeric value (e.g. each
 # job's current level). NOT rank ladders -- those are checkbox per tier.
 VALUE_SHEET_PATTERNS = ("classes-jobs",)
+
+# Sheets whose every section is treated as a sequential prerequisite chain
+# (MSQ + raid alliance stories + relic paths + per-class job-quest tracks).
+# Anything outside this set falls back to the "section name contains 'Chain'"
+# heuristic — so sidequest/FATE/log sheets emit *no* sequence edges and don't
+# trigger cascading completion.
+ALWAYS_CHAIN_SHEETS = frozenset({
+    # Main Scenario, expansion by expansion
+    "Seventh Umbral Era Quests", "Seventh Astral Era Quests",
+    "Heavensward Quests", "Dragonsong Quests", "Post-Dragonsong Quests",
+    "Stormblood Quests", "Post-Stormblood Quests",
+    "Shadowbringers Quests", "Post-Shadowbringers Quests",
+    "Post-Shadowbringers Quests II",
+    "Endwalker Quests", "Post-Endwalker Quests",
+    "Dawntrail Quests", "Post-Dawntrail Quests", "Post-Dawntrail Quests II",
+    # Chronicles of a New Era — each raid storyline is linear
+    "Primals", "Bahamut", "The Crystal Tower", "Alexander", "The Warring Triad",
+    "The Shadow of Mach", "Omega", "Return to Ivalice", "The Four Lords",
+    "Eden", "YoRHa Dark Apocalypse", "The Sorrow of Werlyt",
+    "Pandæmonium", "Myths of the Realm", "The Arcadion",
+    "Echoes of Vanadiel",
+    # Linear side stories
+    "Chronicles of Light", "Hildibrand", "Weapon Enhancement",
+    "Records of Unusual Endeavors", "Side Story Quests",
+    # Class / job / role quests — each section (per class) is a linear path
+    "Disciple of War Quests", "Disciple of Magic Quests",
+    "Disciple of the Hand Quests", "Disciple of the Land Quests",
+    "Disciple of War Job Quests", "Disciple of Magic Job Quests",
+    "Role Quests", "Hall of the Novice",
+    "Crystalline Mean Quests", "Studium Quests", "Wachumeqimeqi Quests",
+    # Relic upgrade paths — each weapon goes through stages sequentially
+    "Relic Tools", "Relic Weapons",
+})
+
+
+def section_is_chain(sheet_name: str, section_label: str | None) -> bool:
+    """A row is part of a real prerequisite chain when its sheet is end-to-end
+    sequential, or when the workbook explicitly named the section a Chain."""
+    if sheet_name in ALWAYS_CHAIN_SHEETS:
+        return True
+    if section_label and "chain" in section_label.lower():
+        return True
+    return False
 
 # The 8 ARR starting classes the workbook's class-conditional formulas key on.
 STARTING_CLASSES = (
@@ -285,7 +337,11 @@ CREATE TABLE nodes (
     row_type TEXT NOT NULL DEFAULT 'checkbox',
     section_label TEXT,
     seq INTEGER NOT NULL DEFAULT 0,
-    row_json TEXT NOT NULL
+    row_json TEXT NOT NULL,
+    -- 12-hex-char SHA-256 of the row's normalized JSON; used as the
+    -- "content fingerprint" tier of progress reconciliation when label
+    -- and section have both shifted.
+    stable_hash TEXT
 );
 
 CREATE TABLE edges (
@@ -343,6 +399,16 @@ CREATE TABLE progress_rollup (
 CREATE INDEX idx_nodes_sheet ON nodes(run_id, sheet_name, row_index);
 CREATE INDEX idx_edges_sheet ON edges(run_id, sheet_name, edge_type);
 CREATE INDEX idx_progress ON character_progress(character_id, run_id, sheet_name);
+
+-- progress_io reconciliation indexes: tier 1 (sheet+section+label),
+-- tier 2 (sheet+label), tier 3 (sheet+content-hash). Tier 4 (row_index)
+-- is already covered by idx_nodes_sheet.
+CREATE INDEX idx_nodes_section_label
+    ON nodes(run_id, sheet_name, section_label, label);
+CREATE INDEX idx_nodes_label
+    ON nodes(run_id, sheet_name, label);
+CREATE INDEX idx_nodes_stable_hash
+    ON nodes(run_id, sheet_name, stable_hash);
 """
 
 
@@ -705,6 +771,7 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
                         current_section,
                         0,
                         json.dumps(data),
+                        _row_hash(data) if data else None,
                     )
                 )
                 continue
@@ -733,12 +800,18 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
                     current_section,
                     seq_in_section,
                     json.dumps(data),
+                    _row_hash(data),
                 )
             )
             if label:
                 label_to_row.setdefault(label.strip().lower(), r_idx)
 
-            if row_type == "checkbox" and prev_track_row is not None:
+            # Only emit prerequisite edges inside *real* chain sections.
+            # Sidequest collections / FATEs / crafting logs share section
+            # context but their rows are independently completable, so they
+            # produce no sequence edges and won't trigger cascades.
+            in_chain = section_is_chain(sheet_name, current_section)
+            if row_type == "checkbox" and prev_track_row is not None and in_chain:
                 seq_edges.append(
                     (
                         run_id,
@@ -803,8 +876,9 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
             """
             INSERT INTO nodes (
                 run_id, sheet_name, row_index, label,
-                baseline_state, row_type, section_label, seq, row_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                baseline_state, row_type, section_label, seq, row_json,
+                stable_hash
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             node_rows,
         )

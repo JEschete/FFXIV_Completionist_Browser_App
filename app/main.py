@@ -21,9 +21,38 @@ from fastapi.templating import Jinja2Templates
 if __package__ in {None, ""}:
     sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-from app import db
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="FFXIV Completion Tracker")
+from app import db, progress_io
+
+
+def reconcile_progress_sidecars() -> None:
+    """Make the DB match the per-character JSON sidecars (the source of truth
+    for progress). One-time bootstraps any character that has DB progress but
+    no sidecar yet; otherwise replays each sidecar's entries onto the current
+    run's character_progress table. Detail logic lives in progress_io."""
+    conn = db.get_connection()
+    try:
+        run_id = db.latest_run_id(conn)
+        if run_id is None:
+            print("Progress reconcile: skipped — no ingest run found "
+                  "(run scripts/prep_xlsx_to_sqlite.py to populate the DB)")
+            return
+        report = progress_io.reconcile_all(conn, run_id)
+        if report.characters:
+            print("Progress reconcile:")
+            print(report.summary())
+    finally:
+        conn.close()
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    reconcile_progress_sidecars()
+    yield
+
+
+app = FastAPI(title="FFXIV Completion Tracker", lifespan=lifespan)
 
 BASE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(BASE / "templates"))
@@ -275,22 +304,29 @@ def api_toggle(
     sheet_name: str = Form(...),
     row_index: int = Form(...),
 ):
+    """Toggle a row's state. For chain rows transitioning todo→done, also
+    auto-cascade the prerequisites; cascaded rows ride along as out-of-band
+    `<tr>` fragments so HTMX patches them in place."""
     ctx = Ctx(request, full=False)
     try:
         sheet = ctx.require_content_sheet(sheet_name)
-        db.toggle_row(
+        _, changed = db.toggle_row(
             ctx.conn, ctx.character_id, ctx.run_id, sheet_name, row_index,
             ctx.starting_class,
         )
         import json as _json
         columns = _json.loads(sheet["data_columns_json"])
-        # chain info for the *single* affected row (one query, scoped)
         flags = db.sheet_chain_flags(
             ctx.conn, ctx.run_id, ctx.character_id, sheet_name,
             ctx.starting_class,
         )
-        body = _render_row(ctx, sheet, row_index, columns, flags.get(row_index))
-        resp = HTMLResponse(body)
+        # the clicked row replaces #row-{row_index} via the main swap; the
+        # rest piggyback as OOB swaps keyed by their own ids
+        parts: list[str] = []
+        for idx in sorted(set(changed) - {row_index}):
+            parts.append(_render_row(ctx, sheet, idx, columns, flags.get(idx), oob=True))
+        parts.append(_render_row(ctx, sheet, row_index, columns, flags.get(row_index)))
+        resp = HTMLResponse("\n".join(parts))
         resp.headers["HX-Trigger"] = "progress-changed"
         return resp
     finally:
