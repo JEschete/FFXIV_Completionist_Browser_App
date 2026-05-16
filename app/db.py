@@ -602,10 +602,109 @@ def pct(roll: dict[str, int]) -> float:
     return round(100.0 * roll["done"] / roll["countable"], 2) if roll["countable"] else 0.0
 
 
+# Delimiter between a real menu's sheet_name and a virtual section node's
+# label, e.g. ``"Duty Menu - Journal|Main Scenario (ARR through Endwalker)"``.
+# Picked because ``|`` is URL-safe and never appears in a workbook sheet name.
+VIRTUAL_SEP = "|"
+
+
+def _virtualize_sections(node: dict, by_name: dict[str, dict]) -> None:
+    """Post-pass on a tree node: if its real children carry ``parent_menu_section``
+    values, regroup them under synthetic intermediate "section" nodes so the
+    sidebar / browse routes treat each section as its own clickable sub-menu.
+
+    Real children whose section is None stay at the top level (rendered after
+    the named groups, same as the menu page's "Other" bucket).
+
+    Recurses into every child (real or virtual) so deeper hierarchies are
+    virtualized too if the data ever supports them."""
+    children = node.get("children") or []
+    if not children:
+        return
+
+    section_groups: dict[str | None, list[dict]] = {}
+    section_order: list[str | None] = []
+    for child in children:
+        sec = child.get("parent_menu_section")
+        if sec not in section_groups:
+            section_groups[sec] = []
+            section_order.append(sec)
+        section_groups[sec].append(child)
+
+    # Nothing to virtualize: no named sections at all, OR a single named
+    # section (which would just add a useless one-deep wrapper).
+    named_section_count = sum(1 for s in section_order if s is not None)
+    if named_section_count == 0:
+        for child in children:
+            _virtualize_sections(child, by_name)
+        return
+
+    new_children: list[dict] = []
+    for sec in section_order:
+        bucket = section_groups[sec]
+        if sec is None:
+            # ungrouped real children stay direct children, rendered last
+            for child in bucket:
+                _virtualize_sections(child, by_name)
+                new_children.append(child)
+            continue
+
+        v_name = f"{node['sheet_name']}{VIRTUAL_SEP}{sec}"
+        v_roll = _empty_roll()
+        for child in bucket:
+            for k in v_roll:
+                v_roll[k] += child["roll"][k]
+            # Recurse so any deeper grouping is virtualized too.
+            _virtualize_sections(child, by_name)
+
+        virtual = {
+            "sheet_name": v_name,
+            "title": sec,
+            "is_menu": True,
+            "is_readonly": False,
+            "is_virtual": True,
+            "parent_menu_section": None,
+            "children": bucket,
+            "roll": v_roll,
+            "pct": pct(v_roll),
+        }
+        new_children.append(virtual)
+
+        # Register the virtual node in by_name so breadcrumbs / Ctx.sheets_by_name
+        # lookups work the same as for real sheets. We also override the
+        # children's parent_sheet so breadcrumb_path walks through the virtual.
+        by_name[v_name] = {
+            "sheet_name": v_name,
+            "title": sec,
+            "is_menu": 1,
+            "is_readonly": 0,
+            "is_virtual": True,
+            "parent_sheet": node["sheet_name"],
+            "parent_menu_section": None,
+            "sheet_index": (
+                min(by_name[c["sheet_name"]]["sheet_index"] for c in bucket
+                    if c["sheet_name"] in by_name)
+                if any(c["sheet_name"] in by_name for c in bucket) else 0
+            ),
+        }
+        for c in bucket:
+            if c["sheet_name"] in by_name:
+                by_name[c["sheet_name"]] = {
+                    **by_name[c["sheet_name"]],
+                    "parent_sheet": v_name,
+                }
+
+    node["children"] = new_children
+
+
 def build_nav_tree(
     sheets: list[sqlite3.Row], rollups: dict[str, dict[str, int]]
-) -> tuple[list[dict], dict[str, int]]:
-    """Return (roots, overall_rollup). Each node carries an aggregated rollup."""
+) -> tuple[list[dict], dict[str, int], dict[str, dict]]:
+    """Return ``(roots, overall_rollup, by_name)``. ``by_name`` is a merged
+    map of every node visible in the tree (real sheets + virtual section
+    nodes) keyed by ``sheet_name``, suitable for breadcrumb walks and
+    ``Ctx.sheets_by_name``. Each node in the tree carries an aggregated
+    rollup; virtual section nodes carry ``is_virtual: True``."""
     by_name = {s["sheet_name"]: dict(s) for s in sheets}
     children: dict[str | None, list[str]] = {}
     for s in sheets:
@@ -618,6 +717,14 @@ def build_nav_tree(
             "title": s["title"],
             "is_menu": bool(s["is_menu"]),
             "is_readonly": bool(s["is_readonly"]),
+            "is_virtual": False,
+            # Surface the workbook's column-grouping for the menu page —
+            # populated for content sheets whose parent menu used a
+            # multi-column layout, NULL otherwise.
+            "parent_menu_section": (
+                s["parent_menu_section"]
+                if "parent_menu_section" in s.keys() else None
+            ),
             "children": [],
             "roll": _empty_roll(),
         }
@@ -636,11 +743,17 @@ def build_nav_tree(
 
     roots = [build(n) for n in children.get(None, [])]
     roots.sort(key=lambda c: by_name[c["sheet_name"]]["sheet_index"])
+
+    # Post-pass: regroup any menu's children under virtual section nodes
+    # if parent_menu_section was populated by ingest.
+    for root in roots:
+        _virtualize_sections(root, by_name)
+
     overall = _empty_roll()
     for r in roots:
         for k in overall:
             overall[k] += r["roll"][k]
-    return roots, overall
+    return roots, overall, by_name
 
 
 def mark_active_path(tree: list[dict], active_sheet: str | None) -> None:

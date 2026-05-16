@@ -198,21 +198,44 @@ def browse(request: Request, sheet_name: str, q: str = "", state: str = "all"):
         node = db.find_node(ctx.tree, sheet_name)
 
         if sheet["is_menu"]:
-            # category-grid view: child cards with aggregated progress
-            children = []
+            # category-grid view: child cards with aggregated progress,
+            # grouped by parent_menu_section (the workbook column header
+            # the child came from). Sections appear in workbook order;
+            # any child without a section goes to a final "Other" bucket.
+            # Group child cards by parent_menu_section (the workbook column
+            # they came from). Renamed from "items" to "cards" so Jinja's
+            # attribute lookup doesn't collide with the dict ``.items()``
+            # method when iterating ``group.cards`` in the template.
+            section_order: list[str | None] = []
+            section_cards: dict[str | None, list[dict]] = {}
             for child in (node["children"] if node else []):
-                children.append({
+                card = {
                     "sheet_name": child["sheet_name"],
                     "title": child["title"],
                     "is_menu": child["is_menu"],
                     "roll": child["roll"],
                     "pct": child["pct"],
                     "children": len(child["children"]),
-                })
+                }
+                section = child.get("parent_menu_section")
+                if section not in section_cards:
+                    section_cards[section] = []
+                    section_order.append(section)
+                section_cards[section].append(card)
+
+            sections = [
+                {"label": s, "cards": section_cards[s]}
+                for s in section_order if s is not None
+            ]
+            # children with no detected section render last under a soft heading
+            if None in section_cards:
+                sections.append({"label": None, "cards": section_cards[None]})
+            children_flat = [c for s in sections for c in s["cards"]]
             return ctx.render("menu.html", {
                 "sheet": sheet,
                 "crumbs": crumbs,
-                "children": children,
+                "sections": sections,
+                "children": children_flat,  # kept for the page-sub count
                 "node": node,
                 "active_sheet": sheet_name,
             })
