@@ -266,7 +266,20 @@ h1, h2, h3, h4 { margin: 0; font-weight: 650; }
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 14px;
+  margin-bottom: 18px;
 }
+.menu-section-heading {
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  color: var(--gold);
+  margin: 24px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.menu-section-heading:first-of-type { margin-top: 12px; }
+.menu-section-other { color: var(--muted); }
 .cat-card {
   display: block;
   background: linear-gradient(160deg, var(--panel-2), var(--panel));

@@ -149,6 +149,12 @@ READONLY_SHEETS = {
     "Before You Get Started, Take A Moment To Look Over The Following Information.",
 }
 
+# Workbook tabs to exclude from DB import entirely.
+# These are informational pages, not navigable tracker content.
+SKIP_IMPORT_SHEETS = {
+    "Read Me",
+}
+
 
 # --- helpers ----------------------------------------------------------------
 
@@ -238,6 +244,117 @@ def find_parent_link(ws) -> str | None:
     return None
 
 
+def _is_numeric(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _has_percent_left(ws, row: int, col: int, max_gap: int = 2) -> bool:
+    """True if there's a numeric cell within ``max_gap`` columns to the left
+    of (row, col). The workbook leaves a one-column gap between the percent
+    and its text label (e.g. G=0  H=blank  I='Main Scenario'), so checking
+    only the immediate left column misses every pair."""
+    for offset in range(1, max_gap + 1):
+        c = col - offset
+        if c < 1:
+            return False
+        v = ws.cell(row=row, column=c).value
+        if _is_numeric(v):
+            return True
+        # if we hit another *text* cell on the way left, the percent (if any)
+        # belongs to a different group, not this one
+        if isinstance(v, str) and v.strip():
+            return False
+    return False
+
+
+def extract_menu_groups(
+    ws, is_real_sheet=None
+) -> dict[str, str]:
+    """Walk a menu sheet's columnar layout and return a mapping of
+    ``child_label_lower -> group_label`` for every text-cell that sits in a
+    "child entry" position (i.e. has a numeric % cell within ~2 columns to
+    its left, just like the column header above it).
+
+    The workbook organizes most menu sheets into several side-by-side
+    columns (e.g. Duty Menu - Journal: Main Scenario / Sidequests / Allied
+    Society Quests / Other Quests). Each column has a header row of text
+    cells whose left neighbor is a numeric "% complete". Below that,
+    children of the same group occupy the same column with the same
+    layout. We use the consistent percent-on-the-left signal to:
+
+      1. Detect the header row (>= 2 such pairs).
+      2. Pick out the (text-column, header) pairs.
+      3. Walk subsequent rows, grouping each child under its column's header.
+
+    If ``is_real_sheet`` is provided, any entry that looks like a child by
+    layout (has a percent cell on the left) but doesn't resolve to a real
+    sheet name is treated as an *in-column sub-header* — it doesn't itself
+    get a section assignment, but it updates the running group label for
+    subsequent children in that column. This is how Duty Menu - Journal's
+    "Chronicles of a New Era", "Class & Job Quests", and "Levequests" rows
+    get promoted to top-level sections instead of being mistaken for child
+    sheets.
+
+    Returns ``{}`` for menu sheets that don't have a multi-column layout
+    (callers leave parent_menu_section NULL — UI renders ungrouped)."""
+    if ws.max_row is None or ws.max_row < 8:
+        return {}
+
+    # 1) find the header row: scan rows 5-20, pick the row with the most
+    # "text cell with a percent cell within ~2 columns to its left" pairs
+    # (>= 2 pairs). The 2-column tolerance is because the workbook leaves
+    # an empty column between each (percent, text) pair (G/H/I, L/M/N, …).
+    header_row_idx: int | None = None
+    header_pairs: list[tuple[int, str]] = []
+    for r_idx in range(5, min(ws.max_row, 25) + 1):
+        pairs: list[tuple[int, str]] = []
+        for cell in ws[r_idx]:
+            if not isinstance(cell.value, str):
+                continue
+            text = cell.value.strip()
+            if not text or cell.column < 2:
+                continue
+            if _has_percent_left(ws, r_idx, cell.column):
+                pairs.append((cell.column, text))
+        if len(pairs) >= 2 and len(pairs) > len(header_pairs):
+            header_row_idx = r_idx
+            header_pairs = pairs
+
+    if header_row_idx is None or not header_pairs:
+        return {}
+
+    # 2) walk down each column collecting child entries. A child entry is
+    # any text cell in a header column with the same percent-on-the-left
+    # signal as the header itself. All-caps short strings *without* that
+    # signal are treated as in-column sub-headers and update the running
+    # label for that column (e.g. X16='LEVEQUESTS' inside Other Quests).
+    columns: dict[int, str] = dict(header_pairs)
+    out: dict[str, str] = {}
+
+    for r_idx in range(header_row_idx + 1, (ws.max_row or 0) + 1):
+        for col_idx, current_label in list(columns.items()):
+            cell = ws.cell(row=r_idx, column=col_idx)
+            if not isinstance(cell.value, str):
+                continue
+            text = cell.value.strip()
+            if not text:
+                continue
+            has_pct = _has_percent_left(ws, r_idx, col_idx)
+            if has_pct and (is_real_sheet is None or is_real_sheet(text)):
+                # genuine child entry — record under the column's current label
+                out.setdefault(text.lower(), current_label)
+            elif has_pct and is_real_sheet is not None:
+                # has the child-layout shape but doesn't name a real sheet —
+                # it's an in-column sub-header (e.g. "Chronicles of a New
+                # Era", "Class & Job Quests", "Levequests"). Promote it to
+                # the running group label for everything below it.
+                columns[col_idx] = text
+            elif text.isupper() and 3 < len(text) < 50:
+                columns[col_idx] = text.title()
+
+    return out
+
+
 def detect_data_columns(ws) -> list[dict]:
     """Detect non-empty data headers from B onward until the sidebar link."""
     cols: list[dict] = []
@@ -321,6 +438,12 @@ CREATE TABLE sheets (
     is_menu INTEGER NOT NULL DEFAULT 0,
     is_readonly INTEGER NOT NULL DEFAULT 0,
     parent_sheet TEXT,
+    -- Sub-grouping within a parent menu sheet. Many menu sheets organize
+    -- their child links into multiple columns under category headers
+    -- (e.g. Duty Menu - Journal: Main Scenario / Sidequests / Allied Society
+    -- / Other Quests). NULL means this sheet wasn't matched to any column
+    -- header during ingest -- it'll render ungrouped.
+    parent_menu_section TEXT,
     data_columns_json TEXT NOT NULL,
     label_key TEXT,
     value_key TEXT,
@@ -673,6 +796,10 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
 
     total_rows = 0
     for sheet_index, sheet_name in enumerate(wb.sheetnames, start=1):
+        if sheet_name in SKIP_IMPORT_SHEETS:
+            print(f"  [{sheet_index:3}] {sheet_name:<52} skipped")
+            continue
+
         ws = wb[sheet_name]
         is_menu = is_menu_sheet(sheet_name)
         is_readonly = sheet_name in READONLY_SHEETS
@@ -733,7 +860,8 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
         current_section: str | None = None
         seq_in_section = 0
         prev_track_row: int | None = None
-        sheet_title = sheet_name
+        section_banner_count = 0
+        first_section_banner_title: str | None = None
 
         for r_idx, row in enumerate(ws.iter_rows(), start=1):
             if r_idx == 1:
@@ -755,8 +883,9 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
             )
 
             if is_banner:
-                if r_idx == 2:
-                    sheet_title = (a_val or sheet_name).title()
+                section_banner_count += 1
+                if first_section_banner_title is None:
+                    first_section_banner_title = (a_val or sheet_name).title()
                 current_section = (a_val or "").title() or sheet_name
                 seq_in_section = 0
                 prev_track_row = None
@@ -848,6 +977,14 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
             resolved_unlocks.append(e[:5] + (tgt, e[6], 1 if tgt else 0))
 
         track_total = sum(1 for n in node_rows if n[5] in ("checkbox", "value"))
+        # If a sheet has multiple section banners, row 2's banner is just the
+        # first in-sheet section (e.g., a zone) rather than a true sheet name.
+        # Keep the workbook sheet name to avoid duplicate card titles.
+        sheet_title = (
+            sheet_name
+            if section_banner_count >= 2
+            else (first_section_banner_title or sheet_name)
+        )
 
         conn.execute(
             """
@@ -940,6 +1077,109 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
         print(f"  class_overrides: {len(overrides)} rows across {affected_cells} cells")
         for s, n in sorted(per_sheet.items(), key=lambda x: -x[1]):
             print(f"    {s:<52} {n}")
+
+    # --- Second pass: capture menu-sheet column groupings -----------------
+    # Each menu sheet's children are physically arranged in side-by-side
+    # columns under group headers (e.g. Duty Menu - Journal: Main Scenario /
+    # Sidequests / Allied Society / Other Quests). The first ingest pass
+    # only recorded each child's parent menu — this pass figures out which
+    # *column* under that menu it belongs to, by walking the menu sheet's
+    # layout and matching child-sheet names to entries in each column.
+    print("\nMatching child sheets to menu sections...")
+
+    # Hand-curated aliases for menu labels that intentionally differ from
+    # their sheet name (display polish in the workbook).
+    LABEL_ALIASES = {
+        "hildibrand sidequests": "hildibrand",
+        "weapon enhancement sidequests": "weapon enhancement",
+        "seasonal events": "seasonal quests",
+    }
+
+    def _norm_match(text: str) -> str:
+        """Aggressive normalization for menu-label vs sheet-name matching.
+
+        * strip parenthetical disambiguators (``"Main Scenario (Dawntrail)"``)
+        * strip apostrophes (``Amalj'aa`` ↔ ``Amaljaa``, ``Ul'dahn`` ↔ ``Uldahn``)
+        * strip ``main scenario`` (menu has the wider label, sheets don't)
+        * strip ``chronicles of a new era - `` prefix so e.g. that menu's
+          ``Chronicles of a New Era - Bahamut`` resolves to sheet ``Bahamut``
+        """
+        t = text.lower().strip()
+        t = re.sub(r"\s*\([^)]*\)\s*", " ", t)
+        t = t.replace("'", "")
+        t = re.sub(r"^chronicles of a new era\s*[- ]\s*", "", t)
+        for noise in (" main scenario ", " main scenario"):
+            t = t.replace(noise, " ")
+        return " ".join(LABEL_ALIASES.get(t.strip(), t).split())
+
+    def _strip_quests_suffix(t: str) -> str:
+        """Drop a trailing ' quests' so menu labels like 'Yok Huy Quests'
+        match sheet names like 'Yok Huy'. Symmetric — applied to both sides."""
+        return re.sub(r"\s+quests$", "", t)
+
+    sheets_lower: dict[str, str] = {}
+    sheets_norm: dict[str, str] = {}
+    sheets_loose: dict[str, str] = {}  # last-resort: also strip trailing " quests"
+    for r in conn.execute(
+        "SELECT sheet_name FROM sheets WHERE run_id = ? AND is_menu = 0",
+        (run_id,),
+    ):
+        name = r[0]
+        sheets_lower.setdefault(name.lower(), name)
+        sheets_norm.setdefault(_norm_match(name), name)
+        sheets_loose.setdefault(_strip_quests_suffix(_norm_match(name)), name)
+
+    def _resolve_label(label: str) -> str | None:
+        """Try every alias / normalization tier; return the matching sheet
+        name or None. Shared between the parser (for sub-header detection)
+        and the post-parse update loop (for actually applying sections)."""
+        return (
+            sheets_lower.get(label.lower())
+            or sheets_norm.get(_norm_match(label))
+            or sheets_loose.get(_strip_quests_suffix(_norm_match(label)))
+        )
+
+    grouped_total = 0
+    unmatched_total = 0
+    unmatched_samples: list[str] = []
+    for menu_name in [r[0] for r in conn.execute(
+        "SELECT sheet_name FROM sheets WHERE run_id = ? AND is_menu = 1",
+        (run_id,),
+    )]:
+        try:
+            ws = wb[menu_name]
+        except KeyError:
+            continue
+        # Pass _resolve_label so the parser can distinguish real child rows
+        # from in-column sub-headers ("Chronicles of a New Era", etc.).
+        groups = extract_menu_groups(
+            ws, is_real_sheet=lambda t: _resolve_label(t) is not None,
+        )
+        if not groups:
+            continue
+        applied = 0
+        for child_lower, group_label in groups.items():
+            real_name = _resolve_label(child_lower)
+            if real_name is None:
+                unmatched_total += 1
+                if len(unmatched_samples) < 8:
+                    unmatched_samples.append(f"[{menu_name}] {child_lower!r}")
+                continue
+            cur = conn.execute(
+                "UPDATE sheets SET parent_menu_section = ? "
+                "WHERE run_id = ? AND sheet_name = ? AND parent_sheet = ?",
+                (group_label, run_id, real_name, menu_name),
+            )
+            if cur.rowcount > 0:
+                applied += 1
+        grouped_total += applied
+        print(f"  [{menu_name}]: {applied} children grouped into {len(set(groups.values()))} sections")
+    print(f"  total grouped: {grouped_total}")
+    if unmatched_total:
+        print(f"  unmatched menu entries: {unmatched_total} "
+              "(likely group/sub-headers without a real sheet)")
+        for sample in unmatched_samples:
+            print(f"    {sample}")
 
     completed = dt.datetime.now().isoformat(timespec="seconds")
     conn.execute(
