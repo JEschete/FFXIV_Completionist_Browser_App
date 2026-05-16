@@ -634,7 +634,7 @@ def _virtualize_sections(node: dict, by_name: dict[str, dict]) -> None:
     # Nothing to virtualize: no named sections at all, OR a single named
     # section (which would just add a useless one-deep wrapper).
     named_section_count = sum(1 for s in section_order if s is not None)
-    if named_section_count == 0:
+    if named_section_count <= 1:
         for child in children:
             _virtualize_sections(child, by_name)
         return

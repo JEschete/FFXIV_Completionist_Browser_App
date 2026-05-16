@@ -149,6 +149,12 @@ READONLY_SHEETS = {
     "Before You Get Started, Take A Moment To Look Over The Following Information.",
 }
 
+# Workbook tabs to exclude from DB import entirely.
+# These are informational pages, not navigable tracker content.
+SKIP_IMPORT_SHEETS = {
+    "Read Me",
+}
+
 
 # --- helpers ----------------------------------------------------------------
 
@@ -790,6 +796,10 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
 
     total_rows = 0
     for sheet_index, sheet_name in enumerate(wb.sheetnames, start=1):
+        if sheet_name in SKIP_IMPORT_SHEETS:
+            print(f"  [{sheet_index:3}] {sheet_name:<52} skipped")
+            continue
+
         ws = wb[sheet_name]
         is_menu = is_menu_sheet(sheet_name)
         is_readonly = sheet_name in READONLY_SHEETS
@@ -850,7 +860,8 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
         current_section: str | None = None
         seq_in_section = 0
         prev_track_row: int | None = None
-        sheet_title = sheet_name
+        section_banner_count = 0
+        first_section_banner_title: str | None = None
 
         for r_idx, row in enumerate(ws.iter_rows(), start=1):
             if r_idx == 1:
@@ -872,8 +883,9 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
             )
 
             if is_banner:
-                if r_idx == 2:
-                    sheet_title = (a_val or sheet_name).title()
+                section_banner_count += 1
+                if first_section_banner_title is None:
+                    first_section_banner_title = (a_val or sheet_name).title()
                 current_section = (a_val or "").title() or sheet_name
                 seq_in_section = 0
                 prev_track_row = None
@@ -965,6 +977,14 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
             resolved_unlocks.append(e[:5] + (tgt, e[6], 1 if tgt else 0))
 
         track_total = sum(1 for n in node_rows if n[5] in ("checkbox", "value"))
+        # If a sheet has multiple section banners, row 2's banner is just the
+        # first in-sheet section (e.g., a zone) rather than a true sheet name.
+        # Keep the workbook sheet name to avoid duplicate card titles.
+        sheet_title = (
+            sheet_name
+            if section_banner_count >= 2
+            else (first_section_banner_title or sheet_name)
+        )
 
         conn.execute(
             """

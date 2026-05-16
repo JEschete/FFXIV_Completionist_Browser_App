@@ -105,11 +105,12 @@ class Ctx:
         if full:
             self.characters = db.fetch_characters(self.conn)
             self.sheets = db.fetch_all_sheets(self.conn, self.run_id)
-            self.sheets_by_name = {s["sheet_name"]: dict(s) for s in self.sheets}
             self.rollups = db.sheet_rollups(
                 self.conn, self.run_id, self.character_id, self.starting_class
             )
-            self.tree, self.overall = db.build_nav_tree(self.sheets, self.rollups)
+            self.tree, self.overall, self.sheets_by_name = db.build_nav_tree(
+                self.sheets, self.rollups
+            )
 
     def close(self) -> None:
         self.conn.close()
@@ -191,6 +192,11 @@ def browse(request: Request, sheet_name: str, q: str = "", state: str = "all"):
     ctx = Ctx(request)
     try:
         sheet = ctx.sheets_by_name.get(sheet_name)
+        # Backward compatibility for earlier virtual-node URLs that used
+        # "::" as the section separator before db.VIRTUAL_SEP was finalized.
+        if sheet is None and "::" in sheet_name:
+            sheet_name = sheet_name.replace("::", db.VIRTUAL_SEP)
+            sheet = ctx.sheets_by_name.get(sheet_name)
         if sheet is None:
             raise HTTPException(404, f"Unknown sheet: {sheet_name}")
 
