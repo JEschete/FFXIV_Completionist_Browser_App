@@ -423,6 +423,14 @@ def _index_labels_for_bucket(
                 text = value.strip()
                 if text:
                     labels.add(text)
+                    # Workbook sometimes combines two quest names with " / "
+                    # (e.g. "Training with Leih / School of Hard Nocks").
+                    # Index each part so either name from Lodestone matches.
+                    if " / " in text:
+                        for part in text.split(" / "):
+                            part = part.strip()
+                            if part:
+                                labels.add(part)
     return labels
 
 
