@@ -128,6 +128,26 @@ def section_is_chain(sheet_name: str, section_label: str | None) -> bool:
         return True
     return False
 
+
+# Within a chain section, restart the prerequisite chain whenever this column's
+# value changes between consecutive rows. Lets the workbook keep one broad
+# banner ("A Realm Reborn Tools (Lucis)", "Disciple of War") covering several
+# *independent* sub-chains — per crafter, per class, per faculty — without
+# inventing fake sub-banners. Without this, the ingest would chain every
+# Carpenter tool into every Blacksmith tool inside a shared section.
+SUB_CHAIN_BOUNDARY_COLUMN: dict[str, str] = {
+    "Relic Tools": "job",
+    "Relic Weapons": "job",
+    "Disciple of War Quests": "class",
+    "Disciple of Magic Quests": "class",
+    "Disciple of the Hand Quests": "class",
+    "Disciple of the Land Quests": "class",
+    "Disciple of War Job Quests": "job",
+    "Disciple of Magic Job Quests": "job",
+    "Studium Quests": "faculty",
+    "Hall of the Novice": "class",
+}
+
 # The 8 ARR starting classes the workbook's class-conditional formulas key on.
 STARTING_CLASSES = (
     "ARCANIST",
@@ -862,6 +882,8 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
         prev_track_row: int | None = None
         section_banner_count = 0
         first_section_banner_title: str | None = None
+        sub_chain_col = SUB_CHAIN_BOUNDARY_COLUMN.get(sheet_name)
+        prev_sub_chain_value: str | None = None
 
         for r_idx, row in enumerate(ws.iter_rows(), start=1):
             if r_idx == 1:
@@ -889,6 +911,7 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
                 current_section = (a_val or "").title() or sheet_name
                 seq_in_section = 0
                 prev_track_row = None
+                prev_sub_chain_value = None
                 node_rows.append(
                     (
                         run_id,
@@ -940,6 +963,14 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
             # context but their rows are independently completable, so they
             # produce no sequence edges and won't trigger cascades.
             in_chain = section_is_chain(sheet_name, current_section)
+            if sub_chain_col is not None:
+                cur_sub = data.get(sub_chain_col)
+                if (
+                    prev_sub_chain_value is not None
+                    and cur_sub != prev_sub_chain_value
+                ):
+                    prev_track_row = None
+                prev_sub_chain_value = cur_sub
             if row_type == "checkbox" and prev_track_row is not None and in_chain:
                 seq_edges.append(
                     (

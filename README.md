@@ -1,146 +1,283 @@
 # FFXIV Completion Tracker
 
-A web app for tracking 100% completion of Final Fantasy XIV, built from the
-official checklist workbook. FastAPI + HTMX + Alpine, SQLite storage.
+A FastAPI + HTMX + Alpine web app for tracking Final Fantasy XIV completion from
+the official checklist workbook.
 
-## How To Set Up This Project
+The workbook is ingested into SQLite for fast reads, and each character's
+progress is also persisted to JSON sidecar files so progress can survive workbook
+rebuilds and row movement.
 
-### 1) Create and activate a virtual environment
+## What This Project Does
+
+- Mirrors the workbook hierarchy as a sidebar tree with aggregated progress.
+- Renders menu sheets as grouped card grids.
+- Renders content sheets as live-updating tables.
+- Supports chain-aware progression with prerequisite and unlock links.
+- Tracks independent progress per character.
+- Applies optional starting-class overlays for class-specific exclusions.
+- Exports the active character's current effective state as CSV.
+
+## Requirements
+
+- Python 3.10+
+- A workbook (`.xlsx`) in the `Spreadsheet/` folder
+
+Dependencies are listed in `requirements.txt`:
+
+- `fastapi`, `uvicorn`, `jinja2`, `python-multipart`
+- `openpyxl` (ingest)
+- `httpx`, `beautifulsoup4` (wiki crawler)
+
+## Quick Start
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-```
-
-### 2) Install dependencies
-
-```powershell
 pip install -r requirements.txt
-```
 
-### 3) Put the workbook in the Spreadsheet folder
-
-- Place your official checklist workbook (`.xlsx`) in `Spreadsheet/`.
-- The importer uses the newest `.xlsx` in that folder by default.
-
-### 4) Build/rebuild the SQLite database
-
-```powershell
+# Build database from the newest Spreadsheet/*.xlsx
 python scripts/prep_xlsx_to_sqlite.py
+
+# Run app
+uvicorn app.main:app --reload
 ```
 
-Optional overrides:
+Open http://127.0.0.1:8000
+
+## Core Workflow
+
+1. Put or update your workbook in `Spreadsheet/`.
+2. Run `python scripts/prep_xlsx_to_sqlite.py`.
+3. Start or refresh the app.
+4. Use `Characters` to manage character profiles and optional starting class.
+
+## Workbook Ingest Deep Dive
+
+Ingest script: `scripts/prep_xlsx_to_sqlite.py`
+
+### Input selection
+
+- Default source: newest `.xlsx` in `Spreadsheet/`
+- Override source: `--xlsx <path>`
+- Override DB path: `--db <path>`
+
+### What gets extracted
+
+- Parent/child sheet relationships:
+  content sheets resolve parent menu via the sheet's `Main Page` hyperlink.
+- Section boundaries:
+  purple banner rows (`CC66FF`) become section markers.
+- Row baseline state:
+  column A values map to `done`/`todo`/`excluded`.
+- Row type:
+  checkbox rows vs value rows (for level/progress style sheets).
+- Chain edges:
+  sequence edges are created only for true chain sheets/sections.
+- Unlock edges:
+  unlock/require columns create explicit cross-row links when resolvable.
+- Menu section grouping:
+  child sheets are mapped to menu-column sections (used for grouped menu cards
+  and virtual nav nodes).
+- Stable row fingerprint:
+  each row stores a normalized hash used by progress reconciliation.
+
+### Rebuild behavior
+
+The ingest rebuilds schema tables on each run, then:
+
+- preserves existing `characters`
+- migrates previous run `character_progress` rows to the new run where possible
+- recomputes `class_overrides` from workbook formulas
+
+## Progress Model (Important)
+
+Module: `app/progress_io.py`
+
+Progress source of truth is **JSON sidecars** in `data/progress/`.
+
+- On startup, app lifespan calls reconcile logic:
+  sidecars are replayed into DB `character_progress` for the latest ingest run.
+- On each state change, DB is updated and sidecar is updated atomically.
+- If a character has DB progress but no sidecar yet, a one-time sidecar
+  bootstrap is created.
+
+### Tiered identity for resilient matching
+
+Each sidecar entry stores four identity tiers (strongest to weakest):
+
+1. `sheet + section + label`
+2. `sheet + label`
+3. `sheet + row-content hash`
+4. `sheet + row index`
+
+On reconcile, matching tries tiers in order. Unresolved entries are kept and
+flagged as `orphan`, so they can auto-recover if rows reappear later.
+
+By default, `sheet + row` fallback is disabled for safety (to avoid attaching
+progress to the wrong row after workbook reordering). You can opt into
+aggressive recovery by setting:
 
 ```powershell
-python scripts/prep_xlsx_to_sqlite.py --xlsx .\Spreadsheet\your_workbook.xlsx --db .\data\ffxiv_tracker.sqlite
+$env:FFXIV_PROGRESS_ALLOW_POSITION_FALLBACK = "1"
 ```
 
-### 5) Run the web app
+## Chain Behavior
+
+Module: `app/db.py`
+
+- Regular toggle cycle: `todo -> done -> excluded -> todo`
+- For chain rows:
+  - `todo -> done` cascades backward (completes prerequisites)
+  - changing a `done` chain step away from done cascades forward
+    (reverts done successors to todo)
+- Chain drawer (`⛓`) shows prerequisites, unlocks, blocked status, and supports
+  "complete this and all earlier steps".
+
+## Starting Class Overlays
+
+- Character starting class is optional and set in `Characters` page.
+- When set, effective row state becomes:
+  `character override -> class override -> workbook baseline`.
+- Changing class clears cached rollups and reseeds them on next read.
+
+## Run and Health
 
 ```powershell
 uvicorn app.main:app --reload
 ```
 
-Open <http://127.0.0.1:8000>.
+Useful endpoint:
 
-### 6) Typical update workflow
+- `GET /health` -> `{"status":"ok"}`
 
-1. Replace or add a newer workbook in `Spreadsheet/`.
-2. Re-run the importer.
-3. Refresh the running app.
+## HTTP Surface
 
-## Quick Start
+Main pages:
 
-Quick start:
+- `GET /` dashboard
+- `GET /browse/{sheet_name}` menu/content browser
+- `GET /chains` chains overview
+- `GET /characters` character management
 
-```powershell
-pip install -r requirements.txt
-python scripts/prep_xlsx_to_sqlite.py
-uvicorn app.main:app --reload
-```
+HTMX/API actions:
 
-## Ingest the workbook
+- `POST /api/toggle`
+- `POST /api/set-value`
+- `POST /api/toggle-excluded`
+- `POST /api/set-state`
+- `POST /api/complete-chain`
+- `GET /api/chain/{sheet_name}/{row_index}`
+- `GET /api/progress-header`
+- `GET /api/search`
 
-```powershell
-python scripts/prep_xlsx_to_sqlite.py
-```
+Export:
 
-This reads the newest `*.xlsx` in `Spreadsheet/` by default (or pass `--xlsx <path>`) and
-rebuilds `data/ffxiv_tracker.sqlite`. The workbook structure is the source of
-truth — the importer captures:
+- `GET /export/current.csv`
 
-- **Hierarchy** — every content sheet's "Main Page" hyperlink names its parent
-  menu, so the full navigation tree is reconstructed.
-- **Sections** — purple banner rows split each sheet into sections.
-- **Chains** — rows are sequenced within their section, producing linear
-  prerequisite edges; "Unlocks" columns become explicit cross-reference edges.
-- **State** — the `Complete?` column's `Y` / `N` / `X` map to done / todo /
-  excluded. Excluded rows drop out of the completion denominator.
-
-Re-running ingestion preserves existing character progress.
-
-### Reimporting without deleting the database
-
-If you don't delete the old database before reimporting:
-
-1. Your **characters are preserved** with their names and creation dates intact.
-2. Your **progress is migrated** to the new sheet structure — but only if row positions haven't changed.
-
-**⚠️ Important caveat:** Progress is tied to `(sheet_name, row_index)` coordinates. If you add, remove, or reorder rows in the workbook, your progress may attach to wrong items or cause constraint errors.
-
-**Safe to reimport if:**
-- Only updating completion status values in the spreadsheet (no structural changes).
-
-**Delete the database and reimport if:**
-- Adding or removing content sections.
-- Reordering rows within sheets.
-- Making significant layout changes.
-
-## Run
-
-```powershell
-uvicorn app.main:app --reload
-```
-
-Open <http://127.0.0.1:8000>.
-
-## Features
-
-- **Tree navigation** — collapsible sidebar mirroring the workbook's menu
-  hierarchy, with per-node progress and breadcrumbs.
-- **Category grid** — menu pages show child cards with aggregated progress.
-- **Live data tables** — click a row's status to cycle To Do → Done →
-  Excluded; progress bars update in place (HTMX, no page reload).
-- **Prerequisite chains** — each row's ⛓ opens a drawer showing the steps that
-  come before it and what it leads to; "Complete this & all earlier steps"
-  cascades the whole chain.
-- **Per-character progress** — independent completion state per character.
-- **Search** — instant search across every tracked item.
-- **CSV export** — `GET /export/current.csv`.
-
-## Layout
+## Project Structure
 
 ```
 app/
-  main.py            FastAPI routes + HTMX partial endpoints
-  db.py              data layer: nav tree, rollups, chains, progress
-  templates/         Jinja2 (base, dashboard, menu, sheet, chains, characters)
-    partials/        HTMX fragments (row, chain panel, progress header, search)
-  static/            styles.css + vendored htmx / alpine
+  main.py                  FastAPI routes + app lifespan reconcile
+  db.py                    data layer, state transitions, rollups, chains
+  progress_io.py           sidecar JSON persistence + reconciliation
+  templates/
+    base.html
+    dashboard.html
+    menu.html
+    sheet.html
+    chains.html
+    characters.html
+    partials/
+      row.html
+      chain_panel.html
+      progress_header.html
+      search_results.html
+  static/
+    styles.css
+    vendor/
+      htmx.min.js
+      alpine.min.js
+      alpine-collapse.min.js
+
 scripts/
-  prep_xlsx_to_sqlite.py   workbook -> SQLite ingest
+  prep_xlsx_to_sqlite.py   workbook ingest
+  crawl_quest_wiki.py      optional wiki crawler / parser / chain graph builder
+
 data/
-  ffxiv_tracker.sqlite     generated database
+  ffxiv_tracker.sqlite
+  progress/
+    <CharacterName>.json
+
+GameDataReferences/
+  quests.jsonl
+  chains.json
+  categories.json
+  cache/
 ```
 
-## Schema
+## Database Schema (High Level)
 
-- `ingest_runs` — ingest metadata.
-- `sheets` — sheet metadata: title, `is_menu`, `parent_sheet`, data columns.
-- `nodes` — one row per workbook row: label, baseline state, row type,
-  section, sequence position.
-- `edges` — `sequence` (within-section prerequisites) and `unlocks` (explicit
-  cross-references).
-- `class_overrides` — class-conditional row state overlays derived from workbook formulas.
-- `progress_rollup` — cached per-sheet done/excluded/total counters per character.
-- `characters`, `character_progress` — per-character state overrides.
+- `ingest_runs`: ingest metadata per run
+- `sheets`: sheet metadata, parent linkage, menu section grouping
+- `nodes`: normalized rows with baseline state and stable hash
+- `edges`: `sequence` and `unlocks` relationships
+- `class_overrides`: class-dependent state overrides from formulas
+- `characters`: character identities
+- `character_progress`: per-character row overrides for current run
+- `progress_rollup`: cached per-sheet counts (done/excluded/total)
+
+## Optional: Wiki Crawler Tooling
+
+Script: `scripts/crawl_quest_wiki.py`
+
+Capabilities:
+
+- crawl full wiki (`--mode allpages`) or BFS from seed (`--mode bfs`)
+- cache HTML pages under `GameDataReferences/cache/`
+- parse quest-like pages into `GameDataReferences/quests.jsonl`
+- resolve quest links into `GameDataReferences/chains.json`
+- interactive menu mode on bare invocation (`python scripts/crawl_quest_wiki.py`)
+- category discovery and targeted crawl control via `categories.json`
+
+Examples:
+
+```powershell
+# interactive menu
+python scripts/crawl_quest_wiki.py
+
+# full-site crawl mode
+python scripts/crawl_quest_wiki.py --mode allpages --delay 1.2
+
+# parse existing cache only
+python scripts/crawl_quest_wiki.py --parse-only
+
+# rebuild graph only
+python scripts/crawl_quest_wiki.py --build-graph-only
+```
+
+## Troubleshooting
+
+### "No ingest run found" (HTTP 503)
+
+Run ingest at least once:
+
+```powershell
+python scripts/prep_xlsx_to_sqlite.py
+```
+
+### Workbook not found
+
+- Ensure `Spreadsheet/` exists in project root.
+- Ensure at least one `.xlsx` file is present.
+- Or pass `--xlsx <path>` explicitly.
+
+### Character progress appears missing after rebuild
+
+- Check `data/progress/` sidecars exist.
+- On app start, sidecars are reconciled into DB for latest run.
+- If rows changed heavily, some entries may be marked orphan until a future
+  workbook version reintroduces matching identities.
+- For one-off aggressive recovery attempts, you can temporarily enable row
+  fallback with `FFXIV_PROGRESS_ALLOW_POSITION_FALLBACK=1` before starting the
+  app.
