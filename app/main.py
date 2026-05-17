@@ -880,6 +880,15 @@ def character_import_unmatched_json(run_id: str):
     return JSONResponse(doc)
 
 
+@app.get("/credits", response_class=HTMLResponse)
+def credits_page(request: Request):
+    ctx = Ctx(request)
+    try:
+        return ctx.render("credits.html", {"active_sheet": None})
+    finally:
+        ctx.close()
+
+
 @app.get("/lodestone-probe", response_class=HTMLResponse)
 def lodestone_probe_page(
     request: Request,

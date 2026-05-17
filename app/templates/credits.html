@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Credits · FFXIV Tracker{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Credits & Acknowledgements</h1>
+    <p class="page-sub">
+      This tracker exists because of the work of a lot of other people. Here are some of them.
+    </p>
+  </div>
+</div>
+
+<section class="probe-card">
+  <h2>Huge thanks to Brielle and the FFXIV Completionist community</h2>
+  <p>
+    The Completion Checklist workbook this app reads from is authored and maintained by
+    <strong>Brielle</strong>. The checklist itself, the menu structure, the chain
+    relationships, and every refresh between game patches are the result of their ongoing
+    work and of the broader FFXIV Completionist community keeping the data accurate.
+  </p>
+  <p>
+    The latest workbook is hosted in the community Discord. If you're using this app you
+    probably want to be there for workbook updates, discussion, and questions.
+  </p>
+  <p>
+    <a class="btn-primary"
+       href="https://discord.gg/S456xWWVyd"
+       target="_blank"
+       rel="noopener noreferrer">
+      Join the FFXIV Completionist Discord
+    </a>
+  </p>
+</section>
+
+<section class="probe-card">
+  <h2>Web app</h2>
+  <p>
+    This browser tracker was built by <strong>JEschete</strong> on GitHub
+    (<strong>EshyJ</strong> on Discord, <strong>SgtElectroSketch</strong> on Reddit).
+  </p>
+  <p>
+    It's a thin layer over Brielle's workbook: the spreadsheet is ingested into SQLite for
+    fast reads, per-character progress is persisted to JSON sidecars, and the UI provides
+    chain-aware browsing plus an optional Lodestone import path. It is not a replacement
+    for the workbook — it just makes interacting with it faster.
+  </p>
+  <p>
+    <a class="btn-mini"
+       href="https://github.com/JEschete/FFXIV_Completionist_Browser_App"
+       target="_blank"
+       rel="noopener noreferrer">
+      Source on GitHub
+    </a>
+  </p>
+</section>
+{% endblock %}
