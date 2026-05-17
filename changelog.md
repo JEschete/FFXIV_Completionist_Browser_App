@@ -23,6 +23,7 @@ Initial public release.
 - Topbar quick-links: Overview, Chains, Characters, Lodestone Probe, Export CSV
 - Sidebar toggle button with high-contrast label and focus ring for accessibility
 - Breadcrumb row only renders when actual breadcrumbs exist
+- Added character portrait in top left when doing a lodestone import. 
 
 ### Launcher
 - `launch.cmd` bootstraps a `.venv`, installs dependencies, and hands off to an interactive menu
