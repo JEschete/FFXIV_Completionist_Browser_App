@@ -54,8 +54,26 @@ Spreadsheet/~$*.xlsx
 Thumbs.db
 .claude
 
-# Local Cache of Wiki
-GameDataReferences/
+# Scraper/browser runtime artifacts
+CharacterScraping/.lodestone-browser-profile/
+CharacterScraping/__pycache__/
+CharacterScraping/*.sqlite
+CharacterScraping/*.sqlite-shm
+CharacterScraping/*.sqlite-wal
+CharacterScraping/ExampleHTMLs/
+
+# Local cache of wiki pages (keep curated references trackable)
+GameDataReferences/cache/
+# Wiki crawler scratch / resume state
+GameDataReferences/_*
+# Raw HTML captures from manual scrapes
+GameDataReferences/*.html
 
 # Per-character progress sidecars — user data, never committed
 data/progress/
+
+# Lodestone probe outputs and diagnostics
+data/lodestone_probe/logs/
+data/lodestone_probe/import_logs/
+data/lodestone_probe/unmatched/
+data/lodestone_probe/*_auth_*.json

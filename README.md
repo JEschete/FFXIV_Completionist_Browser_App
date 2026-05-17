@@ -16,17 +16,23 @@ rebuilds and row movement.
 - Tracks independent progress per character.
 - Applies optional starting-class overlays for class-specific exclusions.
 - Exports the active character's current effective state as CSV.
+- Scrapes authenticated Lodestone data for a character and imports it back into
+  the workbook, marking matched rows done (quests, achievements, minions,
+  mounts, Triple Triad cards, blue magic, emotes, orchestrion rolls).
 
 ## Requirements
 
 - Python 3.10+
 - A workbook (`.xlsx`) in the `Spreadsheet/` folder
+- For Lodestone import: a signed-in Lodestone session in Edge, Chrome, or
+  Firefox on the same machine (cookies are read locally)
 
 Dependencies are listed in `requirements.txt`:
 
 - `fastapi`, `uvicorn`, `jinja2`, `python-multipart`
 - `openpyxl` (ingest)
 - `httpx`, `beautifulsoup4` (wiki crawler)
+- `requests`, `browser-cookie3` (Lodestone probe / authenticated scrape)
 
 ## Quick Start
 
@@ -140,6 +146,47 @@ Module: `app/db.py`
   `character override -> class override -> workbook baseline`.
 - Changing class clears cached rollups and reseeds them on next read.
 
+## Lodestone Probe & Import
+
+The app can scrape a character's authenticated Lodestone pages and replay the
+results into the workbook as completed rows. Two pages drive the workflow:
+
+- `GET /lodestone-probe` — saves the character's Lodestone URL, runs an
+  authenticated scrape in a background thread, and writes a payload JSON to
+  `data/lodestone_probe/`.
+- `GET /characters` — upload or select a payload, pick a character, and start
+  an import. Matched rows are flipped to `done` (or `100%` for value-style
+  rows); unmatched items are written to an HTML / JSON report.
+
+### Workflow
+
+1. Open `/lodestone-probe` and save your Lodestone character URL.
+2. Click **Open in new tab** and sign in to Lodestone in your chosen browser
+   (Edge / Chrome / Firefox). The cookie source must match.
+3. Back on the probe page, pick the cookie source browser, leave **Include
+   standard authenticated pages** checked, and click **Run authenticated
+   scrape**. A status panel polls `/lodestone-probe/status` until the run
+   reports `completed` and a payload path.
+4. Go to `/characters`, choose the target character, then either upload the
+   payload JSON or select it from the server-side dropdown
+   (`data/lodestone_probe/*.json`).
+5. Optionally tick **Clear existing character progress before import** to start
+   from a blank slate. Click **Start import**.
+6. The Import monitor polls `/characters/import-status`. When complete, an
+   **Open unmatched items** link surfaces anything the matcher could not place
+   so you can review or refile manually.
+
+### Matching notes
+
+- Matching is alias-aware: it handles Roman/Arabic numeral suffixes, optional
+  "Card" / "Orchestrion Roll" suffixes, `&` vs `and`, and Lodestone's category
+  wrappers (e.g. `Abalathian Sidequests (A Cropper's Duty)`).
+- Lodestone exposes built-in/default emotes that are not tracked in the
+  workbook — those are silently skipped rather than being reported as
+  unmatched.
+- An "already done" row is not toggled again; the import summary reports it
+  under `rows_skipped_already_done`.
+
 ## Run and Health
 
 ```powershell
@@ -150,6 +197,55 @@ Useful endpoint:
 
 - `GET /health` -> `{"status":"ok"}`
 
+### Exposing the app on your LAN
+
+By default the app binds to `127.0.0.1`, which only accepts connections from
+the host machine. To make it reachable from other devices on the same network
+(phones, tablets, other PCs), bind to all interfaces.
+
+**Simplest — pass the host on the command line (no code changes):**
+
+```powershell
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Then on another device on the same Wi-Fi / LAN, open
+`http://<your-pc-lan-ip>:8000` (e.g. `http://192.168.1.42:8000`). On Windows
+you can find the LAN IP with `ipconfig` — use the IPv4 address of your active
+adapter.
+
+**Alternative — edit `app/main.py`:**
+
+The `__main__` block at the bottom of [app/main.py](app/main.py) hardcodes
+the host so that running `python -m app.main` (or pressing the IDE's Run
+button) uses a known address:
+
+```python
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
+```
+
+Change `host="127.0.0.1"` to either `"0.0.0.0"` (all interfaces) or your
+specific LAN IP (`"192.168.1.42"`) and re-run. Binding to a specific LAN IP
+limits exposure to that interface, which is useful when you have multiple
+adapters (e.g. a VPN you don't want to publish over).
+
+**Firewall:** the first time you bind to a non-loopback address, Windows
+Defender Firewall will prompt to allow Python through — accept it for
+**Private** networks only. If you missed the prompt and the page won't load
+from another device, allow `python.exe` (or open TCP 8000) under
+Windows Security → Firewall & network protection → Allow an app through
+firewall.
+
+**Security note:** the app has no authentication. Only do this on networks
+you trust, and don't forward the port to the internet.
+
+> Heads up: the bind host should eventually live in an env var / config file
+> (e.g. `FFXIV_HOST`) rather than being hardcoded in `app/main.py`. Until
+> that's wired up, prefer the `uvicorn --host` flag above so you don't have
+> to keep editing source.
+
 ## HTTP Surface
 
 Main pages:
@@ -157,7 +253,8 @@ Main pages:
 - `GET /` dashboard
 - `GET /browse/{sheet_name}` menu/content browser
 - `GET /chains` chains overview
-- `GET /characters` character management
+- `GET /characters` character management + Lodestone import UI
+- `GET /lodestone-probe` Lodestone authenticated scrape UI
 
 HTMX/API actions:
 
@@ -170,6 +267,26 @@ HTMX/API actions:
 - `GET /api/progress-header`
 - `GET /api/search`
 
+Character management:
+
+- `POST /characters/create`
+- `POST /characters/select`
+- `POST /characters/set-class`
+- `POST /characters/delete`
+
+Lodestone scrape (background job):
+
+- `POST /lodestone-probe/save` save Lodestone URL cookie
+- `POST /lodestone-probe/run` start authenticated scrape
+- `GET /lodestone-probe/status?run_id=...` poll JSON status / log tail
+
+Lodestone import (background job):
+
+- `POST /characters/import-lodestone` upload payload or select server file
+- `GET /characters/import-status?run_id=...` poll JSON status / log tail
+- `GET /characters/import-unmatched?run_id=...` HTML report of unmatched items
+- `GET /characters/import-unmatched.json?run_id=...` same data as JSON
+
 Export:
 
 - `GET /export/current.csv`
@@ -181,6 +298,7 @@ app/
   main.py                  FastAPI routes + app lifespan reconcile
   db.py                    data layer, state transitions, rollups, chains
   progress_io.py           sidecar JSON persistence + reconciliation
+  lodestone_import.py      Lodestone payload -> workbook row matcher/applier
   templates/
     base.html
     dashboard.html
@@ -188,6 +306,7 @@ app/
     sheet.html
     chains.html
     characters.html
+    lodestone_probe.html
     partials/
       row.html
       chain_panel.html
@@ -200,6 +319,9 @@ app/
       alpine.min.js
       alpine-collapse.min.js
 
+CharacterScraping/
+  lodestone_probe.py       authenticated Lodestone scraper used by /lodestone-probe
+
 scripts/
   prep_xlsx_to_sqlite.py   workbook ingest
   crawl_quest_wiki.py      optional wiki crawler / parser / chain graph builder
@@ -208,6 +330,12 @@ data/
   ffxiv_tracker.sqlite
   progress/
     <CharacterName>.json
+  lodestone_probe/
+    <timestamp>_*.json     saved Lodestone payloads
+    logs/                  probe run logs
+    import_logs/           import run logs
+    import_uploads/        payloads uploaded via the Characters page
+    unmatched/             unmatched-item reports per import run
 
 GameDataReferences/
   quests.jsonl
@@ -281,3 +409,27 @@ python scripts/prep_xlsx_to_sqlite.py
 - For one-off aggressive recovery attempts, you can temporarily enable row
   fallback with `FFXIV_PROGRESS_ALLOW_POSITION_FALLBACK=1` before starting the
   app.
+
+### Lodestone scrape fails to authenticate
+
+- Confirm you are signed into Lodestone in the same browser you selected as
+  the cookie source (Edge / Chrome / Firefox).
+- Cookies are read from your installed browser profile via `browser-cookie3`;
+  closing the browser is not required, but a recent sign-in is.
+- The probe rejects URLs that do not live under `finalfantasyxiv.com/lodestone/`.
+
+### Lodestone import shows many unmatched items
+
+- Open the **Unmatched items** link from the import monitor — each row lists
+  the bucket, the aliases that were tried, and a reason
+  (`not_found_in_workbook`, `mapped_to_other_bucket`,
+  `quest_wrapper_unresolved`, `label_variant_card_suffix`).
+- Default emotes that ship with the game are intentionally skipped (they are
+  not represented in the workbook) and will not appear in the report.
+
+### UI notes
+
+- The sidebar can be hidden via the "Hide Menu" / "Show Menu" button on the
+  topbar. On screens below 880px it becomes a slide-in drawer with a tappable
+  backdrop; it defaults to collapsed on mobile so the content area fills the
+  viewport.

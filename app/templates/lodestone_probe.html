@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}Lodestone Probe · FFXIV Tracker{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Lodestone Probe</h1>
+    <p class="page-sub">
+      Save your Lodestone link and open it in a new tab to sign in before running authenticated scraping steps.
+    </p>
+  </div>
+</div>
+
+{% if error %}<div class="error-banner">{{ error }}</div>{% endif %}
+{% if saved %}<div class="ok-banner">Saved authenticated scrape to {{ saved }}</div>{% endif %}
+{% if run and run.status == 'completed' and run.saved_path %}
+<div class="ok-banner">Saved authenticated scrape to {{ run.saved_path }}</div>
+{% endif %}
+
+<section class="probe-card">
+  <form method="post" action="/lodestone-probe/save" class="probe-form">
+    <label for="lodestone-url">Lodestone page URL</label>
+    <input
+      id="lodestone-url"
+      type="url"
+      name="lodestone_url"
+      placeholder="https://na.finalfantasyxiv.com/lodestone/character/..."
+      value="{{ lodestone_url }}"
+      required
+    />
+    <div class="probe-actions">
+      <button type="submit" class="btn-primary">Save URL</button>
+      {% if lodestone_url %}
+      <a
+        class="btn-mini probe-open-link"
+        href="{{ lodestone_url }}"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Open in new tab
+      </a>
+      {% else %}
+      <span class="probe-hint">Save a URL first to enable opening.</span>
+      {% endif %}
+    </div>
+  </form>
+
+  <form method="post" action="/lodestone-probe/run" class="probe-run-form">
+    <h2>Authenticated scrape</h2>
+    <p class="page-sub">
+      Uses cookies from your selected browser. Log into Lodestone there first, then run.
+    </p>
+
+    <label for="run-lodestone-url">Lodestone page URL</label>
+    <input
+      id="run-lodestone-url"
+      type="url"
+      name="lodestone_url"
+      placeholder="https://na.finalfantasyxiv.com/lodestone/character/..."
+      value="{{ lodestone_url }}"
+      required
+    />
+
+    <label for="cookie-source">Cookie source browser</label>
+    <select id="cookie-source" name="cookie_source">
+      <option value="edge" {{ 'selected' if cookie_source == 'edge' }}>Edge</option>
+      <option value="chrome" {{ 'selected' if cookie_source == 'chrome' }}>Chrome</option>
+      <option value="firefox" {{ 'selected' if cookie_source == 'firefox' }}>Firefox</option>
+    </select>
+
+    <label class="probe-check">
+      <input
+        type="checkbox"
+        name="include_standard"
+        value="1"
+        {{ 'checked' if include_standard }}
+      />
+      Include standard authenticated pages (following, blog, events, emotes, currency, quests, and more)
+    </label>
+
+    <label for="extra-paths">Extra Lodestone subpaths (optional)</label>
+    <textarea
+      id="extra-paths"
+      name="extra_paths"
+      rows="3"
+      placeholder="retainer\ncollection"
+    ></textarea>
+
+    <button type="submit" class="btn-primary">Run authenticated scrape</button>
+  </form>
+
+  <div class="probe-note">
+    <h2>How to use it</h2>
+    <ol>
+      <li>Paste and save your Lodestone character URL.</li>
+      <li>Click <strong>Open in new tab</strong>.</li>
+      <li>Sign in to Lodestone in the browser you chose as the cookie source.</li>
+      <li>Return here and click <strong>Run authenticated scrape</strong>.</li>
+    </ol>
+  </div>
+
+  {% if run_id %}
+  <div class="probe-monitor" data-run-id="{{ run_id }}">
+    <h2>Run monitor</h2>
+    <p class="page-sub">Track progress and errors while the scrape runs.</p>
+    <div class="probe-monitor-meta">
+      <span>Status:</span>
+      <strong id="probe-run-status">{{ run.status if run else 'unknown' }}</strong>
+    </div>
+    <pre id="probe-run-log" class="probe-log">{% if run and run.logs %}{{ '\n'.join(run.logs[-120:]) }}{% else %}Waiting for job output...{% endif %}</pre>
+  </div>
+  {% endif %}
+</section>
+
+{% if run_id %}
+<script>
+(() => {
+  const monitor = document.querySelector('.probe-monitor[data-run-id]');
+  if (!monitor) return;
+  const runId = monitor.getAttribute('data-run-id');
+  const statusEl = document.getElementById('probe-run-status');
+  const logEl = document.getElementById('probe-run-log');
+  let timer = null;
+
+  const stopStates = new Set(['completed', 'failed']);
+
+  const poll = async () => {
+    try {
+      const response = await fetch(`/lodestone-probe/status?run_id=${encodeURIComponent(runId)}`, {
+        headers: { 'Accept': 'application/json' },
+        cache: 'no-store'
+      });
+      if (!response.ok) {
+        statusEl.textContent = 'error';
+        logEl.textContent += `\n[monitor] Failed to fetch status (${response.status})`;
+        clearInterval(timer);
+        return;
+      }
+
+      const data = await response.json();
+      statusEl.textContent = data.status || 'unknown';
+      if (data.log_tail) {
+        logEl.textContent = data.log_tail;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+      if (data.saved_path && data.status === 'completed') {
+        if (!logEl.textContent.includes('Saved output')) {
+          logEl.textContent += `\n[done] Saved output: ${data.saved_path}`;
+        }
+      }
+      if (data.error && data.status === 'failed') {
+        if (!logEl.textContent.includes('[error]')) {
+          logEl.textContent += `\n[error] ${data.error}`;
+        }
+      }
+      if (stopStates.has(data.status)) {
+        clearInterval(timer);
+      }
+    } catch (err) {
+      statusEl.textContent = 'error';
+      logEl.textContent += `\n[monitor] ${String(err)}`;
+      clearInterval(timer);
+    }
+  };
+
+  timer = setInterval(poll, 1200);
+  poll();
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -4,16 +4,24 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{% block title %}FFXIV Completion Tracker{% endblock %}</title>
-  <link rel="stylesheet" href="/static/styles.css?v=8" />
+  <link rel="stylesheet" href="/static/styles.css?v=11" />
   <script src="/static/vendor/htmx.min.js" defer></script>
   <script src="/static/vendor/alpine-collapse.min.js" defer></script>
   <script src="/static/vendor/alpine.min.js" defer></script>
 </head>
 <body hx-headers='{"X-Requested-With": "htmx"}'>
 {% from "macros.html" import tree_node, progress_bar %}
-<div class="layout">
+<div class="layout"
+     x-data="{ sidebarCollapsed: window.innerWidth < 880 }"
+     :class="sidebarCollapsed ? 'sidebar-collapsed' : ''">
 
-  <aside class="sidebar">
+  <div class="sidebar-backdrop"
+       x-show="!sidebarCollapsed"
+       @click="sidebarCollapsed = true"
+       x-transition.opacity
+       x-cloak></div>
+
+  <aside class="sidebar" id="sidebar-nav">
     <a class="brand" href="/">
       <span class="brand-mark">XIV</span>
       <span class="brand-text">
@@ -41,43 +49,66 @@
       </ul>
     </nav>
 
-    <div class="sidebar-foot">
-      <a href="/chains" class="foot-link {{ 'active' if request.url.path == '/chains' }}">⛓ Chains</a>
-      <a href="/characters" class="foot-link {{ 'active' if request.url.path == '/characters' }}">⚔ Characters</a>
-      <a href="/export/current.csv" class="foot-link">↓ Export CSV</a>
-    </div>
   </aside>
 
   <div class="main">
-    <header class="topbar">
-      <nav class="crumbs">
-        <a href="/">Overview</a>
-        {% for c in crumbs|default([]) %}
-          <span class="crumb-sep">›</span>
-          {% if loop.last %}
-            <span class="crumb-current">{{ c.title }}</span>
-          {% else %}
-            <a href="/browse/{{ c.sheet_name|urlencode }}">{{ c.title }}</a>
-          {% endif %}
-        {% endfor %}
-      </nav>
+    <div class="sticky-header">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="sidebar-toggle"
+                  type="button"
+                  @click="sidebarCollapsed = !sidebarCollapsed"
+                  :aria-expanded="(!sidebarCollapsed).toString()"
+                  aria-controls="sidebar-nav"
+                  :aria-label="sidebarCollapsed ? 'Show menu' : 'Hide menu'"
+                  title="Toggle menu">
+            <span class="sidebar-toggle-icon" x-show="!sidebarCollapsed" x-cloak>◂</span>
+            <span class="sidebar-toggle-icon" x-show="sidebarCollapsed" x-cloak>▸</span>
+            <span class="sidebar-toggle-text" x-show="!sidebarCollapsed" x-cloak>Hide Menu</span>
+            <span class="sidebar-toggle-text" x-show="sidebarCollapsed" x-cloak>Show Menu</span>
+          </button>
 
-      <form class="char-switch" method="post" action="/characters/select">
-        <input type="hidden" name="next_url"
-               value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" />
-        <select name="character_id" onchange="this.form.submit()">
-          {% for c in characters %}
-          <option value="{{ c.id }}" {{ 'selected' if c.id == character.id }}>{{ c.name }}</option>
+          {% if crumbs %}
+          <nav class="crumbs">
+          {% for c in crumbs %}
+            {% if not loop.first %}<span class="crumb-sep">›</span>{% endif %}
+            {% if loop.last %}
+              <span class="crumb-current">{{ c.title }}</span>
+            {% else %}
+              <a href="/browse/{{ c.sheet_name|urlencode }}">{{ c.title }}</a>
+            {% endif %}
           {% endfor %}
-        </select>
-      </form>
-    </header>
+          </nav>
+          {% endif %}
+        </div>
 
-    <div id="progress-header"
-         hx-get="/api/progress-header?sheet_name={{ active_sheet|default('')|urlencode }}"
-         hx-trigger="progress-changed from:body, chain-completed from:body"
-         hx-swap="innerHTML">
-      {% include "partials/progress_header.html" with context %}
+        <div class="topbar-actions">
+          <form class="char-switch" method="post" action="/characters/select">
+            <input type="hidden" name="next_url"
+                   value="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" />
+            <select name="character_id" onchange="this.form.submit()">
+              {% for c in characters %}
+              <option value="{{ c.id }}" {{ 'selected' if c.id == character.id }}>{{ c.name }}</option>
+              {% endfor %}
+            </select>
+          </form>
+
+          <nav class="quick-links" aria-label="Quick links">
+            <a href="/" class="quick-link {{ 'active' if request.url.path == '/' }}">Overview</a>
+            <a href="/chains" class="quick-link {{ 'active' if request.url.path == '/chains' }}">Chains</a>
+            <a href="/characters" class="quick-link {{ 'active' if request.url.path == '/characters' }}">Characters</a>
+            <a href="/lodestone-probe" class="quick-link {{ 'active' if request.url.path == '/lodestone-probe' }}">Lodestone Probe</a>
+            <a href="/export/current.csv" class="quick-link quick-link-export">Export CSV</a>
+          </nav>
+        </div>
+      </header>
+
+      <div id="progress-header"
+           hx-get="/api/progress-header?sheet_name={{ active_sheet|default('')|urlencode }}"
+           hx-trigger="progress-changed from:body, chain-completed from:body"
+           hx-swap="innerHTML">
+        {% include "partials/progress_header.html" with context %}
+      </div>
     </div>
 
     <main class="content">
