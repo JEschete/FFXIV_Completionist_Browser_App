@@ -7,12 +7,32 @@ import re
 import sqlite3
 import traceback
 import unicodedata
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 from collections import Counter
 
 from app import db, progress_io
+
+_STATIC_AVATARS = Path(__file__).parent / "static" / "avatars"
+
+
+def _save_avatar(payload: dict[str, Any], character_id: int, log: Callable[[str], None]) -> None:
+    avatar_url = (payload.get("profile") or {}).get("images", {}).get("avatar")
+    if not avatar_url:
+        return
+    dest = _STATIC_AVATARS / f"{character_id}.jpg"
+    if dest.exists():
+        return
+    try:
+        _STATIC_AVATARS.mkdir(parents=True, exist_ok=True)
+        req = urllib.request.Request(avatar_url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            dest.write_bytes(resp.read())
+        log(f"Avatar saved for character {character_id}")
+    except Exception as exc:
+        log(f"Avatar download skipped: {exc}")
 
 
 _COMMON_CONFUSABLES = str.maketrans({
@@ -538,6 +558,7 @@ def import_lodestone_payload(
 
     log(f"Loading payload: {payload_path}")
     payload = load_payload(payload_path)
+    _save_avatar(payload, character_id, log)
     candidates = collect_candidates(payload)
     total_candidates = sum(len(v) for v in candidates.values())
     log(
