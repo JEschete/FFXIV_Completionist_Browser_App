@@ -36,6 +36,15 @@ Dependencies are listed in `requirements.txt`:
 
 ## Quick Start
 
+> **Easiest path (Windows):** double-click `launch.cmd` at the repo root. On
+> first run it creates `.venv\`, installs `requirements.txt`, then opens an
+> interactive text menu (status, ingest, backup, set bind IP, start server,
+> jump to the FFXIV Completionist Discord, etc.). The "Start server" item
+> spawns uvicorn in a new console window so the menu stays usable. See
+> [launch.cmd](launch.cmd) and [launch.py](launch.py).
+
+Manual setup:
+
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -255,6 +264,7 @@ Main pages:
 - `GET /chains` chains overview
 - `GET /characters` character management + Lodestone import UI
 - `GET /lodestone-probe` Lodestone authenticated scrape UI
+- `GET /credits` credits & acknowledgements
 
 HTMX/API actions:
 
@@ -433,3 +443,36 @@ python scripts/prep_xlsx_to_sqlite.py
   topbar. On screens below 880px it becomes a slide-in drawer with a tappable
   backdrop; it defaults to collapsed on mobile so the content area fills the
   viewport.
+
+## Credits & Acknowledgements
+
+This tracker exists because of the work of a lot of other people. Here are
+some of them. (An in-app version of this page lives at `/credits`, reachable
+from the topbar's **Credits** quick link.)
+
+### Huge thanks to Brielle and the FFXIV Completionist community
+
+The Completion Checklist workbook this app reads from is authored and
+maintained by **Brielle**. The checklist itself, the menu structure, the
+chain relationships, and every refresh between game patches are the result
+of their ongoing work and of the broader FFXIV Completionist community
+keeping the data accurate.
+
+The latest workbook is hosted in the community Discord. If you're using
+this app you probably want to be there for workbook updates, discussion,
+and questions:
+
+**[Join the FFXIV Completionist Discord](https://discord.gg/S456xWWVyd)**
+
+### Web app
+
+This browser tracker was built by **JEschete** on GitHub
+(**EshyJ** on Discord, **SgtElectroSketch** on Reddit).
+
+It's a thin layer over Brielle's workbook: the spreadsheet is ingested into
+SQLite for fast reads, per-character progress is persisted to JSON sidecars,
+and the UI provides chain-aware browsing plus an optional Lodestone import
+path. It is not a replacement for the workbook — it just makes interacting
+with it faster.
+
+Source: [github.com/JEschete/FFXIV_Completionist_Browser_App](https://github.com/JEschete/FFXIV_Completionist_Browser_App)

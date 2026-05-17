@@ -32,6 +32,10 @@ dist/
 .env
 .env.*
 *.local
+.launch.json
+
+# Local launcher backups
+backups/
 
 # Runtime logs / pid files
 *.log
