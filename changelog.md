@@ -1,95 +1,34 @@
 # Changelog
 
-## Unreleased — UI / Navigation Pass
+## v1.0.0 — 2026-05-17
 
-Date: 2026-05-17
+Initial public release.
 
-### Sidebar Toggle
-- Replaced the small icon-only toggle with a labeled high-contrast button ("Show Menu" / "Hide Menu") with an accent gradient, hover glow, active-press feedback, and focus ring.
+### Core Features
+- FastAPI + HTMX + Alpine web app serving a local completionist tracker
+- Workbook ingest: reads the official `.xlsx` checklist into SQLite for fast queries
+- Per-character progress tracking with JSON sidecar files that survive workbook rebuilds and row movement
+- Chain-aware progression with prerequisite and unlock links
+- Class overlay support for class-specific row exclusions
+- CSV export of the active character's effective completion state
 
-### Topbar Navigation
-- Moved the "Overview" link out of the breadcrumb row and into the `.quick-links` group alongside Chains / Characters / Lodestone Probe / Export CSV. Active state lights up when the path is `/`.
-- Crumbs nav now only renders when there are actual breadcrumbs (no more redundant "Overview ›" prefix on every page).
+### Lodestone Import
+- Authenticated Lodestone scraper reads quests, achievements, minions, mounts, Triple Triad cards, Blue Magic, emotes, and orchestrion rolls from a signed-in browser session (Edge, Chrome, or Firefox)
+- Tiered identity matching (name → alias → position fallback) for resilient row matching across workbook rebuilds
+- Unmatched item reports generated per import run for manual review
 
-### Mobile Sidebar
-- Sidebar now works on mobile (≤880px) as a slide-in drawer instead of being hidden entirely.
-- Default collapsed state is set from `window.innerWidth < 880` on page load.
-- Added a tappable backdrop (`.sidebar-backdrop`) that dims the page and closes the drawer on click.
-- Sidebar uses `position: fixed` + `transform: translateX(...)` for the slide animation; toggle button stays visible on mobile so the drawer can be reopened.
+### UI
+- Sidebar tree mirroring the workbook hierarchy with aggregated progress per section
+- Mobile sidebar works as a slide-in drawer on screens ≤880px with a tappable backdrop to dismiss
+- Topbar quick-links: Overview, Chains, Characters, Lodestone Probe, Export CSV
+- Sidebar toggle button with high-contrast label and focus ring for accessibility
+- Breadcrumb row only renders when actual breadcrumbs exist
 
-### Files Touched
-- `app/templates/base.html` — Alpine state, quick-links order, conditional crumbs, backdrop element. Stylesheet cache bumped to `?v=11`.
-- `app/static/styles.css` — new `.sidebar-toggle` button styling, `.sidebar-backdrop` rules, rewritten `@media (max-width: 880px)` block for the drawer behavior.
+### Launcher
+- `launch.cmd` bootstraps a `.venv`, installs dependencies, and hands off to an interactive menu
+- Menu options: status check, workbook ingest, open data folder, backup to zip, clean probe artifacts, reinstall deps, set LAN bind IP, open Discord, start server
 
----
-
-## Unreleased (Since Last Commit)
-
-Date: 2026-05-17
-
-### Summary
-- 7 tracked files modified
-- 11 untracked files added
-- Diffstat on tracked files: 1027 insertions, 12 deletions
-
-### Modified Files
-
-#### .gitignore
-- Expanded ignore patterns for generated/runtime artifacts.
-- Added ignore coverage for Lodestone probe outputs and related local data.
-
-#### app/main.py
-- Major feature expansion for Lodestone probing and import workflows.
-- Added background run orchestration and run status/log handling.
-- Added endpoints and integration paths for authenticated Lodestone data ingestion.
-
-#### app/progress_io.py
-- Adjusted cache invalidation/locking behavior.
-- Includes deadlock-avoidance improvements around cache lock usage.
-
-#### app/static/styles.css
-- Added substantial styling for new UI surfaces.
-- Includes styles for Lodestone import/probe interactions and status displays.
-
-#### app/templates/base.html
-- Small base template updates to support new UI routes/components.
-
-#### app/templates/characters.html
-- Added/updated character management UI for Lodestone workflows.
-- Includes controls and sections tied to import/probe operations.
-
-#### requirements.txt
-- Dependency updates for new scraping/import functionality.
-- Added browser-cookie3 and httpx.
-- Added requests.
-
-### Added (Untracked) Files
-
-#### CharacterScraping/
-- CharacterScraping/lodestone_probe.py
-- CharacterScraping/menu_input.txt
-
-#### GameDataReferences/
-- GameDataReferences/LandingPAge.html
-- GameDataReferences/_seen.txt
-- GameDataReferences/_targeted_cats_done.txt
-- GameDataReferences/_targeted_titles.txt
-- GameDataReferences/categories.json
-- GameDataReferences/chains.json
-- GameDataReferences/quests.jsonl
-
-#### app/
-- app/lodestone_import.py
-- app/templates/lodestone_probe.html
-
-### Diffstat (Tracked Files)
-- .gitignore: 20 lines changed
-- app/main.py: 702 lines changed
-- app/progress_io.py: 11 lines changed
-- app/static/styles.css: 150 lines changed
-- app/templates/base.html: 3 lines changed
-- app/templates/characters.html: 151 lines changed
-- requirements.txt: 2 lines changed
-
----
-
+### Fixes
+- Quest rows with a slash in the name (e.g. "School of Hard Nocks") now ingest and match correctly
+- Progress sidecar cache invalidation and deadlock-avoidance improvements
+- Character reimport no longer duplicates progress entries
