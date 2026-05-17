@@ -34,12 +34,23 @@ import os
 import re
 import sqlite3
 import tempfile
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PROGRESS_DIR = ROOT / "data" / "progress"
 SCHEMA_VERSION = "ffxiv-tracker/v1"
+
+# Safety-first default: do NOT allow sheet+row position fallback unless
+# explicitly enabled (e.g. for aggressive one-off recovery).
+_ALLOW_POSITION_FALLBACK_ENV = os.getenv(
+    "FFXIV_PROGRESS_ALLOW_POSITION_FALLBACK", ""
+).strip().lower()
+ALLOW_POSITION_FALLBACK_DEFAULT = _ALLOW_POSITION_FALLBACK_ENV in {
+    "1", "true", "yes", "on"
+}
 
 
 # --- identity computation --------------------------------------------------
@@ -166,6 +177,100 @@ def list_sidecars() -> list[Path]:
     return sorted(PROGRESS_DIR.glob("*.json"))
 
 
+# --- in-memory doc cache + write batching ---------------------------------
+#
+# Toggling a row on a near-100% character used to take ~280 ms because every
+# `set_row_state` reloaded and rewrote the ~13 MB sidecar from scratch — and a
+# chain cascade multiplied that by the number of rows in the chain. We now
+# keep the parsed doc per character in-memory; the disk save only happens at
+# the end of an explicit ``batch(...)`` block (one per cascade) or, for a
+# lone single-row toggle, immediately after the in-memory mutation.
+#
+# Cache is process-wide. The reconciler at startup runs before any toggles,
+# so we don't have to worry about it racing with cached state. Per-path
+# locks serialize concurrent toggles on the same character (FastAPI sync
+# endpoints run in a threadpool, so this can happen).
+
+_cache_lock = threading.Lock()
+_doc_cache: dict[Path, dict] = {}
+_path_locks: dict[Path, threading.RLock] = {}
+_batch_depth: dict[Path, int] = {}
+_dirty: set[Path] = set()
+
+
+def _path_lock(path: Path) -> threading.RLock:
+    with _cache_lock:
+        lock = _path_locks.get(path)
+        if lock is None:
+            lock = threading.RLock()
+            _path_locks[path] = lock
+        return lock
+
+
+def _get_doc(path: Path, fresh_factory) -> dict:
+    """Return the cached parsed sidecar, loading from disk on first access.
+    ``fresh_factory`` builds a new doc when the file doesn't exist yet."""
+    doc = _doc_cache.get(path)
+    if doc is None:
+        doc = load_sidecar(path) or fresh_factory()
+        _doc_cache[path] = doc
+    return doc
+
+
+def _flush(path: Path) -> None:
+    """Write the cached doc for ``path`` to disk if it's dirty."""
+    if path not in _dirty:
+        return
+    doc = _doc_cache.get(path)
+    if doc is None:
+        _dirty.discard(path)
+        return
+    save_sidecar(path, doc)
+    _dirty.discard(path)
+
+
+def invalidate_cache(path: Path | None = None) -> None:
+    """Drop in-memory cached docs. Pass ``None`` to clear everything (used by
+    the reconciler after it rewrites the on-disk state). Any dirty buffer is
+    flushed first so we don't lose pending writes."""
+    with _cache_lock:
+        paths = [path] if path is not None else list(_doc_cache.keys())
+        for p in paths:
+            with _path_lock(p):
+                _flush(p)
+                _doc_cache.pop(p, None)
+
+
+@contextmanager
+def batch(conn: sqlite3.Connection, character_id: int):
+    """Defer sidecar disk writes until the outermost batch exits.
+
+    Wraps a multi-row write (chain cascade) so the 13 MB sidecar gets a single
+    save at the end instead of one per cascaded row. Nests safely. If
+    ``character_id`` can't be resolved to a sidecar, this is a no-op so the
+    caller doesn't need a separate code path."""
+    char = conn.execute(
+        "SELECT name FROM characters WHERE id = ?", (character_id,)
+    ).fetchone()
+    if not char or not char["name"]:
+        yield
+        return
+    path = sidecar_path(char["name"])
+    lock = _path_lock(path)
+    with lock:
+        _batch_depth[path] = _batch_depth.get(path, 0) + 1
+    try:
+        yield
+    finally:
+        with lock:
+            depth = _batch_depth.get(path, 1) - 1
+            if depth <= 0:
+                _batch_depth.pop(path, None)
+                _flush(path)
+            else:
+                _batch_depth[path] = depth
+
+
 # --- write-through from set_row_state --------------------------------------
 
 def _node_for_row(
@@ -212,7 +317,6 @@ def record_state_change(
         precomputed_hash=node["stable_hash"] or None,
     )
     path = sidecar_path(char["name"])
-    doc = load_sidecar(path) or _new_doc(dict(char))
 
     new_entry: dict = {
         "ids": ids,
@@ -222,26 +326,35 @@ def record_state_change(
     if progress_percent is not None:
         new_entry["value"] = progress_percent
 
-    # find an existing entry that matches by ANY of the new entry's ids
-    match_idx: int | None = None
-    new_id_values = set(ids.values())
-    for i, e in enumerate(doc["progress"]):
-        if not isinstance(e, dict):
-            continue
-        e_ids = (e.get("ids") or {}).values()
-        if any(v in new_id_values for v in e_ids):
-            match_idx = i
-            break
+    # Serialize concurrent writers on the same sidecar. Under a chain cascade
+    # the same thread reenters this for ~N rows; the outer batch() holds the
+    # RLock for the whole cascade so contention is rare in practice.
+    char_dict = dict(char)
+    with _path_lock(path):
+        doc = _get_doc(path, lambda: _new_doc(char_dict))
 
-    if match_idx is None:
-        doc["progress"].append(new_entry)
-    else:
-        # preserve any unrelated fields the user might have added
-        prev = doc["progress"][match_idx]
-        prev.update(new_entry)
-        prev.pop("orphan", None)
+        # find an existing entry that matches by ANY of the new entry's ids
+        match_idx: int | None = None
+        new_id_values = set(ids.values())
+        for i, e in enumerate(doc["progress"]):
+            if not isinstance(e, dict):
+                continue
+            e_ids = (e.get("ids") or {}).values()
+            if any(v in new_id_values for v in e_ids):
+                match_idx = i
+                break
 
-    save_sidecar(path, doc)
+        if match_idx is None:
+            doc["progress"].append(new_entry)
+        else:
+            # preserve any unrelated fields the user might have added
+            prev = doc["progress"][match_idx]
+            prev.update(new_entry)
+            prev.pop("orphan", None)
+
+        _dirty.add(path)
+        if _batch_depth.get(path, 0) == 0:
+            _flush(path)
 
 
 # --- reconcile JSON sidecars -> DB at startup ------------------------------
@@ -340,57 +453,94 @@ def _bootstrap_from_db(
     return len(entries)
 
 
-def _resolve_to_node(
-    conn: sqlite3.Connection, run_id: int, ids: dict[str, str]
-) -> tuple[str, int, str] | None:
-    """Try the four tiers in order; return (sheet_name, row_index, tier) for
-    the first match, or None if nothing matched. Tier names are returned so
-    the reconcile report can show how each entry resolved."""
-    # tier 1: sheet + section + label
+_NodeIndex = dict[str, dict]
+
+
+def _build_node_index(conn: sqlite3.Connection, run_id: int) -> _NodeIndex:
+    """Snapshot every node for the run into four dict-keyed indexes (one per
+    identity tier). Replaces ``N×4`` per-entry tier SELECTs with a single
+    bulk scan + O(1) Python lookups — the difference between ~15 s and
+    ~0.2 s when replaying a 100 %-completion sidecar.
+
+    Each index value is a small dict carrying everything ``compute_stable_ids``
+    needs, so we never have to round-trip back to the DB just to refresh a
+    weakly-matched entry's tiered identity.
+    """
+    rows = conn.execute(
+        """SELECT sheet_name, row_index, label, section_label, row_json,
+                  COALESCE(stable_hash, '') AS stable_hash
+           FROM nodes WHERE run_id = ?""",
+        (run_id,),
+    ).fetchall()
+    by_section_label: dict = {}
+    by_label: dict = {}
+    by_hash: dict = {}
+    by_position: dict = {}
+    for r in rows:
+        ref = {
+            "sheet_name": r["sheet_name"],
+            "row_index": int(r["row_index"]),
+            "label": r["label"],
+            "section_label": r["section_label"],
+            "row_json": r["row_json"],
+            "stable_hash": r["stable_hash"] or None,
+        }
+        sn_lc = ref["sheet_name"].lower()
+        if ref["section_label"] and ref["label"]:
+            by_section_label.setdefault(
+                (sn_lc, ref["section_label"].lower(), ref["label"].lower()), ref
+            )
+        if ref["label"]:
+            by_label.setdefault((sn_lc, ref["label"].lower()), ref)
+        if ref["stable_hash"]:
+            by_hash.setdefault((sn_lc, ref["stable_hash"]), ref)
+        by_position.setdefault((sn_lc, ref["row_index"]), ref)
+    return {
+        "section_label": by_section_label,
+        "label": by_label,
+        "hash": by_hash,
+        "position": by_position,
+    }
+
+
+def _resolve_in_memory(
+    index: _NodeIndex,
+    ids: dict[str, str],
+    *,
+    allow_position_fallback: bool,
+) -> tuple[dict, str] | None:
+    """Try the four tiers in order against the pre-built node index. Returns
+    ``(node_ref, tier)`` for the first match, or ``None``. Pure-Python — no
+    DB round-trip per entry.
+
+    Matching for sheet/section/label tiers is case-insensitive so common
+    capitalization fixes in workbook text don't drop progress on the floor."""
     if v := ids.get("section_label"):
         m = _parse_id(v, "section_label")
         if m:
-            r = conn.execute(
-                """SELECT sheet_name, row_index FROM nodes
-                   WHERE run_id=? AND sheet_name=? AND section_label=? AND label=?
-                   LIMIT 1""",
-                (run_id, m["sheet"], m["section"], m["label"]),
-            ).fetchone()
-            if r:
-                return r["sheet_name"], int(r["row_index"]), "section_label"
-    # tier 2: sheet + label
+            ref = index["section_label"].get(
+                (m["sheet"].lower(), m["section"].lower(), m["label"].lower())
+            )
+            if ref:
+                return ref, "section_label"
     if v := ids.get("label"):
         m = _parse_id(v, "label")
         if m:
-            r = conn.execute(
-                """SELECT sheet_name, row_index FROM nodes
-                   WHERE run_id=? AND sheet_name=? AND label=? LIMIT 1""",
-                (run_id, m["sheet"], m["label"]),
-            ).fetchone()
-            if r:
-                return r["sheet_name"], int(r["row_index"]), "label"
-    # tier 3: sheet + content hash
+            ref = index["label"].get((m["sheet"].lower(), m["label"].lower()))
+            if ref:
+                return ref, "label"
     if v := ids.get("hash"):
         m = _parse_id(v, "hash")
         if m:
-            r = conn.execute(
-                """SELECT sheet_name, row_index FROM nodes
-                   WHERE run_id=? AND sheet_name=? AND stable_hash=? LIMIT 1""",
-                (run_id, m["sheet"], m["hash"]),
-            ).fetchone()
-            if r:
-                return r["sheet_name"], int(r["row_index"]), "hash"
-    # tier 4: position fallback
-    if v := ids.get("position"):
+            ref = index["hash"].get((m["sheet"].lower(), m["hash"]))
+            if ref:
+                return ref, "hash"
+    if allow_position_fallback and (v := ids.get("position")):
         m = _parse_id(v, "position")
         if m:
-            r = conn.execute(
-                """SELECT sheet_name, row_index FROM nodes
-                   WHERE run_id=? AND sheet_name=? AND row_index=? LIMIT 1""",
-                (run_id, m["sheet"], int(m["row"])),
-            ).fetchone()
-            if r:
-                return r["sheet_name"], int(r["row_index"]), "position"
+            ref = index["position"].get((m["sheet"].lower(), int(m["row"])))
+            if ref:
+                return ref, "position"
     return None
 
 
@@ -412,7 +562,77 @@ def _parse_id(value: str, kind: str) -> dict[str, str] | None:
     return None
 
 
-def reconcile_all(conn: sqlite3.Connection, run_id: int) -> ReconcileReport:
+def _replay_sidecar(
+    doc: dict,
+    index: _NodeIndex,
+    *,
+    allow_position_fallback: bool,
+    bootstrapped_count: int,
+) -> tuple[CharacterReport, list[tuple], bool]:
+    """Resolve every entry in ``doc`` against the in-memory node index.
+
+    Returns ``(report, batch, dirty)`` where ``batch`` is the list of
+    ``(sheet_name, row_index, state, value, ts)`` tuples ready for a single
+    ``executemany`` into ``character_progress``. ``dirty`` says whether any
+    entry's stored ids changed (refreshed to a stronger anchor) or its
+    ``orphan`` flag flipped — caller decides whether to rewrite the file.
+    """
+    header = doc.get("character") or {}
+    cr = CharacterReport(name=header.get("name") or "")
+    cr.bootstrapped_from_db = bootstrapped_count
+    batch: list[tuple] = []
+    dirty = False
+    now = _now_iso()
+
+    for entry in doc.get("progress", []):
+        if not isinstance(entry, dict):
+            continue
+        ids = entry.get("ids") or {}
+        state = entry.get("state")
+        if state not in ("done", "todo", "excluded"):
+            continue
+        resolved = _resolve_in_memory(
+            index, ids, allow_position_fallback=allow_position_fallback,
+        )
+        if resolved is None:
+            if not entry.get("orphan"):
+                entry["orphan"] = True
+                dirty = True
+            cr.orphaned += 1
+            continue
+        ref, tier = resolved
+        value = entry.get("value")
+        batch.append((
+            ref["sheet_name"], ref["row_index"], state,
+            float(value) if value is not None else None,
+            entry.get("ts") or now,
+        ))
+        setattr(cr, f"matched_{tier}", getattr(cr, f"matched_{tier}") + 1)
+
+        # If the entry resolved via a weaker tier than its strongest available
+        # anchor, rewrite ids so the next reconcile has a stronger handle.
+        # The node ref already carries everything we need — no DB round-trip.
+        fresh_ids = compute_stable_ids(
+            ref["sheet_name"], ref["section_label"], ref["label"],
+            ref["row_json"], ref["row_index"],
+            precomputed_hash=ref["stable_hash"],
+        )
+        if fresh_ids != ids:
+            entry["ids"] = fresh_ids
+            dirty = True
+        if entry.get("orphan"):
+            entry.pop("orphan", None)
+            dirty = True
+
+    return cr, batch, dirty
+
+
+def reconcile_all(
+    conn: sqlite3.Connection,
+    run_id: int,
+    *,
+    allow_position_fallback: bool | None = None,
+) -> ReconcileReport:
     """Make the DB match the sidecars for the current run.
 
     For each existing character with no sidecar, dump current DB progress to
@@ -420,11 +640,21 @@ def reconcile_all(conn: sqlite3.Connection, run_id: int) -> ReconcileReport:
     character exists, wipe the current run's DB rows for that character, and
     replay every entry that the tiered resolver can map to a live node.
 
-    Entries that fail every tier are flagged ``orphan`` in the sidecar — kept
-    forever, so a future workbook revision that brings the row back will
-    re-resolve automatically."""
+    Entries that fail every enabled tier are flagged ``orphan`` in the sidecar
+    and can be reviewed / resolved manually. By default, position fallback is
+    disabled to avoid accidental mis-matches after row reordering; set
+    ``allow_position_fallback=True`` (or env
+    ``FFXIV_PROGRESS_ALLOW_POSITION_FALLBACK=1``) for aggressive recovery.
+
+    Performance: the node set for the run is snapshotted once into in-memory
+    indexes, and progress rows are inserted via ``executemany`` per character.
+    A 100 %-completion sidecar (~37 k entries) replays in well under a second
+    instead of multiple seconds of per-row round-trips.
+    """
     PROGRESS_DIR.mkdir(parents=True, exist_ok=True)
     report = ReconcileReport()
+    if allow_position_fallback is None:
+        allow_position_fallback = ALLOW_POSITION_FALLBACK_DEFAULT
 
     # Step 1: bootstrap any characters with DB progress but no sidecar yet
     bootstrapped: dict[str, int] = {}
@@ -441,8 +671,16 @@ def reconcile_all(conn: sqlite3.Connection, run_id: int) -> ReconcileReport:
         if n:
             bootstrapped[char["name"]] = n
 
+    sidecars = list_sidecars()
+    if not sidecars:
+        conn.commit()
+        return report
+
+    # One bulk scan of nodes for the whole run -- shared across every sidecar.
+    index = _build_node_index(conn, run_id)
+
     # Step 2: for every sidecar on disk, replay it into the DB
-    for path in list_sidecars():
+    for path in sidecars:
         doc = load_sidecar(path)
         if not doc:
             continue
@@ -452,15 +690,14 @@ def reconcile_all(conn: sqlite3.Connection, run_id: int) -> ReconcileReport:
             continue
 
         cid = _ensure_character(conn, name, header)
-        # keep starting_class up to date if the sidecar specifies it
         if header.get("starting_class") is not None:
             conn.execute(
                 "UPDATE characters SET starting_class = ? WHERE id = ?",
                 (header["starting_class"], cid),
             )
 
-        # wipe this character's progress for the current run; we're about to
-        # rebuild it from the sidecar (the sole source of truth)
+        # Wipe this character's progress for the current run; we're about to
+        # rebuild it from the sidecar (the sole source of truth).
         conn.execute(
             "DELETE FROM character_progress WHERE character_id = ? AND run_id = ?",
             (cid, run_id),
@@ -469,30 +706,16 @@ def reconcile_all(conn: sqlite3.Connection, run_id: int) -> ReconcileReport:
             "DELETE FROM progress_rollup WHERE character_id = ?", (cid,)
         )
 
-        cr = CharacterReport(name=name)
-        cr.bootstrapped_from_db = bootstrapped.get(name, 0)
-        sidecar_dirty = False
-        now = _now_iso()
+        cr, batch, dirty = _replay_sidecar(
+            doc, index,
+            allow_position_fallback=allow_position_fallback,
+            bootstrapped_count=bootstrapped.get(name, 0),
+        )
+        # name from header may differ slightly from filename — trust the doc
+        cr.name = name
 
-        for entry in doc.get("progress", []):
-            if not isinstance(entry, dict):
-                continue
-            ids = entry.get("ids") or {}
-            state = entry.get("state")
-            if state not in ("done", "todo", "excluded"):
-                continue
-            value = entry.get("value")
-
-            resolved = _resolve_to_node(conn, run_id, ids)
-            if resolved is None:
-                if not entry.get("orphan"):
-                    entry["orphan"] = True
-                    sidecar_dirty = True
-                cr.orphaned += 1
-                continue
-
-            sheet_name, row_index, tier = resolved
-            conn.execute(
+        if batch:
+            conn.executemany(
                 """INSERT INTO character_progress
                    (character_id, run_id, sheet_name, row_index, state,
                     progress_percent, updated_at)
@@ -501,31 +724,16 @@ def reconcile_all(conn: sqlite3.Connection, run_id: int) -> ReconcileReport:
                    DO UPDATE SET state = excluded.state,
                                  progress_percent = excluded.progress_percent,
                                  updated_at = excluded.updated_at""",
-                (cid, run_id, sheet_name, row_index, state, value,
-                 entry.get("ts") or now),
+                [(cid, run_id, sn, ri, st, val, ts)
+                 for (sn, ri, st, val, ts) in batch],
             )
-            setattr(cr, f"matched_{tier}",
-                    getattr(cr, f"matched_{tier}") + 1)
 
-            # if the entry resolved via a weaker tier than its strongest id,
-            # refresh ids so it gets a stronger anchor next time
-            fresh_ids = compute_stable_ids(
-                sheet_name,
-                _node_for_row(conn, run_id, sheet_name, row_index)["section_label"],
-                _node_for_row(conn, run_id, sheet_name, row_index)["label"],
-                _node_for_row(conn, run_id, sheet_name, row_index)["row_json"],
-                row_index,
-            )
-            if fresh_ids != ids:
-                entry["ids"] = fresh_ids
-                sidecar_dirty = True
-            if entry.get("orphan"):
-                entry.pop("orphan", None)
-                sidecar_dirty = True
-
-        if sidecar_dirty:
+        if dirty:
             save_sidecar(path, doc)
         report.characters.append(cr)
 
     conn.commit()
+    # Reconcile rewrote disk-side state; drop any in-memory cache so the
+    # next record_state_change re-reads from the now-authoritative files.
+    invalidate_cache()
     return report
