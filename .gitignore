@@ -64,6 +64,10 @@ CharacterScraping/ExampleHTMLs/
 
 # Local cache of wiki pages (keep curated references trackable)
 GameDataReferences/cache/
+# Wiki crawler scratch / resume state
+GameDataReferences/_*
+# Raw HTML captures from manual scrapes
+GameDataReferences/*.html
 
 # Per-character progress sidecars — user data, never committed
 data/progress/
