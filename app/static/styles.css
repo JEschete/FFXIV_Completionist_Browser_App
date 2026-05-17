@@ -88,13 +88,14 @@ h1, h2, h3, h4 { margin: 0; font-weight: 650; }
   border-bottom: 1px solid var(--line-soft);
 }
 .brand-mark {
-  width: 38px; height: 38px;
+  width: 60px; height: 60px;
   display: grid; place-items: center;
   border-radius: 10px;
   font-weight: 800; font-size: 13px; letter-spacing: .5px;
   color: #0b0e15;
   background: linear-gradient(135deg, var(--gold), var(--accent));
 }
+img.brand-mark { object-fit: cover; }
 .brand-text strong { display: block; font-size: 14px; }
 .brand-text small { color: var(--muted); font-size: 11.5px; }
 

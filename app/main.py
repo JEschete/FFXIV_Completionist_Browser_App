@@ -484,6 +484,7 @@ class Ctx:
         return sheet
 
     def base_context(self) -> dict:
+        avatar_path = BASE / "static" / "avatars" / f"{self.character_id}.jpg"
         return {
             "request": self.request,
             "characters": self.characters,
@@ -491,6 +492,7 @@ class Ctx:
             "tree": self.tree,
             "overall": self.overall,
             "overall_pct": db.pct(self.overall),
+            "avatar_url": f"/static/avatars/{self.character_id}.jpg" if avatar_path.exists() else None,
         }
 
     def header_context(self, sheet_name: str | None) -> dict:
