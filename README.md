@@ -33,15 +33,22 @@ Dependencies are listed in `requirements.txt`:
 - `openpyxl` (ingest)
 - `httpx`, `beautifulsoup4` (wiki crawler)
 - `requests`, `browser-cookie3` (Lodestone probe / authenticated scrape)
+- `PyQt6` (desktop launcher GUI in `launch_gui.py`)
 
 ## Quick Start
 
-> **Easiest path (Windows):** double-click `launch.cmd` at the repo root. On
-> first run it creates `.venv\`, installs `requirements.txt`, then opens an
-> interactive text menu (status, ingest, backup, set bind IP, start server,
-> jump to the FFXIV Completionist Discord, etc.). The "Start server" item
-> spawns uvicorn in a new console window so the menu stays usable. See
-> [launch.cmd](launch.cmd) and [launch.py](launch.py).
+> **Easiest path (Windows):** install the latest release from
+> [Releases](https://github.com/JEschete/FFXIV_Completionist_Browser_App/releases),
+> or double-click `launch.cmd` at the repo root if you're working from source.
+> Either way you land in the **desktop launcher** (PyQt6) with one-click
+> buttons for Start server, Launch browser, Ingest workbook (file picker), an
+> Instructions walkthrough, a built-in GitHub update checker, and live
+> server + database status indicators. The Characters panel lists every
+> character currently in the DB. On first run from source, `launch.cmd`
+> creates `.venv\` and installs `requirements.txt` before showing the GUI.
+> Pass `--cli` to `launch.cmd` to drop into the original text menu instead.
+> See [launch_gui.py](launch_gui.py), [launch.py](launch.py), and
+> [launch.cmd](launch.cmd).
 
 Manual setup:
 
@@ -53,7 +60,7 @@ pip install -r requirements.txt
 # Build database from the newest Spreadsheet/*.xlsx
 python scripts/prep_xlsx_to_sqlite.py
 
-# Run app
+# Run app (or just use the GUI's "Start server" button)
 uvicorn app.main:app --reload
 ```
 
@@ -304,6 +311,20 @@ Export:
 ## Project Structure
 
 ```
+launch.cmd                 Windows bootstrap: creates .venv on first run, hands off to launch.py
+launch_gui.cmd             Same, but uses pythonw.exe so no console window appears
+launch.py                  Dispatches to the GUI by default; --cli falls back to the text menu
+launch_gui.py              PyQt6 desktop launcher (server status, ingest picker, character list,
+                           instructions, update check)
+updater.py                 GitHub releases query + installer download with progress
+_version.py                Single source of truth for the app version
+build_icons.py             Build-time helper: turns assets/icon.png into a multi-size .ico
+build_installer.py         Downloads embedded Python, stages app + assets, drives ISCC
+FFXIVTracker.iss           Inno Setup script (consumed by build_installer.py)
+assets/
+  icon.png                 App icon source (window, taskbar, banner, installer)
+  icon.ico                 Generated from icon.png by build_icons.py (gitignored)
+
 app/
   main.py                  FastAPI routes + app lifespan reconcile
   db.py                    data layer, state transitions, rollups, chains
@@ -364,6 +385,52 @@ GameDataReferences/
 - `characters`: character identities
 - `character_progress`: per-character row overrides for current run
 - `progress_rollup`: cached per-sheet counts (done/excluded/total)
+
+## Building the Windows Installer
+
+The repository ships everything needed to produce a self-contained Inno Setup
+installer that bundles its own Python runtime (no end-user Python install
+required) and registers Start Menu + desktop shortcuts that launch the
+PyQt6 GUI with no console window.
+
+Prerequisites:
+
+- [Inno Setup 6](https://jrsoftware.org/isdl.php) (the build script auto-locates
+  `ISCC.exe` in the default install dirs)
+- Internet access on first run (downloads the Python embeddable zip + `get-pip.py`,
+  cached under `build/cache/` for subsequent runs)
+- An existing `.venv` with `requirements.txt` installed (PyQt6 is used at build
+  time by `build_icons.py` to render `assets/icon.ico`)
+
+Build it:
+
+```powershell
+# Full build: downloads python embed, installs deps, regenerates icon.ico,
+# stages files, compiles installer.
+python build_installer.py
+
+# Reuse the cached python embed for fast iteration on the staging step:
+python build_installer.py --skip-python
+
+# Override the version tag (otherwise read from `git describe --tags`):
+python build_installer.py --version v1.0.2
+```
+
+Output: `build/FFXIVTracker-<version>-Setup.exe`.
+
+What gets bundled (mirrors `build_release.py`): the launchers, `app/`,
+`scripts/prep_xlsx_to_sqlite.py`, `CharacterScraping/lodestone_probe.py`,
+the curated `GameDataReferences/`, `assets/icon.png` + freshly-regenerated
+`assets/icon.ico`, and a bootstrapped Python embed under `python/`.
+
+### Update Checks
+
+The GUI's **Check for updates** button (and the standalone [updater.py](updater.py))
+queries `api.github.com/repos/JEschete/FFXIV_Completionist_Browser_App/releases/latest`,
+compares it against the version in [_version.py](_version.py) using semver, and
+offers to download the `*-Setup.exe` release asset to a temp file. Bump
+`_version.py` to match every tagged release; the update check won't fire if
+the installed version equals or exceeds the latest release.
 
 ## Optional: Wiki Crawler Tooling
 
