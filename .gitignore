@@ -34,6 +34,10 @@ dist/
 *.local
 .launch.json
 
+# Release build script and output
+build_release.py
+dist/
+
 # Local launcher backups
 backups/
 
