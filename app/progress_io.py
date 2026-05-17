@@ -235,9 +235,14 @@ def invalidate_cache(path: Path | None = None) -> None:
     flushed first so we don't lose pending writes."""
     with _cache_lock:
         paths = [path] if path is not None else list(_doc_cache.keys())
-        for p in paths:
-            with _path_lock(p):
-                _flush(p)
+
+    # Important: do not call _path_lock while already holding _cache_lock.
+    # _path_lock itself acquires _cache_lock, which would deadlock.
+    for p in paths:
+        lock = _path_lock(p)
+        with lock:
+            _flush(p)
+            with _cache_lock:
                 _doc_cache.pop(p, None)
 
 

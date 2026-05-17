@@ -8,13 +8,20 @@ Row state is toggled in place via HTMX; prerequisite chains are first-class.
 from __future__ import annotations
 
 import csv
+import datetime as dt
 import io
+import json
+import re
 import sys
+import threading
+import traceback
+import uuid
 from pathlib import Path
-from urllib.parse import quote
+from typing import Any, Callable
+from urllib.parse import quote, urlparse
 
-from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -23,7 +30,7 @@ if __package__ in {None, ""}:
 
 from contextlib import asynccontextmanager
 
-from app import db, progress_io
+from app import db, lodestone_import, progress_io
 
 
 def reconcile_progress_sidecars() -> None:
@@ -59,6 +66,18 @@ templates = Jinja2Templates(directory=str(BASE / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE / "static")), name="static")
 
 CHAR_COOKIE = "ffxiv_character"
+LODESTONE_COOKIE = "lodestone_profile_url"
+LODESTONE_BROWSER_COOKIE = "lodestone_cookie_source"
+LODESTONE_STANDARD_COOKIE = "lodestone_include_standard"
+LODESTONE_RUNS: dict[str, dict[str, Any]] = {}
+LODESTONE_RUNS_LOCK = threading.Lock()
+LODESTONE_OUTPUT_DIR = BASE.parent / "data" / "lodestone_probe"
+LODESTONE_LOG_DIR = LODESTONE_OUTPUT_DIR / "logs"
+CHAR_IMPORT_RUNS: dict[str, dict[str, Any]] = {}
+CHAR_IMPORT_RUNS_LOCK = threading.Lock()
+CHAR_IMPORT_LOG_DIR = LODESTONE_OUTPUT_DIR / "import_logs"
+CHAR_IMPORT_UPLOAD_DIR = LODESTONE_OUTPUT_DIR / "import_uploads"
+CHAR_IMPORT_UNMATCHED_DIR = LODESTONE_OUTPUT_DIR / "unmatched"
 
 
 # --- request context --------------------------------------------------------
@@ -75,6 +94,342 @@ def set_char_cookie(response, character_id: int) -> None:
     response.set_cookie(
         CHAR_COOKIE, str(character_id), max_age=60 * 60 * 24 * 365, samesite="lax"
     )
+
+
+def cookie_lodestone_url(request: Request) -> str:
+    return (request.cookies.get(LODESTONE_COOKIE) or "").strip()
+
+
+def set_lodestone_cookie(response, lodestone_url: str) -> None:
+    response.set_cookie(
+        LODESTONE_COOKIE, lodestone_url.strip(),
+        max_age=60 * 60 * 24 * 365, samesite="lax"
+    )
+
+
+def cookie_lodestone_browser(request: Request) -> str:
+    value = (request.cookies.get(LODESTONE_BROWSER_COOKIE) or "edge").strip().lower()
+    return value if value in {"edge", "chrome", "firefox"} else "edge"
+
+
+def set_lodestone_browser_cookie(response, browser: str) -> None:
+    response.set_cookie(
+        LODESTONE_BROWSER_COOKIE, browser, max_age=60 * 60 * 24 * 365, samesite="lax"
+    )
+
+
+def cookie_lodestone_include_standard(request: Request) -> bool:
+    return (request.cookies.get(LODESTONE_STANDARD_COOKIE) or "1") == "1"
+
+
+def set_lodestone_include_standard_cookie(response, enabled: bool) -> None:
+    response.set_cookie(
+        LODESTONE_STANDARD_COOKIE, "1" if enabled else "0",
+        max_age=60 * 60 * 24 * 365, samesite="lax"
+    )
+
+
+def normalize_lodestone_url(raw_url: str) -> str | None:
+    value = raw_url.strip()
+    if not value:
+        return None
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"}:
+        return None
+    if not parsed.netloc.endswith("finalfantasyxiv.com"):
+        return None
+    if not parsed.path.startswith("/lodestone/"):
+        return None
+    return value
+
+
+def normalize_cookie_source(raw: str) -> str | None:
+    value = raw.strip().lower()
+    return value if value in {"edge", "chrome", "firefox"} else None
+
+
+def parse_extra_paths(raw: str) -> list[str]:
+    values: list[str] = []
+    seen: set[str] = set()
+    for token in raw.replace(",", "\n").splitlines():
+        normalized = token.strip().strip("/")
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        values.append(normalized)
+    return values
+
+
+def resolve_payload_path(raw_path: str) -> Path | None:
+    value = raw_path.strip().strip('"')
+    if not value:
+        return None
+    path = Path(value)
+    if path.is_absolute():
+        return path
+
+    workspace_path = BASE.parent / path
+    if workspace_path.exists():
+        return workspace_path
+
+    # If a bare filename is provided, prefer known payload dirs.
+    if path.parent == Path('.'):
+        probe_candidate = LODESTONE_OUTPUT_DIR / path.name
+        if probe_candidate.exists():
+            return probe_candidate
+        upload_candidate = CHAR_IMPORT_UPLOAD_DIR / path.name
+        if upload_candidate.exists():
+            return upload_candidate
+
+    return workspace_path
+
+
+def _safe_upload_name(filename: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", (filename or "").strip())
+    cleaned = cleaned.strip("._") or "payload.json"
+    if not cleaned.lower().endswith(".json"):
+        cleaned += ".json"
+    return cleaned
+
+
+def save_uploaded_payload(upload: UploadFile) -> Path:
+    CHAR_IMPORT_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    safe_name = _safe_upload_name(upload.filename or "payload.json")
+    timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_path = CHAR_IMPORT_UPLOAD_DIR / f"{timestamp}_{uuid.uuid4().hex[:8]}_{safe_name}"
+    data = upload.file.read()
+    out_path.write_bytes(data)
+    return out_path
+
+
+def run_lodestone_authenticated_probe(
+    lodestone_url: str,
+    cookie_source: str,
+    include_standard: bool,
+    extra_paths_raw: str,
+    progress: Callable[[str], None] | None = None,
+) -> Path:
+    from CharacterScraping import lodestone_probe as probe
+
+    def log(message: str) -> None:
+        if progress is not None:
+            progress(message)
+
+    extra_paths: list[str] = []
+    if include_standard:
+        extra_paths.extend(probe.STANDARD_AUTH_PAGES.values())
+    for path in parse_extra_paths(extra_paths_raw):
+        if path not in extra_paths:
+            extra_paths.append(path)
+
+    log(f"Importing Lodestone cookies from {cookie_source}")
+    session = probe.session_from_installed_browser_cookies(cookie_source, progress=log)
+    try:
+        log("Collecting profile, class/job, minions, mounts, and achievements")
+        payload = probe.collect_character(lodestone_url, session=session, progress=log)
+        log(f"Collecting authenticated pages ({len(extra_paths)} paths)")
+        payload["authenticated_pages"] = probe.collect_authenticated_pages(
+            lodestone_url, session, extra_paths, progress=log
+        )
+        payload["auth"] = {
+            "method": "installed_browser_cookies",
+            "source_browser": cookie_source,
+            "extra_paths": extra_paths,
+        }
+        timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = LODESTONE_OUTPUT_DIR / f"{probe.character_output_stem(payload)}_auth_{timestamp}.json"
+        log(f"Saving output to {output_path}")
+        probe.save_payload(payload, output_path)
+        log("Scrape completed")
+        return output_path
+    finally:
+        session.close()
+
+
+def _append_lodestone_log_file(log_path: Path, line: str) -> None:
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError:
+        # Keep runtime logging resilient even if local file writes fail.
+        pass
+
+
+def _update_lodestone_run(run_id: str, **updates: Any) -> None:
+    with LODESTONE_RUNS_LOCK:
+        existing = LODESTONE_RUNS.get(run_id)
+        if not existing:
+            return
+        existing.update(updates)
+
+
+def _append_lodestone_run_log(run_id: str, message: str) -> None:
+    line = ""
+    log_path: Path | None = None
+    with LODESTONE_RUNS_LOCK:
+        run = LODESTONE_RUNS.get(run_id)
+        if not run:
+            return
+        logs = run.setdefault("logs", [])
+        ts = dt.datetime.now().strftime("%H:%M:%S")
+        line = f"[{ts}] {message}"
+        logs.append(line)
+        if len(logs) > 600:
+            del logs[: len(logs) - 600]
+        log_path_value = run.get("log_path")
+        if isinstance(log_path_value, str) and log_path_value:
+            log_path = Path(log_path_value)
+
+    if log_path is not None and line:
+        _append_lodestone_log_file(log_path, line)
+
+
+def _run_lodestone_probe_job(
+    run_id: str,
+    lodestone_url: str,
+    cookie_source: str,
+    include_standard_pages: bool,
+    extra_paths: str,
+) -> None:
+    _update_lodestone_run(run_id, status="running", started_at=dt.datetime.now().isoformat())
+    _append_lodestone_run_log(run_id, "Job started")
+    try:
+        output_path = run_lodestone_authenticated_probe(
+            lodestone_url=lodestone_url,
+            cookie_source=cookie_source,
+            include_standard=include_standard_pages,
+            extra_paths_raw=extra_paths,
+            progress=lambda msg: _append_lodestone_run_log(run_id, msg),
+        )
+        _update_lodestone_run(
+            run_id,
+            status="completed",
+            saved_path=str(output_path),
+            finished_at=dt.datetime.now().isoformat(),
+        )
+        _append_lodestone_run_log(run_id, "Job completed")
+    except Exception as exc:
+        _update_lodestone_run(
+            run_id,
+            status="failed",
+            error=str(exc).strip() or exc.__class__.__name__,
+            finished_at=dt.datetime.now().isoformat(),
+        )
+        _append_lodestone_run_log(run_id, f"Job failed: {exc}")
+        _append_lodestone_run_log(run_id, traceback.format_exc())
+
+
+def _update_character_import_run(run_id: str, **updates: Any) -> None:
+    with CHAR_IMPORT_RUNS_LOCK:
+        existing = CHAR_IMPORT_RUNS.get(run_id)
+        if not existing:
+            return
+        existing.update(updates)
+
+
+def _append_character_import_run_log(run_id: str, message: str) -> None:
+    line = ""
+    log_path: Path | None = None
+    with CHAR_IMPORT_RUNS_LOCK:
+        run = CHAR_IMPORT_RUNS.get(run_id)
+        if not run:
+            return
+        logs = run.setdefault("logs", [])
+        ts = dt.datetime.now().strftime("%H:%M:%S")
+        line = f"[{ts}] {message}"
+        logs.append(line)
+        if len(logs) > 800:
+            del logs[: len(logs) - 800]
+        log_path_value = run.get("log_path")
+        if isinstance(log_path_value, str) and log_path_value:
+            log_path = Path(log_path_value)
+
+    if log_path is not None and line:
+        _append_lodestone_log_file(log_path, line)
+
+
+def _run_character_import_job(
+    run_id: str,
+    *,
+    character_id: int,
+    payload_path: Path,
+    clear_existing: bool,
+) -> None:
+    _update_character_import_run(
+        run_id,
+        status="running",
+        started_at=dt.datetime.now().isoformat(),
+    )
+    _append_character_import_run_log(run_id, "Import job started")
+    conn = db.get_connection()
+    try:
+        summary = lodestone_import.import_lodestone_payload(
+            conn,
+            character_id=character_id,
+            payload_path=payload_path,
+            clear_existing=clear_existing,
+            progress=lambda msg: _append_character_import_run_log(run_id, msg),
+        )
+        unmatched_report_path: Path | None = None
+        if summary.unmatched_items:
+            try:
+                CHAR_IMPORT_UNMATCHED_DIR.mkdir(parents=True, exist_ok=True)
+                unmatched_report_path = CHAR_IMPORT_UNMATCHED_DIR / f"{run_id}.json"
+                unmatched_payload = {
+                    "run_id": run_id,
+                    "character_id": summary.character_id,
+                    "character_name": summary.character_name,
+                    "source_path": summary.source_path,
+                    "created_at": dt.datetime.now().isoformat(),
+                    "total_candidates": summary.total_candidates,
+                    "matched_candidates": summary.matched_candidates,
+                    "unmatched_candidates": summary.unmatched_candidates,
+                    "items": summary.unmatched_items,
+                }
+                unmatched_report_path.write_text(
+                    json.dumps(unmatched_payload, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                _append_character_import_run_log(
+                    run_id,
+                    f"Saved unmatched report to {unmatched_report_path}",
+                )
+            except Exception as exc:
+                _append_character_import_run_log(
+                    run_id,
+                    f"Could not save unmatched report: {exc}",
+                )
+        _update_character_import_run(
+            run_id,
+            status="completed",
+            finished_at=dt.datetime.now().isoformat(),
+            unmatched_report_path=(str(unmatched_report_path) if unmatched_report_path else None),
+            summary={
+                "character_id": summary.character_id,
+                "character_name": summary.character_name,
+                "source_path": summary.source_path,
+                "run_id": summary.run_id,
+                "total_candidates": summary.total_candidates,
+                "matched_candidates": summary.matched_candidates,
+                "unmatched_candidates": summary.unmatched_candidates,
+                "rows_applied": summary.rows_applied,
+                "rows_skipped_already_done": summary.rows_skipped_already_done,
+                "unmatched_sample": summary.unmatched_items[:20],
+            },
+        )
+        _append_character_import_run_log(run_id, "Import job completed")
+    except Exception as exc:
+        _update_character_import_run(
+            run_id,
+            status="failed",
+            error=str(exc).strip() or exc.__class__.__name__,
+            finished_at=dt.datetime.now().isoformat(),
+        )
+        _append_character_import_run_log(run_id, f"Import job failed: {exc}")
+        _append_character_import_run_log(run_id, lodestone_import.format_exception(exc))
+    finally:
+        conn.close()
 
 
 class Ctx:
@@ -288,16 +643,353 @@ def chains_overview(request: Request):
 
 
 @app.get("/characters", response_class=HTMLResponse)
-def characters_page(request: Request, error: str = ""):
+def characters_page(
+    request: Request,
+    error: str = "",
+    run_id: str = "",
+    payload_path: str = "",
+):
     ctx = Ctx(request)
     try:
+        run = None
+        if run_id:
+            with CHAR_IMPORT_RUNS_LOCK:
+                run = CHAR_IMPORT_RUNS.get(run_id)
+
+        suggested_payload = payload_path.strip()
+        latest_payloads = sorted(
+            LODESTONE_OUTPUT_DIR.glob("*_auth_*.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        payload_options = [str(p) for p in latest_payloads[:40]]
+        if not suggested_payload and payload_options:
+            suggested_payload = payload_options[0]
+
         return ctx.render("characters.html", {
             "error": error,
             "starting_classes": db.STARTING_CLASSES,
+            "import_run_id": run_id,
+            "import_run": run,
+            "suggested_payload": suggested_payload,
+            "payload_options": payload_options,
             "active_sheet": None,
         })
     finally:
         ctx.close()
+
+
+@app.post("/characters/import-lodestone")
+def character_import_lodestone(
+    character_id: int = Form(...),
+    payload_path: str = Form(""),
+    payload_file: UploadFile | str | None = File(None),
+    clear_existing: str = Form("0"),
+):
+    resolved_path: Path | None = None
+
+    if isinstance(payload_file, UploadFile) and payload_file.filename:
+        try:
+            resolved_path = save_uploaded_payload(payload_file)
+        except OSError as exc:
+            return RedirectResponse(
+                f"/characters?error={quote(f'Could not save uploaded payload: {exc}')}",
+                status_code=303,
+            )
+    elif isinstance(payload_file, str) and payload_file.strip():
+        # Backward compatibility for stale pages that still post filename text.
+        resolved_path = resolve_payload_path(payload_file)
+    else:
+        resolved_path = resolve_payload_path(payload_path)
+
+    if resolved_path is None:
+        return RedirectResponse(
+            f"/characters?error={quote('Choose a JSON payload file or pick a server payload below.')}",
+            status_code=303,
+        )
+    if not resolved_path.exists() or not resolved_path.is_file():
+        return RedirectResponse(
+            f"/characters?error={quote(f'Payload file not found: {resolved_path}')}",
+            status_code=303,
+        )
+
+    conn = db.get_connection()
+    try:
+        char = db.get_character(conn, character_id)
+    finally:
+        conn.close()
+    if char is None:
+        return RedirectResponse(
+            f"/characters?error={quote(f'Character id {character_id} was not found')}",
+            status_code=303,
+        )
+
+    run_id = uuid.uuid4().hex
+    log_path = CHAR_IMPORT_LOG_DIR / f"{run_id}.log"
+    clear_existing_flag = clear_existing == "1"
+    _append_lodestone_log_file(
+        log_path,
+        f"[{dt.datetime.now().strftime('%H:%M:%S')}] Import created for character_id={character_id} payload={resolved_path}",
+    )
+    with CHAR_IMPORT_RUNS_LOCK:
+        CHAR_IMPORT_RUNS[run_id] = {
+            "id": run_id,
+            "status": "queued",
+            "character_id": character_id,
+            "character_name": char["name"],
+            "payload_path": str(resolved_path),
+            "clear_existing": clear_existing_flag,
+            "log_path": str(log_path),
+            "logs": [f"[{dt.datetime.now().strftime('%H:%M:%S')}] Import queued"],
+        }
+
+    worker = threading.Thread(
+        target=_run_character_import_job,
+        kwargs={
+            "run_id": run_id,
+            "character_id": character_id,
+            "payload_path": resolved_path,
+            "clear_existing": clear_existing_flag,
+        },
+        daemon=True,
+    )
+    worker.start()
+
+    return RedirectResponse(
+        f"/characters?run_id={quote(run_id)}&payload_path={quote(str(resolved_path))}",
+        status_code=303,
+    )
+
+
+@app.get("/characters/import-status")
+def character_import_status(run_id: str):
+    with CHAR_IMPORT_RUNS_LOCK:
+        run = CHAR_IMPORT_RUNS.get(run_id)
+        if run is None:
+            raise HTTPException(404, "Unknown run id")
+        logs = run.get("logs") or []
+        summary = run.get("summary") or {}
+        payload = {
+            "id": run.get("id"),
+            "status": run.get("status"),
+            "error": run.get("error"),
+            "character_id": run.get("character_id"),
+            "character_name": run.get("character_name"),
+            "payload_path": run.get("payload_path"),
+            "clear_existing": run.get("clear_existing"),
+            "started_at": run.get("started_at"),
+            "finished_at": run.get("finished_at"),
+            "log_path": run.get("log_path"),
+            "unmatched_report_path": run.get("unmatched_report_path"),
+            "unmatched_report_url": (
+                f"/characters/import-unmatched?run_id={quote(str(run.get('id') or ''))}"
+                if run.get("unmatched_report_path") else None
+            ),
+            "summary": summary,
+            "log_tail": "\n".join(logs[-160:]),
+        }
+    return JSONResponse(payload)
+
+
+@app.get("/characters/import-unmatched", response_class=HTMLResponse)
+def character_import_unmatched_page(run_id: str):
+    with CHAR_IMPORT_RUNS_LOCK:
+        run = CHAR_IMPORT_RUNS.get(run_id)
+        if run is None:
+            raise HTTPException(404, "Unknown run id")
+        report_path_raw = run.get("unmatched_report_path")
+        character_name = str(run.get("character_name") or "Character")
+
+    if not report_path_raw:
+        return HTMLResponse("<h1>No unmatched report for this run.</h1>", status_code=200)
+
+    report_path = Path(str(report_path_raw))
+    if not report_path.exists() or not report_path.is_file():
+        raise HTTPException(404, "Unmatched report file not found")
+
+    try:
+        doc = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raise HTTPException(500, "Could not read unmatched report")
+
+    items = doc.get("items") if isinstance(doc, dict) else None
+    if not isinstance(items, list):
+        items = []
+
+    rows: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        bucket = str(item.get("bucket") or "unknown")
+        label = str(item.get("label") or "")
+        reason = str(item.get("reason") or "")
+        rows.append(
+            f"<tr><td>{bucket}</td><td>{label}</td><td>{reason}</td></tr>"
+        )
+
+    body = "\n".join(rows) if rows else "<tr><td colspan='3'>No unmatched items.</td></tr>"
+    html = f"""
+<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8' />
+  <meta name='viewport' content='width=device-width, initial-scale=1.0' />
+  <title>Unmatched Items - {character_name}</title>
+  <style>
+    body {{ font-family: Segoe UI, Arial, sans-serif; margin: 20px; background: #0f1218; color: #e7ecf5; }}
+    a {{ color: #8ec2ff; }}
+    table {{ border-collapse: collapse; width: 100%; max-width: 1100px; background: #171d28; }}
+    th, td {{ border: 1px solid #2c3647; padding: 8px 10px; text-align: left; }}
+    th {{ background: #202a3b; }}
+    .meta {{ color: #a8b2c3; margin-bottom: 12px; }}
+  </style>
+</head>
+<body>
+  <h1>Unmatched Items</h1>
+  <div class='meta'>Run ID: {run_id} | Character: {character_name} | Count: {len(rows)}</div>
+  <p><a href='/characters/import-unmatched.json?run_id={quote(run_id)}'>Download JSON report</a></p>
+  <table>
+        <thead><tr><th>Category</th><th>Label</th><th>Reason</th></tr></thead>
+    <tbody>{body}</tbody>
+  </table>
+</body>
+</html>
+"""
+    return HTMLResponse(html)
+
+
+@app.get("/characters/import-unmatched.json")
+def character_import_unmatched_json(run_id: str):
+    with CHAR_IMPORT_RUNS_LOCK:
+        run = CHAR_IMPORT_RUNS.get(run_id)
+        if run is None:
+            raise HTTPException(404, "Unknown run id")
+        report_path_raw = run.get("unmatched_report_path")
+
+    if not report_path_raw:
+        raise HTTPException(404, "No unmatched report for this run")
+
+    report_path = Path(str(report_path_raw))
+    if not report_path.exists() or not report_path.is_file():
+        raise HTTPException(404, "Unmatched report file not found")
+
+    try:
+        doc = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raise HTTPException(500, "Could not read unmatched report")
+    return JSONResponse(doc)
+
+
+@app.get("/lodestone-probe", response_class=HTMLResponse)
+def lodestone_probe_page(
+    request: Request,
+    error: str = "",
+    saved: str = "",
+    run_id: str = "",
+):
+    ctx = Ctx(request)
+    try:
+        saved_url = cookie_lodestone_url(request)
+        run = None
+        if run_id:
+            with LODESTONE_RUNS_LOCK:
+                run = LODESTONE_RUNS.get(run_id)
+        return ctx.render("lodestone_probe.html", {
+            "lodestone_url": saved_url,
+            "cookie_source": cookie_lodestone_browser(request),
+            "include_standard": cookie_lodestone_include_standard(request),
+            "error": error,
+            "saved": saved,
+            "run_id": run_id,
+            "run": run,
+            "active_sheet": None,
+        })
+    finally:
+        ctx.close()
+
+
+@app.post("/lodestone-probe/save")
+def lodestone_probe_save(lodestone_url: str = Form("")):
+    normalized = normalize_lodestone_url(lodestone_url)
+    if normalized is None:
+        return RedirectResponse(
+            f"/lodestone-probe?error={quote('Use a valid Lodestone URL under finalfantasyxiv.com/lodestone/...')}",
+            status_code=303,
+        )
+    response = RedirectResponse("/lodestone-probe", status_code=303)
+    set_lodestone_cookie(response, normalized)
+    return response
+
+
+@app.post("/lodestone-probe/run")
+def lodestone_probe_run(
+    lodestone_url: str = Form(""),
+    cookie_source: str = Form("edge"),
+    include_standard: str = Form("0"),
+    extra_paths: str = Form(""),
+):
+    normalized_url = normalize_lodestone_url(lodestone_url)
+    if normalized_url is None:
+        return RedirectResponse(
+            f"/lodestone-probe?error={quote('Use a valid Lodestone URL under finalfantasyxiv.com/lodestone/...')}",
+            status_code=303,
+        )
+
+    normalized_source = normalize_cookie_source(cookie_source)
+    if normalized_source is None:
+        return RedirectResponse(
+            f"/lodestone-probe?error={quote('Choose Edge, Chrome, or Firefox as the cookie source.')}",
+            status_code=303,
+        )
+
+    include_standard_pages = include_standard == "1"
+    run_id = uuid.uuid4().hex
+    log_path = LODESTONE_LOG_DIR / f"{run_id}.log"
+    _append_lodestone_log_file(
+        log_path,
+        f"[{dt.datetime.now().strftime('%H:%M:%S')}] Job created for URL: {normalized_url}",
+    )
+    with LODESTONE_RUNS_LOCK:
+        LODESTONE_RUNS[run_id] = {
+            "id": run_id,
+            "status": "queued",
+            "log_path": str(log_path),
+            "logs": [f"[{dt.datetime.now().strftime('%H:%M:%S')}] Job queued"],
+        }
+    worker = threading.Thread(
+        target=_run_lodestone_probe_job,
+        args=(run_id, normalized_url, normalized_source, include_standard_pages, extra_paths),
+        daemon=True,
+    )
+    worker.start()
+    response = RedirectResponse(
+        f"/lodestone-probe?run_id={quote(run_id)}",
+        status_code=303,
+    )
+    set_lodestone_cookie(response, normalized_url)
+    set_lodestone_browser_cookie(response, normalized_source)
+    set_lodestone_include_standard_cookie(response, include_standard_pages)
+    return response
+
+
+@app.get("/lodestone-probe/status")
+def lodestone_probe_status(run_id: str):
+    with LODESTONE_RUNS_LOCK:
+        run = LODESTONE_RUNS.get(run_id)
+        if run is None:
+            raise HTTPException(404, "Unknown run id")
+        logs = run.get("logs") or []
+        payload = {
+            "id": run.get("id"),
+            "status": run.get("status"),
+            "error": run.get("error"),
+            "saved_path": run.get("saved_path"),
+            "log_path": run.get("log_path"),
+            "started_at": run.get("started_at"),
+            "finished_at": run.get("finished_at"),
+            "log_tail": "\n".join(logs[-120:]),
+        }
+    return JSONResponse(payload)
 
 
 # --- HTMX partials ----------------------------------------------------------
