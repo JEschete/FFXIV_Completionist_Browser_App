@@ -18,7 +18,9 @@ from pathlib import Path
 from threading import Timer
 
 ROOT = Path(__file__).resolve().parent
-VENV_PY = ROOT / ".venv" / "Scripts" / "python.exe"
+_EMBED_PY = ROOT / "python" / "python.exe"
+IS_EMBEDDED = _EMBED_PY.exists()
+VENV_PY = _EMBED_PY if IS_EMBEDDED else ROOT / ".venv" / "Scripts" / "python.exe"
 REQUIREMENTS = ROOT / "requirements.txt"
 CONFIG_PATH = ROOT / ".launch.json"
 
@@ -122,12 +124,13 @@ def banner() -> None:
         host_label = f"{host}  (all interfaces - LAN reachable)"
     else:
         host_label = f"{host}  (LAN bind)"
+    runtime_label = "python\\ (bundled)" if IS_EMBEDDED else f".venv\\"
     bar = "=" * 60
     print()
     print(bar)
     print(" FFXIV Completion Tracker")
     print(bar)
-    print(f" Python {py_ver}   venv: {VENV_PY.parent.parent.relative_to(ROOT)}\\")
+    print(f" Python {py_ver}   runtime: {runtime_label}")
     print(f" Bind host: {host_label}")
     print()
 
@@ -139,6 +142,11 @@ def run_ingest() -> None:
 
 
 def reinstall_dependencies() -> None:
+    if IS_EMBEDDED:
+        print("\n  This installation uses a bundled Python runtime.")
+        print("  To update dependencies, reinstall from the latest release.")
+        input("\n  Press Enter to return to the menu.")
+        return
     print("\n[deps] Reinstalling / upgrading from requirements.txt ...\n")
     subprocess.call([str(VENV_PY), "-m", "pip", "install", "--upgrade", "pip"])
     subprocess.call([
@@ -447,11 +455,10 @@ def start_server_and_open_browser() -> None:
     # cmd /k keeps the spawned window open after uvicorn exits, so you can
     # read any final traceback. Close that window (or Ctrl+C inside it) to
     # stop the server.
-    spawn_cmd = [
-        "cmd", "/k",
-        str(VENV_PY), "-m", "uvicorn", "app.main:app",
-        "--host", host, "--port", str(PORT), "--reload",
-    ]
+    uvicorn_args = ["--host", host, "--port", str(PORT)]
+    if not IS_EMBEDDED:
+        uvicorn_args.append("--reload")
+    spawn_cmd = ["cmd", "/k", str(VENV_PY), "-m", "uvicorn", "app.main:app"] + uvicorn_args
     try:
         subprocess.Popen(
             spawn_cmd,
@@ -508,7 +515,7 @@ def prompt_choice() -> int | None:
     return -1
 
 
-def main() -> int:
+def _run_cli() -> int:
     while True:
         idx = prompt_choice()
         if idx is None:
@@ -519,6 +526,19 @@ def main() -> int:
             time.sleep(0.6)
             continue
         MENU[idx][1]()
+
+
+def main() -> int:
+    # --cli forces the legacy text menu. By default we hand off to the PyQt6
+    # GUI; if PyQt6 isn't importable for any reason we fall back to the CLI.
+    if "--cli" in sys.argv[1:]:
+        return _run_cli()
+    try:
+        from launch_gui import main as gui_main
+    except Exception as e:  # ImportError or any Qt platform failure
+        print(f"[launcher] GUI unavailable ({e!r}); falling back to text menu.")
+        return _run_cli()
+    return gui_main()
 
 
 if __name__ == "__main__":

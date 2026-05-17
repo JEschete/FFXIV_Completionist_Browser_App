@@ -12,6 +12,16 @@ set "VENV_PY=%VENV_DIR%\Scripts\python.exe"
 set "REQUIREMENTS=%ROOT%\requirements.txt"
 
 REM ---------------------------------------------------------------------------
+REM Installer path: bundled Python embed takes priority — no venv needed.
+REM --bootstrap-only is a no-op here (nothing to set up).
+REM ---------------------------------------------------------------------------
+if exist "%ROOT%\python\python.exe" (
+    if /I "%~1"=="--bootstrap-only" exit /b 0
+    "%ROOT%\python\python.exe" "%ROOT%\launch.py" %*
+    exit /b %ERRORLEVEL%
+)
+
+REM ---------------------------------------------------------------------------
 REM First-run: locate Python and create .venv if missing.
 REM ---------------------------------------------------------------------------
 if not exist "%VENV_PY%" (
@@ -75,7 +85,16 @@ if errorlevel 1 (
 )
 
 REM ---------------------------------------------------------------------------
-REM Hand off to the interactive menu.
+REM --bootstrap-only: used by launch_gui.cmd to set up the venv without then
+REM launching anything. Exit after the venv + deps are ready.
+REM ---------------------------------------------------------------------------
+if /I "%~1"=="--bootstrap-only" (
+    exit /b 0
+)
+
+REM ---------------------------------------------------------------------------
+REM Hand off to launch.py. By default that hands off to the PyQt6 GUI; pass
+REM --cli to force the legacy text menu.
 REM ---------------------------------------------------------------------------
 "%VENV_PY%" "%ROOT%\launch.py" %*
 exit /b %ERRORLEVEL%
