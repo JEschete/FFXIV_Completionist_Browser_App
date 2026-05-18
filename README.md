@@ -1,5 +1,7 @@
 # FFXIV Completion Tracker
 
+## [Virus Total Scan](https://www.virustotal.com/gui/file/32fa9122c1e8ba2c49be0545fea9a01b4527fe915f136db354477f2bcb9e8b17)
+
 A FastAPI + HTMX + Alpine web app for tracking Final Fantasy XIV completion from
 the official checklist workbook.
 
