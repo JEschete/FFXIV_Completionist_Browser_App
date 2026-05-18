@@ -25,6 +25,13 @@ import tempfile
 import webbrowser
 from pathlib import Path
 
+# Embedded Python (Inno Setup installer) uses a python313._pth file that does
+# NOT add the script's directory to sys.path, so `from launch import ...`
+# below fails with ModuleNotFoundError and pythonw.exe swallows the trace.
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
 from PyQt6.QtCore import (
     QObject,
     QProcess,
