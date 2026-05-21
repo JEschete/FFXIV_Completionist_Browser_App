@@ -41,6 +41,11 @@ _COMMON_CONFUSABLES = str.maketrans({
     "α": "a",
     "Ι": "I",
     "ι": "i",
+    "Æ": "AE",
+    "æ": "ae",
+    "Œ": "OE",
+    "œ": "oe",
+    "’": "'",
 })
 
 
@@ -70,6 +75,8 @@ def _norm_label(value: str) -> str:
     value = value.translate(_COMMON_CONFUSABLES)
     folded = unicodedata.normalize("NFKD", value).casefold()
     folded = "".join(ch for ch in folded if not unicodedata.combining(ch))
+    # Treat apostrophes as optional (Vana'diel vs Vanadiel, etc.).
+    folded = folded.replace("'", "")
     folded = re.sub(r"[^a-z0-9]+", " ", folded)
     return folded.strip()
 
@@ -208,45 +215,71 @@ def collect_candidates(payload: dict[str, Any]) -> dict[str, set[str]]:
     return candidates
 
 
+# Story/raid/relic sheets that represent quest completion but often do not
+# contain the literal word "quest" in the sheet title.
+_QUEST_LIKE_SHEET_TOKENS = (
+    "quest",
+    "primals",
+    "bahamut",
+    "the crystal tower",
+    "alexander",
+    "the warring triad",
+    "the shadow of mach",
+    "omega",
+    "return to ivalice",
+    "the four lords",
+    "eden",
+    "yorha dark apocalypse",
+    "the sorrow of werlyt",
+    "pandæmonium",
+    "myths of the realm",
+    "the arcadion",
+    "echoes of vanadiel",
+    "echoes of vana'diel",
+    "chronicles of light",
+    "hildibrand",
+    "weapon enhancement",
+    "records of unusual endeavors",
+    "side story quests",
+    "disciple of war quests",
+    "disciple of magic quests",
+    "disciple of the hand quests",
+    "disciple of the land quests",
+    "disciple of war job quests",
+    "disciple of magic job quests",
+    "role quests",
+    "hall of the novice",
+    "crystalline mean quests",
+    "studium quests",
+    "wachumeqimeqi quests",
+    "relic tools",
+    "relic weapons",
+)
+
+_QUEST_LIKE_SHEET_TOKENS_NORM = tuple(
+    sorted({norm for token in _QUEST_LIKE_SHEET_TOKENS if (norm := _norm_label(token))})
+)
+
+
 def _sheet_buckets(sheet_name: str) -> set[str]:
-    name = sheet_name.lower()
+    name_norm = _norm_label(sheet_name)
     out: set[str] = set()
 
-    # Some raid/side-story sheets track questline completion but don't include
-    # the word "quest" in the sheet title.
-    quest_like_tokens = (
-        "quest",
-        "alexander",
-        "bahamut",
-        "primals",
-        "warring triad",
-        "hildibrand",
-        "crystal tower",
-        "shadow of mach",
-        "records of unusual endeavors",
-        "chronicles of light",
-        "omega",
-        "yorha",
-        "eden",
-        "ivalice",
-        "eureka",
-        "weapon enhancement",
-    )
-    if any(token in name for token in quest_like_tokens):
+    if any(token in name_norm for token in _QUEST_LIKE_SHEET_TOKENS_NORM):
         out.add("quest")
-    if "achievement" in name or "achiev" in name:
+    if "achievement" in name_norm or "achiev" in name_norm:
         out.add("achievement")
-    if "minion" in name:
+    if "minion" in name_norm:
         out.add("minion")
-    if "mount" in name:
+    if "mount" in name_norm:
         out.add("mount")
-    if "triple triad" in name or "card" in name:
+    if "triple triad" in name_norm or "card" in name_norm:
         out.add("tripletriad")
-    if "blue magic spellbook" in name:
+    if "blue magic spellbook" in name_norm:
         out.add("bluemagic")
-    if "emote" in name:
+    if "emote" in name_norm:
         out.add("emote")
-    if "orchestrion" in name:
+    if "orchestrion" in name_norm:
         out.add("orchestrion")
     return out
 
