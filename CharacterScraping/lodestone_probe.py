@@ -197,6 +197,19 @@ def extract_profile(page: Page) -> dict[str, Any]:
     }
 
 
+def _parse_int(value: str | None) -> int | None:
+    """Parse a Lodestone numeric cell, returning None for dash placeholders ('-', '--')."""
+    if not value:
+        return None
+    cleaned = value.replace(",", "").strip()
+    if not cleaned or set(cleaned) <= {"-"}:
+        return None
+    try:
+        return int(cleaned)
+    except ValueError:
+        return None
+
+
 def parse_jobs(page: Page) -> dict[str, list[dict[str, Any]]]:
     sections: dict[str, list[dict[str, Any]]] = {}
     for heading_node in page.soup.select("h4.heading--lead"):
@@ -219,14 +232,12 @@ def parse_jobs(page: Page) -> dict[str, list[dict[str, Any]]]:
             exp_max = None
             if "/" in exp_raw:
                 left, right = [part.strip() for part in exp_raw.split("/", 1)]
-                if left != "-":
-                    exp = int(left.replace(",", ""))
-                if right != "-":
-                    exp_max = int(right.replace(",", ""))
+                exp = _parse_int(left)
+                exp_max = _parse_int(right)
             rows.append(
                 {
                     "job": name,
-                    "level": None if level_raw == "-" else int(level_raw),
+                    "level": _parse_int(level_raw),
                     "xp": exp,
                     "xp_max": exp_max,
                     "tooltip": item.select_one(".character__job__name").get("data-tooltip"),
