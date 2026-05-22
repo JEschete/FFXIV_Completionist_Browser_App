@@ -1,0 +1,801 @@
+FFXIVTracker Desktop Import Mismatch Findings
+Run: 9a09b011d5c148369a9fe3dc1278b0a9
+Character: TestImporter2
+Source Path: C:\Users\judee\AppData\Roaming\ffxiv-completionist\completion.json
+Created At: 2026-05-21T23:04:43.247737
+
+Totals
+- Total candidates: 29214
+- Matched candidates: 29073
+- Unmatched candidates: 126
+
+Workbook Coverage Evidence (from sheets table)
+- Squadron sheet present: No
+- Treasure Maps sheet present: No
+- Treasure Dungeons sheet present: No
+- Variant Dungeons sheet present: No
+- Criterion Dungeons sheet present: No
+- Island Sanctuary Rank sheet present: Yes
+- Island Sanctuary Buildings sheet present: Yes
+- Island Sanctuary Isleventory sheet present: Yes
+- Island Sanctuary Rare Animals sheet present: Yes
+- Aetherytes sheet present: Yes
+- Mount Speed sheet present: Yes
+- Porters sheet present: Yes
+- The Hunt sheet present: Yes
+
+Coverage Gap: Workbook Has No Corresponding Sheet
+Count: 58
+
+1. A Not-quite Deserted Island
+   Bucket: duty/duty-raid-finder/v-and-c-dungeons
+   Source ID: 0
+   Aliases tried: A Not-quite Deserted Island; Gift of the Onmyoji; Whom the Silkie Serves
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+2. Pride and Acceptance
+   Bucket: duty/duty-raid-finder/v-and-c-dungeons
+   Source ID: 1
+   Aliases tried: Pride and Acceptance; The Crimson Sword; The First Settlers of Aloalo Island
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+3. A Spot in the Sunlight
+   Bucket: duty/duty-raid-finder/v-and-c-dungeons
+   Source ID: 2
+   Aliases tried: A Spot in the Sunlight; A Tale of Dead Men; God of Heaven and Sea
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+4. A Key Memory
+   Bucket: duty/duty-raid-finder/v-and-c-dungeons
+   Source ID: 3
+   Aliases tried: A Key Memory; A Noxious Gift; Forging a Legacy
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+5. In Father's Stead
+   Bucket: duty/duty-raid-finder/v-and-c-dungeons
+   Source ID: 4
+   Aliases tried: In Father's Stead; The Luthier and the Songstress; The Roots of Arcanima
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+6. Lost to Avarice
+   Bucket: duty/duty-raid-finder/v-and-c-dungeons
+   Source ID: 5
+   Aliases tried: Lost to Avarice; Ul'dah's Sin to Bear; Under the Boughs of the Great Tree
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+7. A Dear Friend
+   Bucket: duty/duty-raid-finder/v-and-c-dungeons
+   Source ID: 6
+   Aliases tried: A Dear Friend; Beyond the Lanterns' Light; To Learn More of Myrrh
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+8. Fish for the Mind
+   Bucket: duty/duty-raid-finder/v-and-c-dungeons
+   Source ID: 7
+   Aliases tried: Fish for the Mind; The Common Man's Courage; Ul'dah and Sil'dih
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+9. A Familiar History
+   Bucket: duty/duty-raid-finder/v-and-c-dungeons
+   Source ID: 8
+   Aliases tried: A Familiar History; Raising the Flags; Sound of the Stone
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+10. My Mother's Eyes
+   Bucket: duty/duty-raid-finder/v-and-c-dungeons
+   Source ID: 9
+   Aliases tried: My Mother's Eyes; The Remnants of Faith; The Seal of Silence
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+11. A Lalafell or a Fish?
+   Bucket: duty/duty-raid-finder/v-and-c-dungeons
+   Source ID: 10
+   Aliases tried: A Lalafell or a Fish?; Seasons of the Fleeting; The Thorne Legacy
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+12. In Parchment We Trust
+   Bucket: duty/duty-raid-finder/v-and-c-dungeons
+   Source ID: 11
+   Aliases tried: In Parchment We Trust; The Ogiseru's Fate; Wellspring of Golden Memories
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+13. Military Courier
+   Bucket: duty/squadron/squadron
+   Source ID: 0
+   Aliases tried: Military Courier; Trainee
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+14. Outskirts Patrol
+   Bucket: duty/squadron/squadron
+   Source ID: 1
+   Aliases tried: Outskirts Patrol; Trainee
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+15. Beastmen Recon
+   Bucket: duty/squadron/squadron
+   Source ID: 2
+   Aliases tried: Beastmen Recon; Trainee
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+16. Supply Wagon Escort
+   Bucket: duty/squadron/squadron
+   Source ID: 3
+   Aliases tried: Supply Wagon Escort; Trainee
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+17. Pest Eradication
+   Bucket: duty/squadron/squadron
+   Source ID: 4
+   Aliases tried: Pest Eradication; Trainee
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+18. Frontline Support
+   Bucket: duty/squadron/squadron
+   Source ID: 5
+   Aliases tried: Frontline Support; Routine
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+19. Officer Escort
+   Bucket: duty/squadron/squadron
+   Source ID: 6
+   Aliases tried: Officer Escort; Routine
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+20. Border Patrol
+   Bucket: duty/squadron/squadron
+   Source ID: 7
+   Aliases tried: Border Patrol; Routine
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+21. Routine
+   Bucket: duty/squadron/squadron
+   Source ID: 8
+   Aliases tried: Routine; Stronghold Recon
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+22. Allied Maneuvers
+   Bucket: duty/squadron/squadron
+   Source ID: 10
+   Aliases tried: Allied Maneuvers; Routine
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+23. Priority
+   Bucket: duty/squadron/squadron
+   Source ID: 11
+   Aliases tried: Priority; Stronghold Assault
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+24. Black Market Crackdown
+   Bucket: duty/squadron/squadron
+   Source ID: 12
+   Aliases tried: Black Market Crackdown; Priority
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+25. Imperial Recon
+   Bucket: duty/squadron/squadron
+   Source ID: 13
+   Aliases tried: Imperial Recon; Priority
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+26. Imperial Pursuit
+   Bucket: duty/squadron/squadron
+   Source ID: 14
+   Aliases tried: Imperial Pursuit; Priority
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+27. Imperial Feint
+   Bucket: duty/squadron/squadron
+   Source ID: 15
+   Aliases tried: Imperial Feint; Priority
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+28. Priority
+   Bucket: duty/squadron/squadron
+   Source ID: 16
+   Aliases tried: Priority; Supply Line Disruption
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+29. Criminal Pursuit
+   Bucket: duty/squadron/squadron
+   Source ID: 17
+   Aliases tried: Criminal Pursuit; Priority
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+30. Priority
+   Bucket: duty/squadron/squadron
+   Source ID: 18
+   Aliases tried: Priority; Supply Wagon Destruction
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+31. Chimerical Elimination
+   Bucket: duty/squadron/squadron
+   Source ID: 19
+   Aliases tried: Chimerical Elimination; Priority
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+32. Primal Recon
+   Bucket: duty/squadron/squadron
+   Source ID: 20
+   Aliases tried: Primal Recon; Priority
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+33. Counter-magitek Exercises
+   Bucket: duty/squadron/squadron
+   Source ID: 21
+   Aliases tried: Counter-magitek Exercises; Priority
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+34. Infiltrate and Rescue
+   Bucket: duty/squadron/squadron
+   Source ID: 22
+   Aliases tried: Infiltrate and Rescue; Priority
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+35. Outlaw Subjugation
+   Bucket: duty/squadron/squadron
+   Source ID: 23
+   Aliases tried: Outlaw Subjugation; Priority
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+36. Cult Crackdown
+   Bucket: duty/squadron/squadron
+   Source ID: 24
+   Aliases tried: Cult Crackdown; Priority
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+37. Priority
+   Bucket: duty/squadron/squadron
+   Source ID: 25
+   Aliases tried: Priority; Voidsent Elimination
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+38. Armor Annihilation
+   Bucket: duty/squadron/squadron
+   Source ID: 26
+   Aliases tried: Armor Annihilation; Priority
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+39. Invasive Testing
+   Bucket: duty/squadron/squadron
+   Source ID: 27
+   Aliases tried: Invasive Testing; Priority
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+40. Impostor Alert
+   Bucket: duty/squadron/squadron
+   Source ID: 28
+   Aliases tried: Impostor Alert; Priority
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+41. Level 40 gathering
+   Bucket: duty/treasure-hunt/maps
+   Source ID: 0
+   Aliases tried: Level 40 gathering; Timeworn Leather Map
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+42. Level 45 gathering
+   Bucket: duty/treasure-hunt/maps
+   Source ID: 1
+   Aliases tried: Level 45 gathering; Timeworn Goatskin Map
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+43. Level 50 gathering
+   Bucket: duty/treasure-hunt/maps
+   Source ID: 2
+   Aliases tried: Level 50 gathering; Timeworn Toadskin Map
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+44. Level 50 gathering
+   Bucket: duty/treasure-hunt/maps
+   Source ID: 3
+   Aliases tried: Level 50 gathering; Timeworn Boarskin Map
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+45. Level 50 gathering
+   Bucket: duty/treasure-hunt/maps
+   Source ID: 4
+   Aliases tried: Level 50 gathering; Timeworn Peisteskin Map
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+46. Unhidden Leather Map
+   Bucket: duty/treasure-hunt/maps
+   Source ID: 5
+   Aliases tried: Unhidden Leather Map
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+47. Level 55 gathering
+   Bucket: duty/treasure-hunt/maps
+   Source ID: 6
+   Aliases tried: Level 55 gathering; Timeworn Archaeoskin Map
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+48. Level 60 gathering
+   Bucket: duty/treasure-hunt/maps
+   Source ID: 7
+   Aliases tried: Level 60 gathering; Timeworn Wyvernskin Map
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+49. Level 60 gathering
+   Bucket: duty/treasure-hunt/maps
+   Source ID: 8
+   Aliases tried: Level 60 gathering; Timeworn Dragonskin Map
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+50. Level 70 gathering
+   Bucket: duty/treasure-hunt/maps
+   Source ID: 9
+   Aliases tried: Level 70 gathering; Timeworn Gaganaskin Map
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+51. Timeworn Thief's Map
+   Bucket: duty/treasure-hunt/maps
+   Source ID: 11
+   Aliases tried: Timeworn Thief's Map
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+52. Level 80 gathering
+   Bucket: duty/treasure-hunt/maps
+   Source ID: 12
+   Aliases tried: Level 80 gathering; Timeworn Gliderskin Map
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+53. Level 80 gathering
+   Bucket: duty/treasure-hunt/maps
+   Source ID: 13
+   Aliases tried: Level 80 gathering; Timeworn Zonureskin Map
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+54. Level 90 gathering
+   Bucket: duty/treasure-hunt/maps
+   Source ID: 14
+   Aliases tried: Level 90 gathering; Timeworn Saigaskin Map
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+55. Level 90 gathering
+   Bucket: duty/treasure-hunt/maps
+   Source ID: 15
+   Aliases tried: Level 90 gathering; Timeworn Kumbhiraskin Map
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+56. Level 90 gathering
+   Bucket: duty/treasure-hunt/maps
+   Source ID: 16
+   Aliases tried: Level 90 gathering; Timeworn Ophiotauroskin Map
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+57. Level 100 gathering
+   Bucket: duty/treasure-hunt/maps
+   Source ID: 17
+   Aliases tried: Level 100 gathering; Timeworn Loboskin Map
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+58. The Lost Canals of Uznair
+   Bucket: duty/treasure-hunt/duties
+   Source ID: 1
+   Aliases tried: The Lost Canals of Uznair
+   Why it was missed: No matching sheet exists in workbook for this source bucket.
+
+Content Missing In Workbook Data
+Count: 24
+
+1. Banes of Society
+   Bucket: achievement
+   Source ID: 14
+   Aliases tried: Banes of Society; Defeat the notorious Lozol Totoloq the Decapitator, Flamefist Ahlygg Roh, and 3rd Order Patriarch Zu Ga.
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+2. Open Tournament Official
+   Bucket: quest
+   Source ID: 69566
+   Aliases tried: Open Tournament Official; Open and Inviting; Triple Triad Open & Invitational Tournaments
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+3. There Can Be Only One
+   Bucket: quest
+   Source ID: 1390
+   Aliases tried: There Can Be Only One
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+4. Chance on travelling over spawn locations with the Morpho minion out.
+   Bucket: duty/the-hunt/dt
+   Source ID: 13444
+   Aliases tried: Chance on travelling over spawn locations with the Morpho minion out.; Ihnuxokiy
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+5. Imitation Highland Window
+   Bucket: logs/crafting-log/carpenter
+   Source ID: 5442
+   Aliases tried: Imitation Highland Window
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+6. Oddly Specific Shaft
+   Bucket: logs/crafting-log/carpenter
+   Source ID: 33769
+   Aliases tried: Oddly Specific Shaft
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+7. Titanbronze Zaghnal
+   Bucket: logs/crafting-log/blacksmith
+   Source ID: 5343
+   Aliases tried: Titanbronze Zaghnal
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+8. Deepgold Sickle
+   Bucket: logs/crafting-log/blacksmith
+   Source ID: 5339
+   Aliases tried: Deepgold Sickle
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+9. Ra'Kaznar Ring of Gathering
+   Bucket: logs/crafting-log/armorer
+   Source ID: 6202
+   Aliases tried: Ra'Kaznar Ring of Gathering
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+10. Replica Heavy Allagan Sollerets
+   Bucket: logs/crafting-log/armorer
+   Source ID: 31384
+   Aliases tried: Replica Heavy Allagan Sollerets
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+11. Goatskin Cesti
+   Bucket: logs/crafting-log/leatherworker
+   Source ID: 360
+   Aliases tried: Goatskin Cesti
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+12. Snow Cotton Jacket
+   Bucket: logs/crafting-log/weaver
+   Source ID: 6140
+   Aliases tried: Snow Cotton Jacket
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+13. Salon Server's Hat
+   Bucket: logs/crafting-log/weaver
+   Source ID: 35480
+   Aliases tried: Salon Server's Hat
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+14. Grade 1 Wheel of Swiftness
+   Bucket: logs/crafting-log/alchemist
+   Source ID: 2164
+   Aliases tried: Grade 1 Wheel of Swiftness
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+15. Red Moth Orchid Earring
+   Bucket: logs/crafting-log/alchemist
+   Source ID: 4686
+   Aliases tried: Red Moth Orchid Earring
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+16. Blue Moth Orchid Earring
+   Bucket: logs/crafting-log/alchemist
+   Source ID: 4687
+   Aliases tried: Blue Moth Orchid Earring
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+17. Yellow Moth Orchid Earring
+   Bucket: logs/crafting-log/alchemist
+   Source ID: 4688
+   Aliases tried: Yellow Moth Orchid Earring
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+18. Green Moth Orchid Earring
+   Bucket: logs/crafting-log/alchemist
+   Source ID: 4689
+   Aliases tried: Green Moth Orchid Earring
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+19. Orange Moth Orchid Earring
+   Bucket: logs/crafting-log/alchemist
+   Source ID: 4690
+   Aliases tried: Orange Moth Orchid Earring
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+20. Purple Moth Orchid Earring
+   Bucket: logs/crafting-log/alchemist
+   Source ID: 4691
+   Aliases tried: Purple Moth Orchid Earring
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+21. White Moth Orchid Earring
+   Bucket: logs/crafting-log/alchemist
+   Source ID: 4692
+   Aliases tried: White Moth Orchid Earring
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+22. Black Moth Orchid Earring
+   Bucket: logs/crafting-log/alchemist
+   Source ID: 4693
+   Aliases tried: Black Moth Orchid Earring
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+23. Rainbow Moth Orchid Earring
+   Bucket: logs/crafting-log/alchemist
+   Source ID: 4694
+   Aliases tried: Rainbow Moth Orchid Earring
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+24. Gold Plating
+   Bucket: logs/crafting-log/shared
+   Source ID: 34752
+   Aliases tried: Gold Plating
+   Why it was missed: No convincing workbook row found by current labels/aliases for this source entry.
+
+Concept/Granularity Mismatch
+Count: 26
+
+1. Arcanist Intro
+   Bucket: quest
+   Source ID: 65987
+   Aliases tried: Arcanist Intro; Murie; So You Want to Be an Arcanist
+   Why it was missed: Source uses summary/meta node; workbook tracks specific quest title rows.
+
+2. And We Shall Call It Pyros
+   Bucket: quest
+   Source ID: 68148
+   Aliases tried: And We Shall Call It Pyros; Eureka Pyros; Rodney
+   Why it was missed: Source has expansion-specific quest variants; workbook appears collapsed to a single Eureka umbrella row.
+
+3. And We Shall Call It Hydatos
+   Bucket: quest
+   Source ID: 68149
+   Aliases tried: And We Shall Call It Hydatos; Eureka Hydatos; Rodney
+   Why it was missed: Source has expansion-specific quest variants; workbook appears collapsed to a single Eureka umbrella row.
+
+4. And We Shall Call It Pagos
+   Bucket: quest
+   Source ID: 68478
+   Aliases tried: And We Shall Call It Pagos; Eureka Pagos; Rodney
+   Why it was missed: Source has expansion-specific quest variants; workbook appears collapsed to a single Eureka umbrella row.
+
+5. Rank 10
+   Bucket: duty/island-sanctuary/rank
+   Source ID: 9
+   Aliases tried: Rank 10; Rank X
+   Why it was missed: Source uses Rank N labels; workbook stores rank in sanctuary_rank metadata with mixed display labels.
+
+6. Rank 11
+   Bucket: duty/island-sanctuary/rank
+   Source ID: 10
+   Aliases tried: Rank 11
+   Why it was missed: Source uses Rank N labels; workbook stores rank in sanctuary_rank metadata with mixed display labels.
+
+7. Rank 16
+   Bucket: duty/island-sanctuary/rank
+   Source ID: 15
+   Aliases tried: Rank 16
+   Why it was missed: Source uses Rank N labels; workbook stores rank in sanctuary_rank metadata with mixed display labels.
+
+8. Rank 20
+   Bucket: duty/island-sanctuary/rank
+   Source ID: 19
+   Aliases tried: Rank 20
+   Why it was missed: Source uses Rank N labels; workbook stores rank in sanctuary_rank metadata with mixed display labels.
+
+9. Cropland Automation
+   Bucket: duty/island-sanctuary/buildings
+   Source ID: 6
+   Aliases tried: Cropland Automation
+   Why it was missed: Source milestone names (automation) do not align to workbook building tier checklist labels.
+
+10. Pasture Automation
+   Bucket: duty/island-sanctuary/buildings
+   Source ID: 10
+   Aliases tried: Pasture Automation
+   Why it was missed: Source milestone names (automation) do not align to workbook building tier checklist labels.
+
+11. Island Alyssum
+   Bucket: duty/island-sanctuary/isleventory
+   Source ID: 27
+   Aliases tried: Island Alyssum
+   Why it was missed: Appears in workbook as material/context in crafting rows, not as standalone checklist row label.
+
+12. Opo-Opo
+   Bucket: duty/island-sanctuary/animals
+   Source ID: 2
+   Aliases tried: Opo-Opo
+   Why it was missed: Source tracks normal island animals; workbook sheet tracks rare animals only.
+
+13. Ground Squirrel
+   Bucket: duty/island-sanctuary/animals
+   Source ID: 6
+   Aliases tried: Ground Squirrel
+   Why it was missed: Source tracks normal island animals; workbook sheet tracks rare animals only.
+
+14. Coblyn
+   Bucket: duty/island-sanctuary/animals
+   Source ID: 8
+   Aliases tried: Coblyn
+   Why it was missed: Source tracks normal island animals; workbook sheet tracks rare animals only.
+
+15. Wild Dodo
+   Bucket: duty/island-sanctuary/animals
+   Source ID: 12
+   Aliases tried: Wild Dodo
+   Why it was missed: Source tracks normal island animals; workbook sheet tracks rare animals only.
+
+16. Island Doe
+   Bucket: duty/island-sanctuary/animals
+   Source ID: 14
+   Aliases tried: Island Doe
+   Why it was missed: Source tracks normal island animals; workbook sheet tracks rare animals only.
+
+17. Chocobo
+   Bucket: duty/island-sanctuary/animals
+   Source ID: 16
+   Aliases tried: Chocobo
+   Why it was missed: Source tracks normal island animals; workbook sheet tracks rare animals only.
+
+18. Glyptodon Pup
+   Bucket: duty/island-sanctuary/animals
+   Source ID: 18
+   Aliases tried: Glyptodon Pup
+   Why it was missed: Source tracks normal island animals; workbook sheet tracks rare animals only.
+
+19. Aurochs
+   Bucket: duty/island-sanctuary/animals
+   Source ID: 21
+   Aliases tried: Aurochs
+   Why it was missed: Source tracks normal island animals; workbook sheet tracks rare animals only.
+
+20. Island Nanny
+   Bucket: duty/island-sanctuary/animals
+   Source ID: 23
+   Aliases tried: Island Nanny
+   Why it was missed: Source tracks normal island animals; workbook sheet tracks rare animals only.
+
+21. Blue Back
+   Bucket: duty/island-sanctuary/animals
+   Source ID: 25
+   Aliases tried: Blue Back
+   Why it was missed: Source tracks normal island animals; workbook sheet tracks rare animals only.
+
+22. Quartz Spriggan
+   Bucket: duty/island-sanctuary/animals
+   Source ID: 32
+   Aliases tried: Quartz Spriggan
+   Why it was missed: Source tracks normal island animals; workbook sheet tracks rare animals only.
+
+23. Boar of Paradise
+   Bucket: duty/island-sanctuary/animals
+   Source ID: 37
+   Aliases tried: Boar of Paradise
+   Why it was missed: Source tracks normal island animals; workbook sheet tracks rare animals only.
+
+24. Leatherworkers' Guild & Shaded Bower
+   Bucket: travel/aetherytes/the-black-shroud
+   Source ID: 18
+   Aliases tried: Leatherworkers' Guild & Shaded Bower
+   Why it was missed: Source uses intra-city/district destination names; workbook aetherytes are modeled at zone/city level.
+
+25. The Chamber of Rule
+   Bucket: travel/aetherytes/thanalan
+   Source ID: 36
+   Aliases tried: The Chamber of Rule
+   Why it was missed: Source uses intra-city/district destination names; workbook aetherytes are modeled at zone/city level.
+
+26. Hyrstmill
+   Bucket: travel/porters/the-black-shroud
+   Source ID: 16
+   Aliases tried: Hyrstmill
+   Why it was missed: Source label is a destination name; workbook porter labels are transporter type (region in row_json).
+
+Label/Token Alias Gap
+Count: 8
+
+1. Rororrlo Teh
+   Bucket: minion
+   Source ID: 515
+   Aliases tried: Rororrlo Teh
+   Why it was missed: Typo mismatch: workbook has Rororrlo The.
+
+2. Forgiven Rebellion
+   Bucket: duty/the-hunt/shb
+   Source ID: 8915
+   Aliases tried: Forgiven Rebellion; When an S rank dies in Norvrandt, it has a chance to spawn Forgiven Gossips which spawn Forgiven Rebellion when killed.
+   Why it was missed: Prefix mismatch: workbook label is The Forgiven Rebellion.
+
+3. Island Raw Garnet
+   Bucket: duty/island-sanctuary/isleventory
+   Source ID: 28
+   Aliases tried: Island Raw Garnet
+   Why it was missed: Word-order mismatch: workbook label is Raw Island Garnet.
+
+4. Radz-at-Han Aetheryte Plaza
+   Bucket: travel/aetherytes/ilsabard
+   Source ID: 139
+   Aliases tried: Radz-at-Han Aetheryte Plaza
+   Why it was missed: Suffix mismatch: workbook uses city/zone name without Aetheryte Plaza suffix.
+
+5. Tuliyollal Aetheryte Plaza
+   Bucket: travel/aetherytes/tural
+   Source ID: 164
+   Aliases tried: Tuliyollal Aetheryte Plaza
+   Why it was missed: Suffix mismatch: workbook uses city/zone name without Aetheryte Plaza suffix.
+
+6. Solution Nine Aetheryte Plaza
+   Bucket: travel/aetherytes/tural
+   Source ID: 180
+   Aliases tried: Solution Nine Aetheryte Plaza
+   Why it was missed: Suffix mismatch: workbook uses city/zone name without Aetheryte Plaza suffix.
+
+7. Old Sharlayan Aetheryte Plaza
+   Bucket: travel/aetherytes/others
+   Source ID: 132
+   Aliases tried: Old Sharlayan Aetheryte Plaza
+   Why it was missed: Suffix mismatch: workbook uses city/zone name without Aetheryte Plaza suffix.
+
+8. @PLACE.RAK_TIKA
+   Bucket: travel/mount-speed/norvrandt
+   Source ID: 4
+   Aliases tried: @PLACE.RAK_TIKA; Place Rak Tika; Rak Tika
+   Why it was missed: Tokenized source label needs normalization to Rak'tika Greatwood.
+
+Likely Rename/Variant Drift
+Count: 10
+
+1. Dwarven Mythril War Scythe
+   Bucket: logs/crafting-log/blacksmith
+   Source ID: 5345
+   Aliases tried: Dwarven Mythril War Scythe
+   Why it was missed: Closest workbook item in Blacksmithing Log suggests a rename/variant drift rather than missing bucket mapping.
+
+2. Titanium Gold Thorned Corselet of Scouting
+   Bucket: logs/crafting-log/armorer
+   Source ID: 5944
+   Aliases tried: Titanium Gold Thorned Corselet of Scouting
+   Why it was missed: Closest workbook item in Armorcrafting Log suggests a rename/variant drift rather than missing bucket mapping.
+
+3. Chondrite Gauntlets of Fending
+   Bucket: logs/crafting-log/armorer
+   Source ID: 5050
+   Aliases tried: Chondrite Gauntlets of Fending
+   Why it was missed: Closest workbook item in Armorcrafting Log suggests a rename/variant drift rather than missing bucket mapping.
+
+4. Chondrite Top of Maiming
+   Bucket: logs/crafting-log/armorer
+   Source ID: 5054
+   Aliases tried: Chondrite Top of Maiming
+   Why it was missed: Closest workbook item in Armorcrafting Log suggests a rename/variant drift rather than missing bucket mapping.
+
+5. Star Quartz Wristband of Fending
+   Bucket: logs/crafting-log/goldsmith
+   Source ID: 5093
+   Aliases tried: Star Quartz Wristband of Fending
+   Why it was missed: Closest workbook item in Goldsmithing Log suggests a rename/variant drift rather than missing bucket mapping.
+
+6. Star Quartz Wristband of Slaying
+   Bucket: logs/crafting-log/goldsmith
+   Source ID: 5094
+   Aliases tried: Star Quartz Wristband of Slaying
+   Why it was missed: Closest workbook item in Goldsmithing Log suggests a rename/variant drift rather than missing bucket mapping.
+
+7. Star Quartz Wristband of Aiming
+   Bucket: logs/crafting-log/goldsmith
+   Source ID: 5095
+   Aliases tried: Star Quartz Wristband of Aiming
+   Why it was missed: Closest workbook item in Goldsmithing Log suggests a rename/variant drift rather than missing bucket mapping.
+
+8. Star Quartz Wristband of Healing
+   Bucket: logs/crafting-log/goldsmith
+   Source ID: 5096
+   Aliases tried: Star Quartz Wristband of Healing
+   Why it was missed: Closest workbook item in Goldsmithing Log suggests a rename/variant drift rather than missing bucket mapping.
+
+9. Star Quartz Wristband of Casting
+   Bucket: logs/crafting-log/goldsmith
+   Source ID: 5097
+   Aliases tried: Star Quartz Wristband of Casting
+   Why it was missed: Closest workbook item in Goldsmithing Log suggests a rename/variant drift rather than missing bucket mapping.
+
+10. Dalmascan Leather Shoes
+   Bucket: logs/crafting-log/leatherworker
+   Source ID: 33797
+   Aliases tried: Dalmascan Leather Shoes
+   Why it was missed: Closest workbook item in Leatherworking Log suggests a rename/variant drift rather than missing bucket mapping.
+
+Cross-check
+- Grouped items total: 126
+- Expected unmatched total: 126
+- Totals match: True
