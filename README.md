@@ -176,6 +176,10 @@ results into the workbook as completed rows. Two pages drive the workflow:
   an import. Matched rows are flipped to `done` (or `100%` for value-style
   rows); unmatched items are written to an HTML / JSON report.
 
+For a plain-language mismatch summary, see `Missing Items Report.txt` at the
+repo root. Items listed there were not mapped to workbook rows during import
+and are not currently tracked or confirmed as matched in this database.
+
 ### Workflow
 
 1. Open `/lodestone-probe` and save your Lodestone character URL.
@@ -299,9 +303,9 @@ Lodestone scrape (background job):
 - `POST /lodestone-probe/run` start authenticated scrape
 - `GET /lodestone-probe/status?run_id=...` poll JSON status / log tail
 
-Lodestone import (background job):
+Character import (background job):
 
-- `POST /characters/import-lodestone` upload payload or select server file
+- `POST /characters/import` choose source (`lodestone-json` or `desktop-app`) and upload/select server file
 - `GET /characters/import-status?run_id=...` poll JSON status / log tail
 - `GET /characters/import-unmatched?run_id=...` HTML report of unmatched items
 - `GET /characters/import-unmatched.json?run_id=...` same data as JSON

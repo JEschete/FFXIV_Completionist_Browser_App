@@ -15,12 +15,34 @@
 {% if error %}<div class="error-banner">{{ error }}</div>{% endif %}
 
 <section class="probe-card char-import-card">
-  <form class="probe-form" method="post" action="/characters/import-lodestone" enctype="multipart/form-data">
-    <h2>Import from Lodestone JSON</h2>
+  <form class="probe-form" method="post" action="/characters/import" enctype="multipart/form-data" id="character-import-form">
+    <h2>Import progress</h2>
     <p class="page-sub">
-      Choose a character and payload file to apply imported progress.
-      This marks matched rows as done and writes detailed logs for troubleshooting.
+      Choose a source, then upload a JSON file or select a pre-populated server file.
+      Matched rows are applied and detailed logs are recorded for troubleshooting.
     </p>
+
+    <label>Import source</label>
+    <div class="import-source-radios">
+      <label class="probe-check">
+        <input
+          type="radio"
+          name="import_source"
+          value="lodestone-json"
+          {{ 'checked' if selected_import_source != 'desktop-app' else '' }}
+        />
+        Lodestone JSON
+      </label>
+      <label class="probe-check">
+        <input
+          type="radio"
+          name="import_source"
+          value="desktop-app"
+          {{ 'checked' if selected_import_source == 'desktop-app' else '' }}
+        />
+        Desktop app completion.json
+      </label>
+    </div>
 
     <label for="import-character-id">Character</label>
     <select id="import-character-id" name="character_id" required>
@@ -29,7 +51,7 @@
       {% endfor %}
     </select>
 
-    <label for="import-payload-file">Payload JSON file</label>
+    <label for="import-payload-file" id="import-file-label">JSON file</label>
     <input
       id="import-payload-file"
       type="file"
@@ -37,13 +59,22 @@
       accept=".json,application/json"
     />
 
-    <label for="import-payload-path">Or choose server payload</label>
-    <select id="import-payload-path" name="payload_path">
-      <option value="">-- select a payload from data/lodestone_probe --</option>
-      {% for p in payload_options %}
-      <option value="{{ p }}" {{ 'selected' if p == suggested_payload }}>{{ p }}</option>
-      {% endfor %}
+    <label for="import-source-path" id="import-source-path-label">Or choose server file</label>
+    <select id="import-source-path" name="payload_path" data-initial-value="{{ suggested_source_path }}">
+      <option value="">-- select a source file --</option>
     </select>
+    <p class="probe-hint" id="import-source-hint"></p>
+
+    <script id="import-source-data" type="application/json">{{ {
+      'lodestone-json': {
+        'options': payload_options,
+        'suggested': suggested_payload,
+      },
+      'desktop-app': {
+        'options': desktop_completion_options,
+        'suggested': suggested_desktop_path,
+      },
+    } | tojson }}</script>
 
     <label class="probe-check">
       <input type="checkbox" name="clear_existing" value="1" />
@@ -52,21 +83,132 @@
 
     <button type="submit" class="btn-primary">Start import</button>
   </form>
+</section>
 
-  {% if import_run and import_run.status == 'completed' and import_run.summary %}
-  <div class="ok-banner" style="margin-top: 12px;">
-    Imported {{ import_run.summary.rows_applied }} rows for {{ import_run.summary.character_name }}
-    (matched {{ import_run.summary.matched_candidates }}/{{ import_run.summary.total_candidates }} candidates).
-  </div>
-  {% endif %}
+<script>
+(() => {
+  const form = document.getElementById('character-import-form');
+  if (!form) return;
 
-  {% if import_run_id %}
+  const radios = Array.from(form.querySelectorAll('input[name="import_source"]'));
+  const selectEl = document.getElementById('import-source-path');
+  const fileLabelEl = document.getElementById('import-file-label');
+  const selectLabelEl = document.getElementById('import-source-path-label');
+  const hintEl = document.getElementById('import-source-hint');
+  const dataEl = document.getElementById('import-source-data');
+  const initialValue = (selectEl?.dataset.initialValue || '').trim();
+
+  if (!selectEl || !dataEl || radios.length === 0) return;
+
+  let sourceData = {};
+  try {
+    sourceData = JSON.parse(dataEl.textContent || '{}');
+  } catch (_err) {
+    sourceData = {};
+  }
+
+  const sourceMeta = {
+    'lodestone-json': {
+      fileLabel: 'Lodestone payload JSON file',
+      selectLabel: 'Or choose server payload',
+      placeholder: '-- select a payload from data/lodestone_probe --',
+      hint: 'Server payloads are generated under data/lodestone_probe.',
+    },
+    'desktop-app': {
+      fileLabel: 'Desktop completion JSON file',
+      selectLabel: 'Or choose detected completion file',
+      placeholder: '-- select detected file from %APPDATA%/ffxiv-completionist --',
+      hint: 'Detected completion files are scanned from %APPDATA%/ffxiv-completionist.',
+    },
+  };
+
+  const selectedPathBySource = {};
+  const getSource = () => {
+    const checked = radios.find((radio) => radio.checked);
+    return checked ? checked.value : 'lodestone-json';
+  };
+
+  const setSourceUi = (source) => {
+    const meta = sourceMeta[source] || sourceMeta['lodestone-json'];
+    if (fileLabelEl) {
+      fileLabelEl.textContent = meta.fileLabel;
+    }
+    if (selectLabelEl) {
+      selectLabelEl.textContent = meta.selectLabel;
+    }
+    if (hintEl) {
+      hintEl.textContent = meta.hint;
+    }
+  };
+
+  const initialSource = getSource();
+
+  const populateSelect = (source) => {
+    const options = Array.isArray(sourceData?.[source]?.options) ? sourceData[source].options : [];
+    const suggested = String(sourceData?.[source]?.suggested || '').trim();
+    const preferred = selectedPathBySource[source] || suggested || (source === initialSource ? initialValue : '');
+    const meta = sourceMeta[source] || sourceMeta['lodestone-json'];
+
+    selectEl.innerHTML = '';
+
+    const blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = meta.placeholder;
+    selectEl.appendChild(blank);
+
+    let hasPreferred = false;
+    for (const optionValue of options) {
+      const option = document.createElement('option');
+      option.value = optionValue;
+      option.textContent = optionValue;
+      if (optionValue === preferred) {
+        option.selected = true;
+        hasPreferred = true;
+      }
+      selectEl.appendChild(option);
+    }
+
+    if (!hasPreferred) {
+      blank.selected = true;
+    }
+  };
+
+  let activeSource = getSource();
+  setSourceUi(activeSource);
+  populateSelect(activeSource);
+
+  selectEl.addEventListener('change', () => {
+    selectedPathBySource[activeSource] = selectEl.value;
+  });
+
+  radios.forEach((radio) => {
+    radio.addEventListener('change', () => {
+      selectedPathBySource[activeSource] = selectEl.value;
+      activeSource = getSource();
+      setSourceUi(activeSource);
+      populateSelect(activeSource);
+    });
+  });
+})();
+</script>
+
+{% if import_run and import_run.status == 'completed' and import_run.summary %}
+<div class="ok-banner">
+  Imported {{ import_run.summary.rows_applied }} rows for {{ import_run.summary.character_name }}
+  (matched {{ import_run.summary.matched_candidates }}/{{ import_run.summary.total_candidates }} candidates).
+</div>
+{% endif %}
+
+{% if import_run_id %}
+<section class="probe-card char-import-monitor-card">
   <div class="probe-monitor" data-import-run-id="{{ import_run_id }}">
     <h2>Import monitor</h2>
     <p class="page-sub">Track progress, errors, and log output while import runs.</p>
     <div class="probe-monitor-meta">
       <span>Status:</span>
       <strong id="import-run-status">{{ import_run.status if import_run else 'unknown' }}</strong>
+      <span>Type:</span>
+      <strong id="import-run-type">{{ import_run.import_type if import_run and import_run.import_type else 'unknown' }}</strong>
       <span>Character:</span>
       <strong id="import-run-character">{{ import_run.character_name if import_run else 'unknown' }}</strong>
     </div>
@@ -87,8 +229,8 @@
     </div>
     <pre id="import-run-log" class="probe-log">{% if import_run and import_run.logs %}{{ '\n'.join(import_run.logs[-160:]) }}{% else %}Waiting for import output...{% endif %}</pre>
   </div>
-  {% endif %}
 </section>
+{% endif %}
 
 <form class="char-create" method="post" action="/characters/create">
   <input type="text" name="name" placeholder="New character name…" required />
@@ -156,6 +298,7 @@
 
   const runId = monitor.getAttribute('data-import-run-id');
   const statusEl = document.getElementById('import-run-status');
+  const typeEl = document.getElementById('import-run-type');
   const characterEl = document.getElementById('import-run-character');
   const logPathEl = document.getElementById('import-run-log-path');
   const unmatchedWrap = document.getElementById('unmatched-link-wrap');
@@ -179,6 +322,9 @@
 
       const data = await response.json();
       statusEl.textContent = data.status || 'unknown';
+      if (typeEl) {
+        typeEl.textContent = data.import_type || 'unknown';
+      }
       characterEl.textContent = data.character_name || 'unknown';
       if (logPathEl) {
         logPathEl.textContent = data.log_path || 'n/a';

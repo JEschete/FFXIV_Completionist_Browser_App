@@ -148,6 +148,11 @@ def normalize_cookie_source(raw: str) -> str | None:
     return value if value in {"edge", "chrome", "firefox"} else None
 
 
+def normalize_import_source(raw: str) -> str | None:
+    value = raw.strip().lower()
+    return value if value in {"lodestone-json", "desktop-app"} else None
+
+
 def parse_extra_paths(raw: str) -> list[str]:
     values: list[str] = []
     seen: set[str] = set()
@@ -352,8 +357,9 @@ def _append_character_import_run_log(run_id: str, message: str) -> None:
 def _run_character_import_job(
     run_id: str,
     *,
+    import_type: str,
     character_id: int,
-    payload_path: Path,
+    source_path: Path,
     clear_existing: bool,
 ) -> None:
     _update_character_import_run(
@@ -361,45 +367,27 @@ def _run_character_import_job(
         status="running",
         started_at=dt.datetime.now().isoformat(),
     )
-    _append_character_import_run_log(run_id, "Import job started")
+    import_label = "Desktop import" if import_type == "desktop-app" else "Lodestone JSON import"
+    _append_character_import_run_log(run_id, f"{import_label} job started")
     conn = db.get_connection()
     try:
-        summary = lodestone_import.import_lodestone_payload(
-            conn,
-            character_id=character_id,
-            payload_path=payload_path,
-            clear_existing=clear_existing,
-            progress=lambda msg: _append_character_import_run_log(run_id, msg),
-        )
-        unmatched_report_path: Path | None = None
-        if summary.unmatched_items:
-            try:
-                CHAR_IMPORT_UNMATCHED_DIR.mkdir(parents=True, exist_ok=True)
-                unmatched_report_path = CHAR_IMPORT_UNMATCHED_DIR / f"{run_id}.json"
-                unmatched_payload = {
-                    "run_id": run_id,
-                    "character_id": summary.character_id,
-                    "character_name": summary.character_name,
-                    "source_path": summary.source_path,
-                    "created_at": dt.datetime.now().isoformat(),
-                    "total_candidates": summary.total_candidates,
-                    "matched_candidates": summary.matched_candidates,
-                    "unmatched_candidates": summary.unmatched_candidates,
-                    "items": summary.unmatched_items,
-                }
-                unmatched_report_path.write_text(
-                    json.dumps(unmatched_payload, ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
-                _append_character_import_run_log(
-                    run_id,
-                    f"Saved unmatched report to {unmatched_report_path}",
-                )
-            except Exception as exc:
-                _append_character_import_run_log(
-                    run_id,
-                    f"Could not save unmatched report: {exc}",
-                )
+        if import_type == "desktop-app":
+            summary = lodestone_import.import_desktop_completion(
+                conn,
+                character_id=character_id,
+                completion_path=source_path,
+                clear_existing=clear_existing,
+                progress=lambda msg: _append_character_import_run_log(run_id, msg),
+            )
+        else:
+            summary = lodestone_import.import_lodestone_payload(
+                conn,
+                character_id=character_id,
+                payload_path=source_path,
+                clear_existing=clear_existing,
+                progress=lambda msg: _append_character_import_run_log(run_id, msg),
+            )
+        unmatched_report_path = _write_unmatched_report(run_id, summary)
         _update_character_import_run(
             run_id,
             status="completed",
@@ -418,7 +406,7 @@ def _run_character_import_job(
                 "unmatched_sample": summary.unmatched_items[:20],
             },
         )
-        _append_character_import_run_log(run_id, "Import job completed")
+        _append_character_import_run_log(run_id, f"{import_label} job completed")
     except Exception as exc:
         _update_character_import_run(
             run_id,
@@ -426,10 +414,47 @@ def _run_character_import_job(
             error=str(exc).strip() or exc.__class__.__name__,
             finished_at=dt.datetime.now().isoformat(),
         )
-        _append_character_import_run_log(run_id, f"Import job failed: {exc}")
+        _append_character_import_run_log(run_id, f"{import_label} job failed: {exc}")
         _append_character_import_run_log(run_id, lodestone_import.format_exception(exc))
     finally:
         conn.close()
+
+
+def _write_unmatched_report(
+    run_id: str,
+    summary: lodestone_import.ImportSummary,
+) -> Path | None:
+    unmatched_report_path: Path | None = None
+    if not summary.unmatched_items:
+        return None
+    try:
+        CHAR_IMPORT_UNMATCHED_DIR.mkdir(parents=True, exist_ok=True)
+        unmatched_report_path = CHAR_IMPORT_UNMATCHED_DIR / f"{run_id}.json"
+        unmatched_payload = {
+            "run_id": run_id,
+            "character_id": summary.character_id,
+            "character_name": summary.character_name,
+            "source_path": summary.source_path,
+            "created_at": dt.datetime.now().isoformat(),
+            "total_candidates": summary.total_candidates,
+            "matched_candidates": summary.matched_candidates,
+            "unmatched_candidates": summary.unmatched_candidates,
+            "items": summary.unmatched_items,
+        }
+        unmatched_report_path.write_text(
+            json.dumps(unmatched_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        _append_character_import_run_log(
+            run_id,
+            f"Saved unmatched report to {unmatched_report_path}",
+        )
+    except Exception as exc:
+        _append_character_import_run_log(
+            run_id,
+            f"Could not save unmatched report: {exc}",
+        )
+    return unmatched_report_path
 
 
 class Ctx:
@@ -650,6 +675,8 @@ def characters_page(
     error: str = "",
     run_id: str = "",
     payload_path: str = "",
+    desktop_path: str = "",
+    import_source: str = "",
 ):
     ctx = Ctx(request)
     try:
@@ -658,7 +685,24 @@ def characters_page(
             with CHAR_IMPORT_RUNS_LOCK:
                 run = CHAR_IMPORT_RUNS.get(run_id)
 
-        suggested_payload = payload_path.strip()
+        run_import_source = ""
+        if isinstance(run, dict):
+            run_import_source = str(run.get("import_type") or "").strip().lower()
+
+        selected_import_source = normalize_import_source(import_source) or normalize_import_source(run_import_source) or "lodestone-json"
+
+        suggested_payload = ""
+        suggested_desktop_path = ""
+        incoming_path = payload_path.strip()
+        if incoming_path:
+            if selected_import_source == "desktop-app":
+                suggested_desktop_path = incoming_path
+            else:
+                suggested_payload = incoming_path
+
+        if desktop_path.strip():
+            suggested_desktop_path = desktop_path.strip()
+
         latest_payloads = sorted(
             LODESTONE_OUTPUT_DIR.glob("*_auth_*.json"),
             key=lambda p: p.stat().st_mtime,
@@ -668,6 +712,12 @@ def characters_page(
         if not suggested_payload and payload_options:
             suggested_payload = payload_options[0]
 
+        desktop_options = [str(p) for p in lodestone_import.list_detected_completion_files(limit=30)]
+        if not suggested_desktop_path and desktop_options:
+            suggested_desktop_path = desktop_options[0]
+
+        suggested_source_path = suggested_payload if selected_import_source == "lodestone-json" else suggested_desktop_path
+
         return ctx.render("characters.html", {
             "error": error,
             "starting_classes": db.STARTING_CLASSES,
@@ -675,43 +725,67 @@ def characters_page(
             "import_run": run,
             "suggested_payload": suggested_payload,
             "payload_options": payload_options,
+            "suggested_desktop_path": suggested_desktop_path,
+            "desktop_completion_options": desktop_options,
+            "selected_import_source": selected_import_source,
+            "suggested_source_path": suggested_source_path,
             "active_sheet": None,
         })
     finally:
         ctx.close()
 
 
-@app.post("/characters/import-lodestone")
-def character_import_lodestone(
-    character_id: int = Form(...),
-    payload_path: str = Form(""),
-    payload_file: UploadFile | str | None = File(None),
-    clear_existing: str = Form("0"),
-):
+def _submit_character_import(
+    *,
+    import_source: str,
+    character_id: int,
+    payload_path: str,
+    payload_file: UploadFile | str | None,
+    clear_existing: str,
+) -> RedirectResponse:
+    normalized_source = normalize_import_source(import_source)
+    if normalized_source is None:
+        return RedirectResponse(
+            f"/characters?error={quote('Choose a valid import source.')}",
+            status_code=303,
+        )
+
     resolved_path: Path | None = None
 
     if isinstance(payload_file, UploadFile) and payload_file.filename:
         try:
             resolved_path = save_uploaded_payload(payload_file)
         except OSError as exc:
+            label = "desktop completion file" if normalized_source == "desktop-app" else "payload"
             return RedirectResponse(
-                f"/characters?error={quote(f'Could not save uploaded payload: {exc}')}",
+                f"/characters?error={quote(f'Could not save uploaded {label}: {exc}')}",
                 status_code=303,
             )
     elif isinstance(payload_file, str) and payload_file.strip():
-        # Backward compatibility for stale pages that still post filename text.
         resolved_path = resolve_payload_path(payload_file)
     else:
         resolved_path = resolve_payload_path(payload_path)
 
+    if resolved_path is None and normalized_source == "desktop-app":
+        detected = lodestone_import.list_detected_completion_files(limit=1)
+        if detected:
+            resolved_path = detected[0]
+
     if resolved_path is None:
+        message = (
+            "Choose a desktop completion JSON file or pick a detected completion path."
+            if normalized_source == "desktop-app"
+            else "Choose a JSON payload file or pick a server payload below."
+        )
         return RedirectResponse(
-            f"/characters?error={quote('Choose a JSON payload file or pick a server payload below.')}",
+            f"/characters?error={quote(message)}&import_source={quote(normalized_source)}",
             status_code=303,
         )
+
     if not resolved_path.exists() or not resolved_path.is_file():
+        label = "Desktop completion file" if normalized_source == "desktop-app" else "Payload file"
         return RedirectResponse(
-            f"/characters?error={quote(f'Payload file not found: {resolved_path}')}",
+            f"/characters?error={quote(f'{label} not found: {resolved_path}')}&import_source={quote(normalized_source)}",
             status_code=303,
         )
 
@@ -722,35 +796,38 @@ def character_import_lodestone(
         conn.close()
     if char is None:
         return RedirectResponse(
-            f"/characters?error={quote(f'Character id {character_id} was not found')}",
+            f"/characters?error={quote(f'Character id {character_id} was not found')}&import_source={quote(normalized_source)}",
             status_code=303,
         )
 
     run_id = uuid.uuid4().hex
     log_path = CHAR_IMPORT_LOG_DIR / f"{run_id}.log"
     clear_existing_flag = clear_existing == "1"
+    import_label = "Desktop import" if normalized_source == "desktop-app" else "Lodestone import"
     _append_lodestone_log_file(
         log_path,
-        f"[{dt.datetime.now().strftime('%H:%M:%S')}] Import created for character_id={character_id} payload={resolved_path}",
+        f"[{dt.datetime.now().strftime('%H:%M:%S')}] {import_label} created for character_id={character_id} source={resolved_path}",
     )
     with CHAR_IMPORT_RUNS_LOCK:
         CHAR_IMPORT_RUNS[run_id] = {
             "id": run_id,
+            "import_type": normalized_source,
             "status": "queued",
             "character_id": character_id,
             "character_name": char["name"],
             "payload_path": str(resolved_path),
             "clear_existing": clear_existing_flag,
             "log_path": str(log_path),
-            "logs": [f"[{dt.datetime.now().strftime('%H:%M:%S')}] Import queued"],
+            "logs": [f"[{dt.datetime.now().strftime('%H:%M:%S')}] {import_label} queued"],
         }
 
     worker = threading.Thread(
         target=_run_character_import_job,
         kwargs={
             "run_id": run_id,
+            "import_type": normalized_source,
             "character_id": character_id,
-            "payload_path": resolved_path,
+            "source_path": resolved_path,
             "clear_existing": clear_existing_flag,
         },
         daemon=True,
@@ -758,8 +835,57 @@ def character_import_lodestone(
     worker.start()
 
     return RedirectResponse(
-        f"/characters?run_id={quote(run_id)}&payload_path={quote(str(resolved_path))}",
+        f"/characters?run_id={quote(run_id)}&import_source={quote(normalized_source)}&payload_path={quote(str(resolved_path))}",
         status_code=303,
+    )
+
+
+@app.post("/characters/import")
+def character_import(
+    character_id: int = Form(...),
+    import_source: str = Form("lodestone-json"),
+    payload_path: str = Form(""),
+    payload_file: UploadFile | str | None = File(None),
+    clear_existing: str = Form("0"),
+):
+    return _submit_character_import(
+        import_source=import_source,
+        character_id=character_id,
+        payload_path=payload_path,
+        payload_file=payload_file,
+        clear_existing=clear_existing,
+    )
+
+
+@app.post("/characters/import-lodestone")
+def character_import_lodestone(
+    character_id: int = Form(...),
+    payload_path: str = Form(""),
+    payload_file: UploadFile | str | None = File(None),
+    clear_existing: str = Form("0"),
+):
+    return _submit_character_import(
+        import_source="lodestone-json",
+        character_id=character_id,
+        payload_path=payload_path,
+        payload_file=payload_file,
+        clear_existing=clear_existing,
+    )
+
+
+@app.post("/characters/import-desktop-app")
+def character_import_desktop_app(
+    character_id: int = Form(...),
+    completion_path: str = Form(""),
+    completion_file: UploadFile | str | None = File(None),
+    clear_existing: str = Form("0"),
+):
+    return _submit_character_import(
+        import_source="desktop-app",
+        character_id=character_id,
+        payload_path=completion_path,
+        payload_file=completion_file,
+        clear_existing=clear_existing,
     )
 
 
@@ -773,6 +899,7 @@ def character_import_status(run_id: str):
         summary = run.get("summary") or {}
         payload = {
             "id": run.get("id"),
+            "import_type": run.get("import_type"),
             "status": run.get("status"),
             "error": run.get("error"),
             "character_id": run.get("character_id"),
