@@ -831,7 +831,16 @@ img.brand-mark { object-fit: cover; }
   flex-wrap: wrap;
   gap: 12px;
 }
+.import-input-radios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
 .import-source-radios .probe-check {
+  font-size: 13px;
+  color: var(--text);
+}
+.import-input-radios .probe-check {
   font-size: 13px;
   color: var(--text);
 }
@@ -922,6 +931,12 @@ img.brand-mark { object-fit: cover; }
 
   .layout,
   .layout.sidebar-collapsed { grid-template-columns: 1fr; }
+
+  html.mobile-sidebar-preload .layout .sidebar {
+    transform: translateX(-100%);
+    opacity: 0;
+    pointer-events: none;
+  }
 
   .sidebar {
     position: fixed;

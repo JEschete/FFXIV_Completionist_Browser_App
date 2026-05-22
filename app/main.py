@@ -153,6 +153,11 @@ def normalize_import_source(raw: str) -> str | None:
     return value if value in {"lodestone-json", "desktop-app"} else None
 
 
+def normalize_import_input_method(raw: str) -> str | None:
+    value = raw.strip().lower()
+    return value if value in {"upload-file", "server-file", "auto"} else None
+
+
 def parse_extra_paths(raw: str) -> list[str]:
     values: list[str] = []
     seen: set[str] = set()
@@ -677,6 +682,7 @@ def characters_page(
     payload_path: str = "",
     desktop_path: str = "",
     import_source: str = "",
+    import_input: str = "",
 ):
     ctx = Ctx(request)
     try:
@@ -686,10 +692,19 @@ def characters_page(
                 run = CHAR_IMPORT_RUNS.get(run_id)
 
         run_import_source = ""
+        run_import_input = ""
         if isinstance(run, dict):
             run_import_source = str(run.get("import_type") or "").strip().lower()
+            run_import_input = str(run.get("input_method") or "").strip().lower()
 
         selected_import_source = normalize_import_source(import_source) or normalize_import_source(run_import_source) or "lodestone-json"
+        selected_import_input_method = (
+            normalize_import_input_method(import_input)
+            or normalize_import_input_method(run_import_input)
+            or "upload-file"
+        )
+        if selected_import_input_method == "auto":
+            selected_import_input_method = "upload-file"
 
         suggested_payload = ""
         suggested_desktop_path = ""
@@ -728,6 +743,7 @@ def characters_page(
             "suggested_desktop_path": suggested_desktop_path,
             "desktop_completion_options": desktop_options,
             "selected_import_source": selected_import_source,
+            "selected_import_input_method": selected_import_input_method,
             "suggested_source_path": suggested_source_path,
             "active_sheet": None,
         })
@@ -738,9 +754,10 @@ def characters_page(
 def _submit_character_import(
     *,
     import_source: str,
+    import_input_method: str,
     character_id: int,
     payload_path: str,
-    payload_file: UploadFile | str | None,
+    payload_file: UploadFile | None,
     clear_existing: str,
 ) -> RedirectResponse:
     normalized_source = normalize_import_source(import_source)
@@ -749,43 +766,76 @@ def _submit_character_import(
             f"/characters?error={quote('Choose a valid import source.')}",
             status_code=303,
         )
+    normalized_input_method = normalize_import_input_method(import_input_method)
+    if normalized_input_method is None:
+        return RedirectResponse(
+            f"/characters?error={quote('Choose a valid import input method.')}",
+            status_code=303,
+        )
 
     resolved_path: Path | None = None
 
-    if isinstance(payload_file, UploadFile) and payload_file.filename:
-        try:
-            resolved_path = save_uploaded_payload(payload_file)
-        except OSError as exc:
-            label = "desktop completion file" if normalized_source == "desktop-app" else "payload"
-            return RedirectResponse(
-                f"/characters?error={quote(f'Could not save uploaded {label}: {exc}')}",
-                status_code=303,
-            )
-    elif isinstance(payload_file, str) and payload_file.strip():
-        resolved_path = resolve_payload_path(payload_file)
-    else:
-        resolved_path = resolve_payload_path(payload_path)
+    def _resolve_uploaded_file() -> Path | None:
+        nonlocal payload_file
+        if payload_file is not None and payload_file.filename:
+            try:
+                return save_uploaded_payload(payload_file)
+            except OSError as exc:
+                label = "desktop completion file" if normalized_source == "desktop-app" else "payload"
+                raise ValueError(f"Could not save uploaded {label}: {exc}") from exc
+        return None
 
-    if resolved_path is None and normalized_source == "desktop-app":
-        detected = lodestone_import.list_detected_completion_files(limit=1)
-        if detected:
-            resolved_path = detected[0]
+    def _resolve_server_file() -> Path | None:
+        nonlocal payload_path
+        path = resolve_payload_path(payload_path)
+        if path is None and normalized_source == "desktop-app":
+            detected = lodestone_import.list_detected_completion_files(limit=1)
+            if detected:
+                return detected[0]
+        return path
+
+    try:
+        if normalized_input_method == "upload-file":
+            resolved_path = _resolve_uploaded_file()
+        elif normalized_input_method == "server-file":
+            resolved_path = _resolve_server_file()
+        else:
+            # Backward-compatible precedence for legacy endpoints.
+            resolved_path = _resolve_uploaded_file() or _resolve_server_file()
+    except ValueError as exc:
+        return RedirectResponse(
+            f"/characters?error={quote(str(exc))}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}",
+            status_code=303,
+        )
 
     if resolved_path is None:
-        message = (
-            "Choose a desktop completion JSON file or pick a detected completion path."
-            if normalized_source == "desktop-app"
-            else "Choose a JSON payload file or pick a server payload below."
-        )
+        if normalized_input_method == "upload-file":
+            message = (
+                "Choose a desktop completion JSON file in the file picker."
+                if normalized_source == "desktop-app"
+                else "Choose a JSON payload file in the file picker."
+            )
+        elif normalized_input_method == "server-file":
+            message = (
+                "Choose a detected desktop completion path."
+                if normalized_source == "desktop-app"
+                else "Choose a server payload from data/lodestone_probe."
+            )
+        else:
+            message = (
+                "Choose a desktop completion JSON file or pick a detected completion path."
+                if normalized_source == "desktop-app"
+                else "Choose a JSON payload file or pick a server payload below."
+            )
         return RedirectResponse(
-            f"/characters?error={quote(message)}&import_source={quote(normalized_source)}",
+            f"/characters?error={quote(message)}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}",
             status_code=303,
         )
 
     if not resolved_path.exists() or not resolved_path.is_file():
         label = "Desktop completion file" if normalized_source == "desktop-app" else "Payload file"
         return RedirectResponse(
-            f"/characters?error={quote(f'{label} not found: {resolved_path}')}&import_source={quote(normalized_source)}",
+            f"/characters?error={quote(f'{label} not found: {resolved_path}')}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}",
             status_code=303,
         )
 
@@ -796,7 +846,7 @@ def _submit_character_import(
         conn.close()
     if char is None:
         return RedirectResponse(
-            f"/characters?error={quote(f'Character id {character_id} was not found')}&import_source={quote(normalized_source)}",
+            f"/characters?error={quote(f'Character id {character_id} was not found')}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}",
             status_code=303,
         )
 
@@ -812,6 +862,7 @@ def _submit_character_import(
         CHAR_IMPORT_RUNS[run_id] = {
             "id": run_id,
             "import_type": normalized_source,
+            "input_method": normalized_input_method,
             "status": "queued",
             "character_id": character_id,
             "character_name": char["name"],
@@ -835,7 +886,7 @@ def _submit_character_import(
     worker.start()
 
     return RedirectResponse(
-        f"/characters?run_id={quote(run_id)}&import_source={quote(normalized_source)}&payload_path={quote(str(resolved_path))}",
+        f"/characters?run_id={quote(run_id)}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}&payload_path={quote(str(resolved_path))}",
         status_code=303,
     )
 
@@ -844,12 +895,14 @@ def _submit_character_import(
 def character_import(
     character_id: int = Form(...),
     import_source: str = Form("lodestone-json"),
+    import_input_method: str = Form("upload-file"),
     payload_path: str = Form(""),
-    payload_file: UploadFile | str | None = File(None),
+    payload_file: UploadFile | None = File(None),
     clear_existing: str = Form("0"),
 ):
     return _submit_character_import(
         import_source=import_source,
+        import_input_method=import_input_method,
         character_id=character_id,
         payload_path=payload_path,
         payload_file=payload_file,
@@ -861,11 +914,12 @@ def character_import(
 def character_import_lodestone(
     character_id: int = Form(...),
     payload_path: str = Form(""),
-    payload_file: UploadFile | str | None = File(None),
+    payload_file: UploadFile | None = File(None),
     clear_existing: str = Form("0"),
 ):
     return _submit_character_import(
         import_source="lodestone-json",
+        import_input_method="auto",
         character_id=character_id,
         payload_path=payload_path,
         payload_file=payload_file,
@@ -877,11 +931,12 @@ def character_import_lodestone(
 def character_import_desktop_app(
     character_id: int = Form(...),
     completion_path: str = Form(""),
-    completion_file: UploadFile | str | None = File(None),
+    completion_file: UploadFile | None = File(None),
     clear_existing: str = Form("0"),
 ):
     return _submit_character_import(
         import_source="desktop-app",
+        import_input_method="auto",
         character_id=character_id,
         payload_path=completion_path,
         payload_file=completion_file,

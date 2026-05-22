@@ -1,0 +1,1687 @@
+{
+  "profile": {
+    "source_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/",
+    "identity": {
+      "title": null,
+      "name": "Juno Mars",
+      "world": "Rafflesia",
+      "data_center": "Dynamis"
+    },
+    "display_attributes": {
+      "race_clan_gender": "Miqo'te Seeker of the Sun / ♀",
+      "nameday": "22nd Sun of the 6th Umbral Moon",
+      "guardian": "Nophica, the Matron",
+      "city_state": "Gridania"
+    },
+    "free_company": {
+      "name": null,
+      "id": null
+    },
+    "images": {
+      "avatar": "https://img2.finalfantasyxiv.com/f/af3eb11bffa285ae1dad9936d5cde276_2783886613347a4db0bed7524de1298ffc0.jpg?1779006916",
+      "portrait": "https://lds-img.finalfantasyxiv.com/h/F/nxpYJrU9cbhAORBcM9FbZgG2rs.png"
+    }
+  },
+  "auth_diagnostics": {
+    "profile_auth_markers": {
+      "ldst_is_loggedin_true": true,
+      "mychara_marker": true,
+      "logout_ui": true,
+      "login_prompt_visible": false,
+      "likely_authenticated": true
+    }
+  },
+  "class_job": {
+    "Tank": [
+      {
+        "job": "Gladiator",
+        "level": 12,
+        "xp": 6452,
+        "xp_max": 8620,
+        "tooltip": "Gladiator"
+      },
+      {
+        "job": "Marauder",
+        "level": null,
+        "xp": null,
+        "xp_max": null,
+        "tooltip": "Marauder"
+      },
+      {
+        "job": "Dark Knight",
+        "level": null,
+        "xp": null,
+        "xp_max": null,
+        "tooltip": "Dark Knight"
+      },
+      {
+        "job": "Gunbreaker",
+        "level": null,
+        "xp": null,
+        "xp_max": null,
+        "tooltip": "Gunbreaker"
+      }
+    ],
+    "Healer": [
+      {
+        "job": "Conjurer",
+        "level": 8,
+        "xp": 2622,
+        "xp_max": 3920,
+        "tooltip": "Conjurer"
+      },
+      {
+        "job": "Scholar",
+        "level": null,
+        "xp": null,
+        "xp_max": null,
+        "tooltip": "Scholar"
+      },
+      {
+        "job": "Astrologian",
+        "level": null,
+        "xp": null,
+        "xp_max": null,
+        "tooltip": "Astrologian"
+      },
+      {
+        "job": "Sage",
+        "level": null,
+        "xp": null,
+        "xp_max": null,
+        "tooltip": "Sage"
+      }
+    ],
+    "Melee DPS": [
+      {
+        "job": "Pugilist",
+        "level": 13,
+        "xp": 628,
+        "xp_max": 10200,
+        "tooltip": "Pugilist"
+      },
+      {
+        "job": "Lancer",
+        "level": 15,
+        "xp": 9854,
+        "xp_max": 13100,
+        "tooltip": "Lancer"
+      },
+      {
+        "job": "Rogue",
+        "level": null,
+        "xp": null,
+        "xp_max": null,
+        "tooltip": "Rogue"
+      },
+      {
+        "job": "Samurai",
+        "level": null,
+        "xp": null,
+        "xp_max": null,
+        "tooltip": "Samurai"
+      },
+      {
+        "job": "Reaper",
+        "level": null,
+        "xp": null,
+        "xp_max": null,
+        "tooltip": "Reaper"
+      },
+      {
+        "job": "Viper",
+        "level": null,
+        "xp": null,
+        "xp_max": null,
+        "tooltip": "Viper"
+      },
+      {
+        "job": "Beastmaster",
+        "level": null,
+        "xp": null,
+        "xp_max": null,
+        "tooltip": "Beastmaster (Limited Job)"
+      }
+    ],
+    "Physical Ranged DPS": [
+      {
+        "job": "Archer",
+        "level": 18,
+        "xp": 6404,
+        "xp_max": 19600,
+        "tooltip": "Archer"
+      },
+      {
+        "job": "Machinist",
+        "level": null,
+        "xp": null,
+        "xp_max": null,
+        "tooltip": "Machinist"
+      },
+      {
+        "job": "Dancer",
+        "level": null,
+        "xp": null,
+        "xp_max": null,
+        "tooltip": "Dancer"
+      }
+    ],
+    "Magical Ranged DPS": [
+      {
+        "job": "Thaumaturge",
+        "level": 12,
+        "xp": 5714,
+        "xp_max": 8620,
+        "tooltip": "Thaumaturge"
+      },
+      {
+        "job": "Arcanist",
+        "level": null,
+        "xp": null,
+        "xp_max": null,
+        "tooltip": "Arcanist"
+      },
+      {
+        "job": "Red Mage",
+        "level": null,
+        "xp": null,
+        "xp_max": null,
+        "tooltip": "Red Mage"
+      },
+      {
+        "job": "Pictomancer",
+        "level": null,
+        "xp": null,
+        "xp_max": null,
+        "tooltip": "Pictomancer"
+      },
+      {
+        "job": "Blue Mage",
+        "level": null,
+        "xp": null,
+        "xp_max": null,
+        "tooltip": "Blue Mage (Limited Job)"
+      }
+    ],
+    "Disciples of the Hand": [
+      {
+        "job": "Carpenter",
+        "level": 20,
+        "xp": 6458,
+        "xp_max": 24300,
+        "tooltip": "Carpenter"
+      },
+      {
+        "job": "Blacksmith",
+        "level": null,
+        "xp": null,
+        "xp_max": null,
+        "tooltip": "Blacksmith"
+      },
+      {
+        "job": "Armorer",
+        "level": null,
+        "xp": null,
+        "xp_max": null,
+        "tooltip": "Armorer"
+      },
+      {
+        "job": "Goldsmith",
+        "level": 4,
+        "xp": 696,
+        "xp_max": 970,
+        "tooltip": "Goldsmith"
+      },
+      {
+        "job": "Leatherworker",
+        "level": 21,
+        "xp": 21182,
+        "xp_max": 27400,
+        "tooltip": "Leatherworker"
+      },
+      {
+        "job": "Weaver",
+        "level": 4,
+        "xp": 794,
+        "xp_max": 970,
+        "tooltip": "Weaver"
+      },
+      {
+        "job": "Alchemist",
+        "level": 4,
+        "xp": 898,
+        "xp_max": 970,
+        "tooltip": "Alchemist"
+      },
+      {
+        "job": "Culinarian",
+        "level": null,
+        "xp": null,
+        "xp_max": null,
+        "tooltip": "Culinarian"
+      }
+    ],
+    "Disciples of the Land": [
+      {
+        "job": "Miner",
+        "level": 3,
+        "xp": 50,
+        "xp_max": 630,
+        "tooltip": "Miner"
+      },
+      {
+        "job": "Botanist",
+        "level": 10,
+        "xp": 5774,
+        "xp_max": 5900,
+        "tooltip": "Botanist"
+      },
+      {
+        "job": "Fisher",
+        "level": null,
+        "xp": null,
+        "xp_max": null,
+        "tooltip": "Fisher"
+      }
+    ]
+  },
+  "minions": {
+    "total": 13,
+    "pagination": {
+      "current": null,
+      "total_pages": null,
+      "page_links": [],
+      "next_page": null,
+      "previous_page": null
+    },
+    "items": [
+      {
+        "name": "Black Chocobo Chick",
+        "description": "This poor chocobo chick was as yellow as an ear of millioncorn before one day being doused in black ink by a random passerby bedecked in silver accessories. Try as the chocobokeeps might, none were able to remove the taint, and thus the realm's first black chocobo was born.",
+        "tooltip_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/minion/tooltip/26364ac2a13b1caddd4c4be73857a274f1d43331",
+        "item_name": "Black Chocobo Chick"
+      },
+      {
+        "name": "Wind-up Moogle",
+        "description": "A creation born of 90% love and 10% jealousy (or was that 90% jealousy and 10% love?), this clockwork masterpiece was conceived after the moogles of the Black Shroud began noticing all the adventurers with their new shiny minions, and decided they were not about to be left out.",
+        "tooltip_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/minion/tooltip/0174d50a4bc5707a790d2f35ef2306ca6a470cda",
+        "item_name": "Wind-up Moogle"
+      },
+      {
+        "name": "Baby Behemoth",
+        "description": "Obtainable in Ul'dah's Sapphire Avenue Exchange for a fistful of coin and a smile, the pedigree of this baby beast is questionable at best. While displaying many behemoth-like features─a sleek violet hide, hungry eyes, and two polished horns─its squealing is not unlike a boar at slaughter.",
+        "tooltip_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/minion/tooltip/0122c39707e7d9b977a6bd05d2978a4a8181dfb0",
+        "item_name": "Baby Behemoth"
+      },
+      {
+        "name": "Beady Eye",
+        "description": "One of the most outlandish theories recently posed by scholars of the void is that ahrimans do not reproduce by typical sexual means, but rather by shedding tears which eventually grow into new creatures.",
+        "tooltip_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/minion/tooltip/79dbf91fd4cec6e417913019fd41b04feaef96c9",
+        "item_name": "Beady Eye"
+      },
+      {
+        "name": "Baby Gremlin",
+        "description": "Be not fooled by a gremlin's snow-white fur, for its intentions are as black as the night in which it thrives. Unlike more common stock, this particular breed appears to be resistant to both light and water, making them perfect pets for someone who doesn't mind a bit of mischief.",
+        "tooltip_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/minion/tooltip/303576825b1b4036dc0d9eae858b1e97b58d1871",
+        "item_name": "Baby Gremlin"
+      },
+      {
+        "name": "Wind-up Fran",
+        "description": "Taking a page from the Scions of the Seventh Dawn, Bangaa fusilier Rinok secretly commissioned the creation of scores of miniature Fran fetishes in an effort to fill the coffers of the perpetually under-funded resistance movement spearheaded by Lente's Tears.",
+        "tooltip_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/minion/tooltip/99fbba6500dadc933d742b29f628327014f79a3e",
+        "item_name": "Wind-up Fran"
+      },
+      {
+        "name": "Wind-up Cursor",
+        "description": "If we are to believe the slurred ravings of a self-proclaimed goblin theologian deep in his cups, this seemingly inconspicuous white glove is actually the \"Hand of Fate\" by which all of us are controlled from a dimension beyond the aether.",
+        "tooltip_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/minion/tooltip/33a21a3f2b72aaf6d9a584ee43ee0283a9afb967",
+        "item_name": "Wind-up Cursor"
+      },
+      {
+        "name": "Minion Of Light",
+        "description": "Ancient records show that almost every Astral Era has had its own Warriors of Light─brave souls who appeared before forthcoming disasters to unite the people of that time...only to disappear once again as catastrophe rained down from the heavens.",
+        "tooltip_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/minion/tooltip/2307ce4271c723238b9fefe31301488d601a8927",
+        "item_name": "Minion of Light"
+      },
+      {
+        "name": "Wind-up Kain",
+        "description": "The tale of Kain─the dragoon who abandoned his duty for honor─is well known amongst Ishgardian children. To maximize the height on his jumps, the craftsman of this clockwork automaton lined the main control springs with over-aspected wind crystals.",
+        "tooltip_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/minion/tooltip/b58775a13d7e6623cfb5740828cb9ac4dede24d3",
+        "item_name": "Wind-up Kain"
+      },
+      {
+        "name": "Wind-up Palom",
+        "description": "Based on one half of a pair of twin mages, this charming minion brings an air of mischief wherever it goes. The tales say that the real Palom mastered the dark arts by the age of five, though one has to question whether teaching dangerous magic to small children is such a good idea.",
+        "tooltip_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/minion/tooltip/bea38eacc1353931c485294a158420a1b974e307",
+        "item_name": "Wind-up Palom"
+      },
+      {
+        "name": "Wind-up Porom",
+        "description": "Created in the likeness of Porom, twin sister to Palom. According to legend, they were sent by the elder of their village to aid in an epic quest to save the world, which seems like a bit of a tall order for two five-year olds. Perhaps the other mages had more important matters to take care of?",
+        "tooltip_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/minion/tooltip/0635dc690ba4910e0c5b977efec136397fe7e088",
+        "item_name": "Wind-up Porom"
+      },
+      {
+        "name": "Wind-up Bartz",
+        "description": "The legend of Bartz and his trusty chocobo steed Boko is known far and wide, their journeys inspiring entire generations to adventure. Though, disagreement as to the appropriate spelling of the carefree youth's name has led to many a hurt butz.",
+        "tooltip_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/minion/tooltip/4f841fb274ab6e691d8d7e7ddd838c227fb65f10",
+        "item_name": "Wind-up Bartz"
+      },
+      {
+        "name": "Wind-up Garnet",
+        "description": "Once upon a time, there lived a princess who hailed from a long line of summoners. Legend holds that she was abducted by a band of thieves, whereupon she set out on a journey under an assumed identity. Possessed of an angelic voice, she often hummed beautiful songs that touched the heart.",
+        "tooltip_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/minion/tooltip/00a3b2dcb5c0bc89dd96cf0c6c66c05b850457ae",
+        "item_name": "Wind-up Garnet"
+      }
+    ]
+  },
+  "mounts": {
+    "total": 8,
+    "pagination": {
+      "current": null,
+      "total_pages": null,
+      "page_links": [],
+      "next_page": null,
+      "previous_page": null
+    },
+    "items": [
+      {
+        "name": "Fat Chocobo",
+        "description": "Playfully described by some as \"large and in charge,\" in truth, when summoned, this gluttonous gourmand will flap nary a feather unless a garland of gysahl greens is dangled before him─in which case not even the laws of nature can slow the fat chocobo down.",
+        "tooltip_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/mount/tooltip/cc7a8acc538cb637ba03e2cf4fdb523536b994e9",
+        "item_name": "Fat Chocobo Whistle"
+      },
+      {
+        "name": "Grani",
+        "description": "Possessed of a strength of both mind and body that is unmatched in the First, as a mount, Grani has no peer on land nor in the heavens. It is said, however, the noble creature will only accept a rider who has pledged to restore shadow to a land bereft of night.",
+        "tooltip_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/mount/tooltip/e32c5adb47250b0c37343e3deee0889ee2a56ef6",
+        "item_name": "Grani Horn"
+      },
+      {
+        "name": "Arion",
+        "description": "Legends speak of a majestic and unwaveringly loyal horse who would never fail to deliver its master from peril. Such myths were founded in fact, as the divine steed has descended from the heavens to seek one possessed of a true and virtuous heart, with whom it may right the wrongs of the world.",
+        "tooltip_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/mount/tooltip/dd587936a3413cb093ed0fafa981c8f438c453b4",
+        "item_name": "Arion Horn"
+      },
+      {
+        "name": "Coeurl",
+        "description": "Native to the jungles of the Near East, coeurls were only recently introduced to Eorzea, brought over from faraway lands such as Thavnair by Ul'dahn nobles who thought to breed them as pets. Now, but a handful of skilled tamers living in recluse on the Pearl are said to be able to train them.",
+        "tooltip_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/mount/tooltip/61905fa962115a7ba7a66016246598e546206d03",
+        "item_name": "Coeurl Bell"
+      },
+      {
+        "name": "Griffin",
+        "description": "Fantastical winged beasts native to the unscalable peaks of Abalathia's Spine, griffins actually have a long history of serving as mounts. Indeed, before the city-state's fall, the Ala Mhigan army maintained a regiment of griffin-back soldiers who would harry opposing forces.",
+        "tooltip_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/mount/tooltip/2910f159a67c0233fe3fc65e4ba6f3c76f8d42fc",
+        "item_name": "Griffin Horn"
+      },
+      {
+        "name": "Ahriman",
+        "description": "Though little is known of the void and the creatures which call the extra-dimensional realm home, scholars have discovered that there is a strict hierarchy amongst voidsent consisting of twelve distinct tiers. Ahrimans are believed to fall into the fifth, making them formidable foes...when not enthralled by curses.",
+        "tooltip_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/mount/tooltip/3dc68842368f0e19384eec1b5e4810396874cbfa",
+        "item_name": "Voidal Resonator"
+      },
+      {
+        "name": "Syldra",
+        "description": "Legends say there once lived a kindly sea dragon who befriended a pirate, and that their friendship knew no bounds. This is not that sea dragon; however, with a little time and caring, who is to say that a similar relationship cannot be forged? ※Sea dragons have no relation to actual dragons.",
+        "tooltip_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/mount/tooltip/a0d483926c57f6838132519925be6c9a52421b54",
+        "item_name": "Syldra Horn"
+      },
+      {
+        "name": "Ark",
+        "description": "Seeking to develop an advanced transforming airship, the engineers of Garlond Ironworks turned to the expertise of a former Illuminati scientist. The result is a machina that can convert between bipedal and assault craft forms in the blink of an eye.",
+        "tooltip_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/mount/tooltip/ae0bac52a86fc069ed52a45221740bb6110b0777",
+        "item_name": "Ark Identification Key"
+      }
+    ]
+  },
+  "achievements": {
+    "points": 155,
+    "total": 23,
+    "pagination": {
+      "current": 1,
+      "total_pages": 1,
+      "page_links": [],
+      "next_page": null,
+      "previous_page": null
+    },
+    "entries": [
+      {
+        "date": "05/14/2026",
+        "category": "Character",
+        "title": "Strong Lance Arm I",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/34/"
+      },
+      {
+        "date": "05/13/2026",
+        "category": "Character",
+        "title": "Tougher than Leather II",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/78/"
+      },
+      {
+        "date": "05/13/2026",
+        "category": "Exploration",
+        "title": "Mapping the Realm: South Shroud",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/659/"
+      },
+      {
+        "date": "05/13/2026",
+        "category": "Exploration",
+        "title": "Mapping the Realm: Eastern Thanalan",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/654/"
+      },
+      {
+        "date": "05/13/2026",
+        "category": "Exploration",
+        "title": "Mapping the Realm: Central Thanalan",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/653/"
+      },
+      {
+        "date": "05/13/2026",
+        "category": "Exploration",
+        "title": "Mapping the Realm: Western Thanalan",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/652/"
+      },
+      {
+        "date": "05/13/2026",
+        "category": "Crafting & Gathering",
+        "title": "Logging the Hours: Black Shroud I",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/228/"
+      },
+      {
+        "date": "05/13/2026",
+        "category": "Crafting & Gathering",
+        "title": "Hiding in Plain Sight: Amateur",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/161/"
+      },
+      {
+        "date": "05/13/2026",
+        "category": "Crafting & Gathering",
+        "title": "Going with the Grain: Amateur",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/137/"
+      },
+      {
+        "date": "05/13/2026",
+        "category": "Character",
+        "title": "Fear the Reaper I",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/103/"
+      },
+      {
+        "date": "05/13/2026",
+        "category": "Character",
+        "title": "Tougher than Leather I",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/77/"
+      },
+      {
+        "date": "05/13/2026",
+        "category": "Character",
+        "title": "Knock on Wood II",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/58/"
+      },
+      {
+        "date": "05/13/2026",
+        "category": "Character",
+        "title": "Knock on Wood I",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/57/"
+      },
+      {
+        "date": "05/13/2026",
+        "category": "Character",
+        "title": "Bring Out Your Dead I",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/50/"
+      },
+      {
+        "date": "05/13/2026",
+        "category": "Character",
+        "title": "The Sweet Science I",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/24/"
+      },
+      {
+        "date": "05/13/2026",
+        "category": "Character",
+        "title": "Stick Them with the Pointy End I",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/19/"
+      },
+      {
+        "date": "05/11/2026",
+        "category": "Quests",
+        "title": "Storyteller II",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/790/"
+      },
+      {
+        "date": "05/11/2026",
+        "category": "Quests",
+        "title": "Storyteller I",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/789/"
+      },
+      {
+        "date": "05/11/2026",
+        "category": "Exploration",
+        "title": "Mapping the Realm: North Shroud",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/660/"
+      },
+      {
+        "date": "05/11/2026",
+        "category": "Exploration",
+        "title": "Mapping the Realm: East Shroud",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/658/"
+      },
+      {
+        "date": "05/11/2026",
+        "category": "Exploration",
+        "title": "Mapping the Realm: Central Shroud",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/657/"
+      },
+      {
+        "date": "05/11/2026",
+        "category": "Character",
+        "title": "Just Talkin' 'bout Shafts I",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/39/"
+      },
+      {
+        "date": "05/11/2026",
+        "category": "Battle",
+        "title": "To Crush Your Enemies I",
+        "detail_url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/1/"
+      }
+    ]
+  },
+  "authenticated_pages": {
+    "following": {
+      "path": "following",
+      "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/following/",
+      "heading": "Character Profile",
+      "empty_message": "No entries to display.",
+      "pagination": {
+        "total_pages_reported": null,
+        "pages_collected": 1
+      },
+      "entries": [
+        {
+          "label": "- Character achievement \"Strong Lance Arm I\" earned!",
+          "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/34/",
+          "summary": "Character achievement \"Strong Lance Arm I\" earned!"
+        },
+        {
+          "label": "- Character achievement \"Tougher than Leather II\" earned!",
+          "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/78/",
+          "summary": "Character achievement \"Tougher than Leather II\" earned!"
+        },
+        {
+          "label": "- Exploration achievement \"Mapping the Realm: South Shroud\" earned!",
+          "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/659/",
+          "summary": "Exploration achievement \"Mapping the Realm: South Shroud\" earned!"
+        }
+      ],
+      "key_values": [],
+      "snippets": [
+        "This character is not following anyone."
+      ],
+      "pages": [
+        {
+          "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/following/",
+          "heading": "Character Profile",
+          "empty_message": "No entries to display.",
+          "entry_count": 3,
+          "key_value_count": 0,
+          "snippet_count": 1
+        }
+      ]
+    },
+    "blog": {
+      "path": "blog",
+      "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/blog/",
+      "heading": "Character Profile",
+      "empty_message": "No entries to display.",
+      "pagination": {
+        "total_pages_reported": null,
+        "pages_collected": 1
+      },
+      "entries": [
+        {
+          "label": "- Character achievement \"Strong Lance Arm I\" earned!",
+          "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/34/",
+          "summary": "Character achievement \"Strong Lance Arm I\" earned!"
+        },
+        {
+          "label": "- Character achievement \"Tougher than Leather II\" earned!",
+          "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/78/",
+          "summary": "Character achievement \"Tougher than Leather II\" earned!"
+        },
+        {
+          "label": "- Exploration achievement \"Mapping the Realm: South Shroud\" earned!",
+          "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/659/",
+          "summary": "Exploration achievement \"Mapping the Realm: South Shroud\" earned!"
+        }
+      ],
+      "key_values": [],
+      "snippets": [
+        "No entries to display."
+      ],
+      "pages": [
+        {
+          "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/blog/",
+          "heading": "Character Profile",
+          "empty_message": "No entries to display.",
+          "entry_count": 3,
+          "key_value_count": 0,
+          "snippet_count": 1
+        }
+      ]
+    },
+    "event": {
+      "path": "event",
+      "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/event/",
+      "heading": "Character Profile",
+      "empty_message": "No entries to display.",
+      "pagination": {
+        "total_pages_reported": null,
+        "pages_collected": 1
+      },
+      "entries": [
+        {
+          "label": "- Character achievement \"Strong Lance Arm I\" earned!",
+          "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/34/",
+          "summary": "Character achievement \"Strong Lance Arm I\" earned!"
+        },
+        {
+          "label": "- Character achievement \"Tougher than Leather II\" earned!",
+          "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/78/",
+          "summary": "Character achievement \"Tougher than Leather II\" earned!"
+        },
+        {
+          "label": "- Exploration achievement \"Mapping the Realm: South Shroud\" earned!",
+          "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/achievement/detail/659/",
+          "summary": "Exploration achievement \"Mapping the Realm: South Shroud\" earned!"
+        }
+      ],
+      "key_values": [],
+      "snippets": [],
+      "pages": [
+        {
+          "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/event/",
+          "heading": "Character Profile",
+          "empty_message": "No entries to display.",
+          "entry_count": 3,
+          "key_value_count": 0,
+          "snippet_count": 0
+        }
+      ]
+    },
+    "emote": {
+      "path": "emote",
+      "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/emote/",
+      "heading": "Emotes",
+      "empty_message": "No entries to display.",
+      "pagination": {
+        "total_pages_reported": null,
+        "pages_collected": 1
+      },
+      "entries": [
+        {
+          "name": "Bow",
+          "category": "1"
+        },
+        {
+          "name": "Welcome",
+          "category": "1"
+        },
+        {
+          "name": "Goodbye",
+          "category": "1"
+        },
+        {
+          "name": "Wave",
+          "category": "1"
+        },
+        {
+          "name": "Kneel",
+          "category": "1"
+        },
+        {
+          "name": "Salute",
+          "category": "1"
+        },
+        {
+          "name": "Chuckle",
+          "category": "1"
+        },
+        {
+          "name": "Laugh",
+          "category": "1"
+        },
+        {
+          "name": "Joy",
+          "category": "1"
+        },
+        {
+          "name": "Happy",
+          "category": "1"
+        },
+        {
+          "name": "Rally",
+          "category": "1"
+        },
+        {
+          "name": "Soothe",
+          "category": "1"
+        },
+        {
+          "name": "Blush",
+          "category": "1"
+        },
+        {
+          "name": "Comfort",
+          "category": "1"
+        },
+        {
+          "name": "Psych",
+          "category": "1"
+        },
+        {
+          "name": "Pray",
+          "category": "1"
+        },
+        {
+          "name": "Pay Respects",
+          "category": "1"
+        },
+        {
+          "name": "Blow Kiss",
+          "category": "1"
+        },
+        {
+          "name": "Dance",
+          "category": "1"
+        },
+        {
+          "name": "Yes",
+          "category": "1"
+        },
+        {
+          "name": "Thumbs Up",
+          "category": "1"
+        },
+        {
+          "name": "Clap",
+          "category": "1"
+        },
+        {
+          "name": "Congratulate",
+          "category": "1"
+        },
+        {
+          "name": "Cheer",
+          "category": "1"
+        },
+        {
+          "name": "Hug",
+          "category": "1"
+        },
+        {
+          "name": "Pet",
+          "category": "1"
+        },
+        {
+          "name": "No",
+          "category": "1"
+        },
+        {
+          "name": "Deny",
+          "category": "1"
+        },
+        {
+          "name": "Cry",
+          "category": "1"
+        },
+        {
+          "name": "Furious",
+          "category": "1"
+        },
+        {
+          "name": "Fume",
+          "category": "1"
+        },
+        {
+          "name": "Panic",
+          "category": "1"
+        },
+        {
+          "name": "Upset",
+          "category": "1"
+        },
+        {
+          "name": "Disappointed",
+          "category": "1"
+        },
+        {
+          "name": "Sulk",
+          "category": "1"
+        },
+        {
+          "name": "Angry",
+          "category": "1"
+        },
+        {
+          "name": "Huh",
+          "category": "1"
+        },
+        {
+          "name": "Shocked",
+          "category": "1"
+        },
+        {
+          "name": "Shrug",
+          "category": "1"
+        },
+        {
+          "name": "Stagger",
+          "category": "1"
+        },
+        {
+          "name": "Surprised",
+          "category": "1"
+        },
+        {
+          "name": "Doubt",
+          "category": "1"
+        },
+        {
+          "name": "Grovel",
+          "category": "1"
+        },
+        {
+          "name": "Slap",
+          "category": "1"
+        },
+        {
+          "name": "Facepalm",
+          "category": "1"
+        },
+        {
+          "name": "Clutch Head",
+          "category": "1"
+        },
+        {
+          "name": "Pose",
+          "category": "1"
+        },
+        {
+          "name": "Flex",
+          "category": "1"
+        },
+        {
+          "name": "Beckon",
+          "category": "1"
+        },
+        {
+          "name": "Hand Over",
+          "category": "1"
+        },
+        {
+          "name": "Think",
+          "category": "1"
+        },
+        {
+          "name": "Examine Self",
+          "category": "1"
+        },
+        {
+          "name": "Doze",
+          "category": "1"
+        },
+        {
+          "name": "Point",
+          "category": "1"
+        },
+        {
+          "name": "Poke",
+          "category": "1"
+        },
+        {
+          "name": "Stretch",
+          "category": "1"
+        },
+        {
+          "name": "Lookout",
+          "category": "1"
+        },
+        {
+          "name": "Air Quotes",
+          "category": "1"
+        },
+        {
+          "name": "Me",
+          "category": "1"
+        },
+        {
+          "name": "Converse",
+          "category": "1"
+        },
+        {
+          "name": "Tomestone",
+          "category": "1"
+        },
+        {
+          "name": "Photograph",
+          "category": "1"
+        },
+        {
+          "name": "Water Float",
+          "category": "2"
+        },
+        {
+          "name": "Tomescroll",
+          "category": "2"
+        },
+        {
+          "name": "Sit",
+          "category": "2"
+        },
+        {
+          "name": "Sit On Ground",
+          "category": "2"
+        },
+        {
+          "name": "Change Pose",
+          "category": "2"
+        },
+        {
+          "name": "Visor",
+          "category": "2"
+        },
+        {
+          "name": "Straight Face",
+          "category": "3"
+        },
+        {
+          "name": "Smile",
+          "category": "3"
+        },
+        {
+          "name": "Grin",
+          "category": "3"
+        },
+        {
+          "name": "Wink (Right)",
+          "category": "3"
+        },
+        {
+          "name": "Wink (Left)",
+          "category": "3"
+        },
+        {
+          "name": "Content",
+          "category": "3"
+        },
+        {
+          "name": "Smirk",
+          "category": "3"
+        },
+        {
+          "name": "Taunt",
+          "category": "3"
+        },
+        {
+          "name": "Shut Eyes",
+          "category": "3"
+        },
+        {
+          "name": "Sad",
+          "category": "3"
+        },
+        {
+          "name": "Scared",
+          "category": "3"
+        },
+        {
+          "name": "Amazed",
+          "category": "3"
+        },
+        {
+          "name": "Ouch",
+          "category": "3"
+        },
+        {
+          "name": "Annoyed",
+          "category": "3"
+        },
+        {
+          "name": "Alert",
+          "category": "3"
+        },
+        {
+          "name": "Worried",
+          "category": "3"
+        },
+        {
+          "name": "Sneer",
+          "category": "3"
+        },
+        {
+          "name": "Pucker Up",
+          "category": "3"
+        },
+        {
+          "name": "Concentrate",
+          "category": "3"
+        },
+        {
+          "name": "Confused",
+          "category": "3"
+        },
+        {
+          "name": "Simper",
+          "category": "3"
+        },
+        {
+          "name": "Beam",
+          "category": "3"
+        },
+        {
+          "name": "Furrow",
+          "category": "3"
+        },
+        {
+          "name": "Scoff",
+          "category": "3"
+        },
+        {
+          "name": "Fake Smile",
+          "category": "3"
+        }
+      ],
+      "key_values": [],
+      "snippets": [],
+      "pages": [
+        {
+          "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/emote/",
+          "heading": "Emotes",
+          "empty_message": "No entries to display.",
+          "entry_count": 93,
+          "key_value_count": 0,
+          "snippet_count": 0
+        }
+      ]
+    },
+    "currency": {
+      "path": "currency",
+      "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/currency/",
+      "heading": "Gil",
+      "empty_message": "No entries to display.",
+      "pagination": {
+        "total_pages_reported": null,
+        "pages_collected": 1
+      },
+      "entries": [],
+      "key_values": [],
+      "snippets": [
+        "Gil 4,385"
+      ],
+      "pages": [
+        {
+          "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/currency/",
+          "heading": "Gil",
+          "empty_message": "No entries to display.",
+          "entry_count": 0,
+          "key_value_count": 0,
+          "snippet_count": 1
+        }
+      ]
+    },
+    "quest": {
+      "path": "quest",
+      "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/quest/",
+      "heading": "My Quests",
+      "empty_message": "No entries to display.",
+      "pagination": {
+        "total_pages_reported": 2,
+        "pages_collected": 2
+      },
+      "entries": [
+        {
+          "title": "Gridanian Sidequests (Soil Despoilers)",
+          "date": "05/16/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/bbbfa7cbf19/"
+        },
+        {
+          "title": "Gridanian Sidequests (Parasite Cleave)",
+          "date": "05/16/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/bde126f2f91/"
+        },
+        {
+          "title": "Gridanian Sidequests (Favor for the Fisherwoman)",
+          "date": "05/15/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/fda70b192ca/"
+        },
+        {
+          "title": "Gridanian Sidequests (Sting in a Bottle)",
+          "date": "05/15/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/6035672b25d/"
+        },
+        {
+          "title": "Gridanian Sidequests (Where the Heart Is (The Lavender Beds))",
+          "date": "05/15/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/3000e95973e/"
+        },
+        {
+          "title": "Gridanian Sidequests (More than a Flesh Wound)",
+          "date": "05/15/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/4ddb12c8138/"
+        },
+        {
+          "title": "Seventh Umbral Era (Surveying the Damage)",
+          "date": "05/15/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/e07bd227573/"
+        },
+        {
+          "title": "Gridanian Sidequests (Slimy Hollows)",
+          "date": "05/15/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/28a62274bce/"
+        },
+        {
+          "title": "Gridanian Sidequests (If Ye Break Faith)",
+          "date": "05/15/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/0f840bedb0a/"
+        },
+        {
+          "title": "Gridanian Sidequests (Walking the Planks)",
+          "date": "05/14/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/c083389525b/"
+        },
+        {
+          "title": "Seventh Umbral Era (Eggs over Queasy)",
+          "date": "05/14/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/c6911fbd5e6/"
+        },
+        {
+          "title": "Seventh Umbral Era (Chasing Shadows)",
+          "date": "05/14/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/1fa75279a77/"
+        },
+        {
+          "title": "Seventh Umbral Era (Passing Muster)",
+          "date": "05/14/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/64a1e003628/"
+        },
+        {
+          "title": "Ul'dahn Sidequests (Waking the Spirit)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/494c4ff8e5a/"
+        },
+        {
+          "title": "Ul'dahn Sidequests (Forging the Spirit)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/75d3c596f27/"
+        },
+        {
+          "title": "Botanist Quests (My First Hatchet)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/1e017632a87/"
+        },
+        {
+          "title": "Botanist Quests (Way of the Botanist)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/a761973ed33/"
+        },
+        {
+          "title": "Miner Quests (My First Pickaxe)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/85eb628181a/"
+        },
+        {
+          "title": "Miner Quests (Way of the Miner)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/248c325292d/"
+        },
+        {
+          "title": "Alchemist Quests (My First Alembic)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/1f47745496a/"
+        },
+        {
+          "title": "Alchemist Quests (Way of the Alchemist)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/863e9445b4f/"
+        },
+        {
+          "title": "Weaver Quests (My First Needle)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/1952fd62c01/"
+        },
+        {
+          "title": "Weaver Quests (Way of the Weaver)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/c5375dcdf20/"
+        },
+        {
+          "title": "Leatherworker Quests (Working Hells for Leather)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/3bb7b39b0e0/"
+        },
+        {
+          "title": "Leatherworker Quests (Geva's Gambit)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/663046ef66f/"
+        },
+        {
+          "title": "Leatherworker Quests (A Test of Technique)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/1fb88c1f990/"
+        },
+        {
+          "title": "Leatherworker Quests (My First Head Knife)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/d0ebd8cca40/"
+        },
+        {
+          "title": "Leatherworker Quests (Way of the Leatherworker)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/1605e139a19/"
+        },
+        {
+          "title": "Goldsmith Quests (My First Chaser Hammer)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/6a9845b3b38/"
+        },
+        {
+          "title": "Goldsmith Quests (Way of the Goldsmith)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/e489314a976/"
+        },
+        {
+          "title": "Carpenter Quests (A Carpenter in Need)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/20cc234aa74/"
+        },
+        {
+          "title": "Carpenter Quests (Supplies for the Sick)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/da202df781f/"
+        },
+        {
+          "title": "Carpenter Quests (To Be the Wood)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/3d9d63c577d/"
+        },
+        {
+          "title": "Thaumaturge Quests (My First Scepter)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/03649a948f2/"
+        },
+        {
+          "title": "Thaumaturge Quests (Way of the Thaumaturge)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/eb9c9e119b8/"
+        },
+        {
+          "title": "Conjurer Quests (My First Cane)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/b5d05a159bb/"
+        },
+        {
+          "title": "Conjurer Quests (Way of the Conjurer)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/b4758d83d19/"
+        },
+        {
+          "title": "Lancer Quests (My First Spear)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/3bc84361776/"
+        },
+        {
+          "title": "Lancer Quests (Way of the Lancer)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/f5a62b54de4/"
+        },
+        {
+          "title": "Pugilist Quests (My First Hora)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/3ebf5c053dd/"
+        },
+        {
+          "title": "Pugilist Quests (Way of the Pugilist)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/3f9ca1c728d/"
+        },
+        {
+          "title": "Gladiator Quests (My First Gladius)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/cc403b5f18e/"
+        },
+        {
+          "title": "Gladiator Quests (Way of the Gladiator)",
+          "date": "05/13/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/18894b76889/"
+        },
+        {
+          "title": "Carpenter Quests (My First Saw)",
+          "date": "05/12/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/bcbf97491ae/"
+        },
+        {
+          "title": "Carpenter Quests (Way of the Carpenter)",
+          "date": "05/12/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/a4222d77a93/"
+        },
+        {
+          "title": "Gridanian Sidequests (The Kindness of Strangers)",
+          "date": "05/12/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/af751f7539f/"
+        },
+        {
+          "title": "Gridanian Sidequests (Harriers of the Hedgetree)",
+          "date": "05/12/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/f43819a18ad/"
+        },
+        {
+          "title": "Gridanian Sidequests (A Glim Harvest)",
+          "date": "05/12/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/e02b9c86c9d/"
+        },
+        {
+          "title": "Archer Quests (School of Hard Nocks)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/b53cf3b3219/"
+        },
+        {
+          "title": "Archer Quests (A Matter of Perspective)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/25f8a1b93e2/"
+        },
+        {
+          "title": "Archer Quests (Way of the Archer)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/d12e4f55703/"
+        },
+        {
+          "title": "Gridanian Sidequests (Drink Your Beans, Dear)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/c22305de06b/"
+        },
+        {
+          "title": "Gridanian Sidequests (No Quarter Given)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/e9e2a897550/"
+        },
+        {
+          "title": "Gridanian Sidequests (Hematophagic Harassment)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/0dc167a0bcd/"
+        },
+        {
+          "title": "Gridanian Sidequests (A Clear Sign)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/a003902c045/"
+        },
+        {
+          "title": "Gridanian Sidequests (The Valued Vilekin)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/3d9e7f2527b/"
+        },
+        {
+          "title": "Gridanian Sidequests (Death to the Bean Thieves)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/1da9e5762fe/"
+        },
+        {
+          "title": "Gridanian Sidequests (The Nose Knows)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/87f08dfc9ae/"
+        },
+        {
+          "title": "Gridanian Sidequests (Jumping at Shadows)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/0cdcb21edf9/"
+        },
+        {
+          "title": "Gridanian Sidequests (Population Control)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/fbb84d0563e/"
+        },
+        {
+          "title": "Gridanian Sidequests (Derision of Labor)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/8d6c6da2282/"
+        },
+        {
+          "title": "Gridanian Sidequests (A Hard Nut to Crack)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/2ee087b785d/"
+        },
+        {
+          "title": "Gridanian Sidequests (Essential Oil)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/40015d39c79/"
+        },
+        {
+          "title": "Gridanian Sidequests (Once Bitten, Twice Shy)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/8f7b4de0f05/"
+        },
+        {
+          "title": "Gridanian Sidequests (Quarrels with Squirrels)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/d1fe3b80980/"
+        },
+        {
+          "title": "Gridanian Sidequests (Covered in Roses)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/ba687961d95/"
+        },
+        {
+          "title": "Gridanian Sidequests (For Friendship)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/76ec1c68502/"
+        },
+        {
+          "title": "Gridanian Sidequests (Parsemontrenomics)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/9f0eca9aafc/"
+        },
+        {
+          "title": "Gridanian Sidequests (I Am Millicent, Hear Me Roar)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/40fbe07f0d0/"
+        },
+        {
+          "title": "Gridanian Sidequests (Preserving the Past)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/36ded521c60/"
+        },
+        {
+          "title": "Gridanian Sidequests (Coarse Correspondence)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/66c15089dd9/"
+        },
+        {
+          "title": "Gridanian Sidequests (Incense and Sensibility)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/5420025a084/"
+        },
+        {
+          "title": "Gridanian Sidequests (A Good Adventurer Is Hard to Find)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/a7cbeb1c618/"
+        },
+        {
+          "title": "Gridanian Sidequests (Extending Fences)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/0d4bca29657/"
+        },
+        {
+          "title": "Gridanian Sidequests (Not a Material Girl)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/adf36f9dddc/"
+        },
+        {
+          "title": "Gridanian Sidequests (Splitting Shells)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/e02c2cf7442/"
+        },
+        {
+          "title": "Gridanian Sidequests (Idle Initiatives)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/3f1a7b86620/"
+        },
+        {
+          "title": "Seventh Umbral Era (To the Bannock)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/088a43daa15/"
+        },
+        {
+          "title": "Seventh Umbral Era (Close to Home)",
+          "date": "05/11/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/e200c89ba63/"
+        },
+        {
+          "title": "Gridanian Sidequests (Sylphic Gratitude)",
+          "date": "05/09/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/1946a7cd040/"
+        },
+        {
+          "title": "Gridanian Sidequests (Coming to Gridania)",
+          "date": "05/09/2026",
+          "detail_url": "https://na.finalfantasyxiv.com/lodestone/playguide/db/quest/298088846dc/"
+        }
+      ],
+      "key_values": [
+        {
+          "key": "Quest History",
+          "value": "Seventh Umbral Era"
+        },
+        {
+          "key": "Main Scenario (A Realm Reborn through Endwalker)",
+          "value": "Gridanian Sidequests Ul'dahn Sidequests"
+        },
+        {
+          "key": "Sidequests",
+          "value": "Disciple of War Quests Gladiator Quests Pugilist Quests Lancer Quests Archer Quests Disciple of Magic Quests Conjurer Quests Thaumaturge Quests Disciple of the Hand Quests Carpenter Quests Goldsmith Quests Leatherworker Quests Weaver Quests Alchemist Quests Disciple of the Land Quests Miner Quests Botanist Quests"
+        },
+        {
+          "key": "Gridanian Sidequests",
+          "value": "Gladiator Quests Pugilist Quests Lancer Quests Archer Quests"
+        },
+        {
+          "key": "Ul'dahn Sidequests",
+          "value": "Conjurer Quests Thaumaturge Quests"
+        },
+        {
+          "key": "Allied Society Quests (A Realm Reborn through Endwalker)",
+          "value": "Carpenter Quests Goldsmith Quests Leatherworker Quests Weaver Quests Alchemist Quests"
+        },
+        {
+          "key": "Allied Society Quests (Dawntrail)",
+          "value": "Miner Quests Botanist Quests"
+        }
+      ],
+      "snippets": [
+        "81 Total"
+      ],
+      "pages": [
+        {
+          "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/quest/",
+          "heading": "My Quests",
+          "empty_message": "No entries to display.",
+          "entry_count": 50,
+          "key_value_count": 7,
+          "snippet_count": 1
+        },
+        {
+          "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/quest/?page=2#anchor_quest",
+          "heading": "My Quests",
+          "empty_message": "No entries to display.",
+          "entry_count": 31,
+          "key_value_count": 7,
+          "snippet_count": 1
+        }
+      ]
+    },
+    "orchestrion": {
+      "path": "orchestrion",
+      "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/orchestrion/",
+      "heading": "Orchestrion List",
+      "empty_message": "No entries to display.",
+      "pagination": {
+        "total_pages_reported": null,
+        "pages_collected": 1
+      },
+      "entries": [],
+      "key_values": [],
+      "snippets": [
+        "You have not unlocked any songs."
+      ],
+      "pages": [
+        {
+          "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/orchestrion/",
+          "heading": "Orchestrion List",
+          "empty_message": "No entries to display.",
+          "entry_count": 0,
+          "key_value_count": 0,
+          "snippet_count": 1
+        }
+      ]
+    },
+    "pvp": {
+      "path": "pvp",
+      "error": "404 Client Error: Not Found for url: https://na.finalfantasyxiv.com/lodestone/character/60889687/pvp/",
+      "status_code": 404
+    },
+    "bluemage": {
+      "path": "bluemage",
+      "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/bluemage/",
+      "heading": "Blue Magic",
+      "empty_message": "No entries to display.",
+      "pagination": {
+        "total_pages_reported": null,
+        "pages_collected": 1
+      },
+      "entries": [],
+      "key_values": [],
+      "snippets": [],
+      "pages": [
+        {
+          "url": "https://na.finalfantasyxiv.com/lodestone/character/60889687/bluemage/",
+          "heading": "Blue Magic",
+          "empty_message": "No entries to display.",
+          "entry_count": 0,
+          "key_value_count": 0,
+          "snippet_count": 0
+        }
+      ]
+    },
+    "trust": {
+      "path": "trust",
+      "error": "404 Client Error: Not Found for url: https://na.finalfantasyxiv.com/lodestone/character/60889687/trust/",
+      "status_code": 404
+    },
+    "goldsaucer": {
+      "path": "goldsaucer",
+      "error": "404 Client Error: Not Found for url: https://na.finalfantasyxiv.com/lodestone/character/60889687/goldsaucer/",
+      "status_code": 404
+    },
+    "goldsaucer/tripletriad": {
+      "path": "goldsaucer/tripletriad",
+      "error": "404 Client Error: Not Found for url: https://na.finalfantasyxiv.com/lodestone/character/60889687/goldsaucer/tripletriad/",
+      "status_code": 404
+    }
+  },
+  "auth": {
+    "method": "installed_browser_cookies",
+    "source_browser": "firefox",
+    "extra_paths": [
+      "following/",
+      "blog/",
+      "event/",
+      "emote/",
+      "currency/",
+      "quest/",
+      "orchestrion/",
+      "pvp/",
+      "bluemage/",
+      "trust/",
+      "goldsaucer/",
+      "goldsaucer/tripletriad/"
+    ]
+  }
+}

@@ -4,6 +4,18 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{% block title %}FFXIV Completion Tracker{% endblock %}</title>
+  <script>
+    // Avoid first-paint sidebar flash on mobile before Alpine applies state.
+    (function() {
+      try {
+        if (window.matchMedia("(max-width: 880px)").matches) {
+          document.documentElement.classList.add("mobile-sidebar-preload");
+        }
+      } catch (_err) {
+        // Keep startup resilient even if matchMedia is unavailable.
+      }
+    })();
+  </script>
   <link rel="stylesheet" href="/static/styles.css?v=13" />
   <script src="/static/vendor/htmx.min.js" defer></script>
   <script src="/static/vendor/alpine-collapse.min.js" defer></script>
@@ -13,6 +25,7 @@
 {% from "macros.html" import tree_node, progress_bar %}
 <div class="layout"
      x-data="{ sidebarCollapsed: window.innerWidth < 880 }"
+  x-init="$nextTick(() => document.documentElement.classList.remove('mobile-sidebar-preload'))"
      :class="sidebarCollapsed ? 'sidebar-collapsed' : ''">
 
   <div class="sidebar-backdrop"

@@ -44,6 +44,28 @@
       </label>
     </div>
 
+    <label>Import input method</label>
+    <div class="import-input-radios">
+      <label class="probe-check">
+        <input
+          type="radio"
+          name="import_input_method"
+          value="upload-file"
+          {{ 'checked' if selected_import_input_method != 'server-file' else '' }}
+        />
+        Use file picker (uploaded JSON)
+      </label>
+      <label class="probe-check">
+        <input
+          type="radio"
+          name="import_input_method"
+          value="server-file"
+          {{ 'checked' if selected_import_input_method == 'server-file' else '' }}
+        />
+        Use server file dropdown
+      </label>
+    </div>
+
     <label for="import-character-id">Character</label>
     <select id="import-character-id" name="character_id" required>
       {% for c in characters %}
@@ -91,14 +113,16 @@
   if (!form) return;
 
   const radios = Array.from(form.querySelectorAll('input[name="import_source"]'));
+  const methodRadios = Array.from(form.querySelectorAll('input[name="import_input_method"]'));
   const selectEl = document.getElementById('import-source-path');
+  const fileInputEl = document.getElementById('import-payload-file');
   const fileLabelEl = document.getElementById('import-file-label');
   const selectLabelEl = document.getElementById('import-source-path-label');
   const hintEl = document.getElementById('import-source-hint');
   const dataEl = document.getElementById('import-source-data');
   const initialValue = (selectEl?.dataset.initialValue || '').trim();
 
-  if (!selectEl || !dataEl || radios.length === 0) return;
+  if (!selectEl || !fileInputEl || !dataEl || radios.length === 0 || methodRadios.length === 0) return;
 
   let sourceData = {};
   try {
@@ -128,7 +152,12 @@
     return checked ? checked.value : 'lodestone-json';
   };
 
-  const setSourceUi = (source) => {
+  const getInputMethod = () => {
+    const checked = methodRadios.find((radio) => radio.checked);
+    return checked ? checked.value : 'upload-file';
+  };
+
+  const setSourceUi = (source, inputMethod) => {
     const meta = sourceMeta[source] || sourceMeta['lodestone-json'];
     if (fileLabelEl) {
       fileLabelEl.textContent = meta.fileLabel;
@@ -137,8 +166,17 @@
       selectLabelEl.textContent = meta.selectLabel;
     }
     if (hintEl) {
-      hintEl.textContent = meta.hint;
+      const methodHint = inputMethod === 'server-file'
+        ? 'Server dropdown is active and takes precedence for import.'
+        : 'File picker is active and takes precedence for import.';
+      hintEl.textContent = `${meta.hint} ${methodHint}`;
     }
+  };
+
+  const setInputMethodUi = (inputMethod) => {
+    const useUpload = inputMethod !== 'server-file';
+    fileInputEl.disabled = !useUpload;
+    selectEl.disabled = useUpload;
   };
 
   const initialSource = getSource();
@@ -174,8 +212,10 @@
   };
 
   let activeSource = getSource();
-  setSourceUi(activeSource);
+  let activeInputMethod = getInputMethod();
+  setSourceUi(activeSource, activeInputMethod);
   populateSelect(activeSource);
+  setInputMethodUi(activeInputMethod);
 
   selectEl.addEventListener('change', () => {
     selectedPathBySource[activeSource] = selectEl.value;
@@ -185,8 +225,16 @@
     radio.addEventListener('change', () => {
       selectedPathBySource[activeSource] = selectEl.value;
       activeSource = getSource();
-      setSourceUi(activeSource);
+      setSourceUi(activeSource, activeInputMethod);
       populateSelect(activeSource);
+    });
+  });
+
+  methodRadios.forEach((radio) => {
+    radio.addEventListener('change', () => {
+      activeInputMethod = getInputMethod();
+      setInputMethodUi(activeInputMethod);
+      setSourceUi(activeSource, activeInputMethod);
     });
   });
 })();

@@ -472,15 +472,27 @@ class UpdateDialog(QDialog):
         self.status_lbl.setText(f"Saved: {path}")
         reply = QMessageBox.question(
             self, "Run installer?",
-            f"Installer downloaded to:\n{path}\n\nRun it now? "
-            "The current app should be closed before installing.",
+            f"Installer downloaded to:\n{path}\n\nRun it now?\n\n"
+            "The launcher will close before installation starts.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
             try:
                 os.startfile(path)  # type: ignore[attr-defined]
+                self.status_lbl.setText(f"Saved: {path}  |  Installer launched")
+                # Defer shutdown to avoid re-entrancy while this slot is running.
+                QTimer.singleShot(0, self._request_launcher_shutdown)
             except OSError as e:
                 QMessageBox.warning(self, "Could not run installer", str(e))
+
+    def _request_launcher_shutdown(self) -> None:
+        parent = self.parent()
+        if parent is not None and hasattr(parent, "request_quit_for_update"):
+            getattr(parent, "request_quit_for_update")()
+            return
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
 
 
 # ---------------------------------------------------------------------------
@@ -500,6 +512,7 @@ class MainWindow(QMainWindow):
         self._server: QProcess | None = None
         self._server_error = False  # sticky error flag until next start
         self._user_stopping = False  # set while a user-initiated stop is in flight
+        self._closing_for_update = False
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -1307,10 +1320,20 @@ class MainWindow(QMainWindow):
         dlg = UpdateDialog(result, self)
         dlg.exec()
 
+    def request_quit_for_update(self) -> None:
+        self._log("Installer launched; closing launcher for update…")
+        self._closing_for_update = True
+        self.close()
+
     # -- shutdown --------------------------------------------------------
 
     def closeEvent(self, a0: QCloseEvent | None) -> None:
         if a0 is None:
+            return
+        if self._closing_for_update:
+            if self._server is not None and self._server.state() != QProcess.ProcessState.NotRunning:
+                self.stop_server()
+            a0.accept()
             return
         if self._server is not None and self._server.state() != QProcess.ProcessState.NotRunning:
             reply = QMessageBox.question(
