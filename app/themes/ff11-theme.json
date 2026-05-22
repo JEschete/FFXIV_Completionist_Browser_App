@@ -1,0 +1,216 @@
+{
+  "meta": {
+    "name": "Vana'diel Relic Nights (FF11)",
+    "id": "ff11-vanadiel-relic-nights",
+    "colorScheme": "dual",
+    "defaultScheme": "dark",
+    "version": 1,
+    "source": "Inspired by Final Fantasy XI: Vana'diel moonlight, relic-era adventuring, and classical MMO parchment-and-steel UI moods",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). The group names (surfaces, lines, text, accents, crystals, states) are for human organization only and are NOT part of the variable name. The four crystal-* tokens are extra identity colors; wire them up where supported.",
+    "notExportedYet": "Non-color tokens still live only in styles.css and are intentionally omitted here: --radius, --radius-s, --shadow. For stronger FF11 identity, consider parchment texture overlays in light mode and subtle moonlit vignette in dark mode."
+  },
+  "colors": {
+    "surfaces": {
+      "bg": {
+        "value": "#071022",
+        "desc": "Vana'diel night sky over distant cities"
+      },
+      "bg-soft": {
+        "value": "#0d1a35",
+        "desc": "Header elevation with astral-blue cast"
+      },
+      "panel": {
+        "value": "#14264a",
+        "desc": "Primary panel in deep classic MMO navy"
+      },
+      "panel-2": {
+        "value": "#1d3360",
+        "desc": "Raised surfaces with cobalt depth"
+      },
+      "panel-3": {
+        "value": "#2a447d",
+        "desc": "Highest elevation with moonlit steel contrast"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#c8b27a",
+        "desc": "Relic-brass frame line"
+      },
+      "line-soft": {
+        "value": "#55689a",
+        "desc": "Subtle divider in desaturated cobalt"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#f3f0de",
+        "desc": "Primary text with parchment-like warmth"
+      },
+      "muted": {
+        "value": "#c6c1a4",
+        "desc": "Secondary labels"
+      },
+      "faint": {
+        "value": "#8f8b77",
+        "desc": "Tertiary metadata and low-emphasis copy"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#6ad7ff",
+        "desc": "Aether-blue action accent"
+      },
+      "accent-dk": {
+        "value": "#2f88bf",
+        "desc": "Pressed/active blue depth"
+      },
+      "gold": {
+        "value": "#f2c75c",
+        "desc": "Treasure-gold highlights"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#7bcf7f",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#ff7f59",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#4bc9ff",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#c8ec74",
+        "desc": "Wind analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#63c983",
+        "desc": "Completed state"
+      },
+      "done-dk": {
+        "value": "#2f8754",
+        "desc": "Darker completion shade"
+      },
+      "todo": {
+        "value": "#6f7fa8",
+        "desc": "Pending state in adventurer blue-gray"
+      },
+      "excluded": {
+        "value": "#6e607d",
+        "desc": "Set-aside state"
+      },
+      "danger": {
+        "value": "#ef5d54",
+        "desc": "Critical/destructive actions"
+      }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg": {
+        "value": "#f7f3e7",
+        "desc": "Parchment daylight backdrop"
+      },
+      "bg-soft": {
+        "value": "#efe7d3",
+        "desc": "Header in aged vellum tone"
+      },
+      "panel": {
+        "value": "#fffdf8",
+        "desc": "Primary panel for bright readability"
+      },
+      "panel-2": {
+        "value": "#f8f1df",
+        "desc": "Raised panel surface"
+      },
+      "panel-3": {
+        "value": "#f0e5ca",
+        "desc": "Highest elevation in warm parchment light"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#7c6840",
+        "desc": "Relic-brass structural line"
+      },
+      "line-soft": {
+        "value": "#b4a07d",
+        "desc": "Soft divider"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#2f2a1e",
+        "desc": "Primary text"
+      },
+      "muted": {
+        "value": "#5a513c",
+        "desc": "Secondary text"
+      },
+      "faint": {
+        "value": "#85765a",
+        "desc": "Tertiary text"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#2f8bc2",
+        "desc": "Aether-blue accent"
+      },
+      "accent-dk": {
+        "value": "#1f6085",
+        "desc": "Pressed accent"
+      },
+      "gold": {
+        "value": "#b38321",
+        "desc": "Treasure highlight"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#58a65d",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#de6946",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#2e98cb",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#a1b93c",
+        "desc": "Wind analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#3e965f",
+        "desc": "Completed state"
+      },
+      "done-dk": {
+        "value": "#2a6f45",
+        "desc": "Dark completion shade"
+      },
+      "todo": {
+        "value": "#61729a",
+        "desc": "Pending state"
+      },
+      "excluded": {
+        "value": "#9f92ab",
+        "desc": "Set-aside state"
+      },
+      "danger": {
+        "value": "#c8453d",
+        "desc": "Critical state"
+      }
+    }
+  }
+}

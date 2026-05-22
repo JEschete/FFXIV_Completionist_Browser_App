@@ -1,0 +1,84 @@
+{
+  "meta": {
+    "name": "Theater of Alexandria (FF9)",
+    "id": "ff9-theater-alexandria",
+    "colorScheme": "dual",
+    "defaultScheme": "dark",
+    "version": 1,
+    "source": "Inspired by Final Fantasy IX: Alexandria stagecraft, storybook fantasy, and warm medieval charm",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). The group names (surfaces, lines, text, accents, crystals, states) are for human organization only and are NOT part of the variable name. The four crystal-* tokens are extra identity colors; wire them up where supported.",
+    "notExportedYet": "Non-color tokens still live only in styles.css and are intentionally omitted here: --radius, --radius-s, --shadow. FF9 can go further with playful ornament borders, hand-painted gradients, and slightly softer corner radii to echo storybook presentation."
+  },
+  "colors": {
+    "surfaces": {
+      "bg":      { "value": "#120f2f", "desc": "Twilight theater sky in royal indigo" },
+      "bg-soft": { "value": "#1b1750", "desc": "Header in moonlit stage-blue" },
+      "panel":   { "value": "#25206a", "desc": "Primary panel in saturated fantasy cobalt" },
+      "panel-2": { "value": "#332b8f", "desc": "Raised panel with dramatic royal depth" },
+      "panel-3": { "value": "#443ab3", "desc": "Highest elevation in luminous storybook violet-blue" }
+    },
+    "lines": {
+      "line":      { "value": "#ffd88f", "desc": "Golden trim for ornate fantasy framing" },
+      "line-soft": { "value": "#8a79d6", "desc": "Soft divider in noble violet" }
+    },
+    "text": {
+      "text":  { "value": "#fff8e8", "desc": "Parchment-bright text for readable contrast" },
+      "muted": { "value": "#e2d0a6", "desc": "Secondary labels in old-page tan" },
+      "faint": { "value": "#b59f78", "desc": "Tertiary text" }
+    },
+    "accents": {
+      "accent":    { "value": "#ff9a32", "desc": "Adventurer orange for primary interactions" },
+      "accent-dk": { "value": "#c25a00", "desc": "Pressed amber-orange depth" },
+      "gold":      { "value": "#ffe06a", "desc": "Regal gold for totals and banners" }
+    },
+    "crystals": {
+      "crystal-earth": { "value": "#8ed66a", "desc": "Earth analog - lively fantasy green" },
+      "crystal-fire":  { "value": "#ff7a4d", "desc": "Fire analog - stage-flame orange-red" },
+      "crystal-water": { "value": "#66d4ff", "desc": "Water analog - bright sky-cyan" },
+      "crystal-wind":  { "value": "#ffe566", "desc": "Wind analog - radiant yellow" }
+    },
+    "states": {
+      "done":     { "value": "#8ed66a", "desc": "Completed state" },
+      "done-dk":  { "value": "#4d8f39", "desc": "Dark done state" },
+      "todo":     { "value": "#9a8ac6", "desc": "Pending state" },
+      "excluded": { "value": "#7568a0", "desc": "Set-aside state" },
+      "danger":   { "value": "#ff5569", "desc": "Critical state" }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg":      { "value": "#fff7e8", "desc": "Sunlit parchment backdrop" },
+      "bg-soft": { "value": "#f8efd8", "desc": "Header in warm page tone" },
+      "panel":   { "value": "#fffdf6", "desc": "Primary panel" },
+      "panel-2": { "value": "#fff7e8", "desc": "Raised panel" },
+      "panel-3": { "value": "#f8e9c9", "desc": "Highest light elevation" }
+    },
+    "lines": {
+      "line":      { "value": "#7b5fbd", "desc": "Storybook violet frame line" },
+      "line-soft": { "value": "#c4b0eb", "desc": "Soft lilac divider" }
+    },
+    "text": {
+      "text":  { "value": "#2e2355", "desc": "Primary text" },
+      "muted": { "value": "#5f4f93", "desc": "Secondary text" },
+      "faint": { "value": "#907ebf", "desc": "Tertiary text" }
+    },
+    "accents": {
+      "accent":    { "value": "#e56e00", "desc": "Adventurer orange accent" },
+      "accent-dk": { "value": "#a64b00", "desc": "Pressed orange" },
+      "gold":      { "value": "#b88a18", "desc": "Regal gold" }
+    },
+    "crystals": {
+      "crystal-earth": { "value": "#5fa547", "desc": "Earth analog" },
+      "crystal-fire":  { "value": "#dd6343", "desc": "Fire analog" },
+      "crystal-water": { "value": "#44a4cf", "desc": "Water analog" },
+      "crystal-wind":  { "value": "#c3a53a", "desc": "Wind analog" }
+    },
+    "states": {
+      "done":     { "value": "#5fa547", "desc": "Completed state" },
+      "done-dk":  { "value": "#3f7b2f", "desc": "Dark done state" },
+      "todo":     { "value": "#8a7eb6", "desc": "Pending state" },
+      "excluded": { "value": "#b6abc8", "desc": "Set-aside state" },
+      "danger":   { "value": "#cf4657", "desc": "Critical state" }
+    }
+  }
+}

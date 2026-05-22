@@ -1,0 +1,216 @@
+{
+  "meta": {
+    "name": "Template",
+    "id": "template",
+    "colorScheme": "dual",
+    "version": 1,
+    "source": "app/static/styles.css :root (captured 2026-05-22)",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). The group names (surfaces, lines, text, accents, crystals, states) are for human organization only and are NOT part of the variable name. An ingester should flatten all groups and emit `--<key>: <value>;` into :root. The four crystal-* tokens are extra identity colors; wire them up where supported.",
+    "notExportedYet": "Non-color :root tokens still live only in styles.css and are intentionally omitted here: --radius (12px), --radius-s (8px), --shadow (0 8px 28px rgba(0,0,0,.38)). The ~37 hex + 38 rgba() literals scattered through styles.css (gradients, focus glows, #fff, etc.) are also not yet tokenized; promote them into this file when wiring up ingestion.",
+    "defaultScheme": "dark"
+  },
+  "colors": {
+    "surfaces": {
+      "bg": {
+        "value": "#0b0e15",
+        "desc": "App background / root canvas; also the first-paint fallback color"
+      },
+      "bg-soft": {
+        "value": "#10151f",
+        "desc": "Sticky header and search-panel background"
+      },
+      "panel": {
+        "value": "#161c28",
+        "desc": "Base panel / input background"
+      },
+      "panel-2": {
+        "value": "#1b2230",
+        "desc": "Elevated panel (search results dropdown)"
+      },
+      "panel-3": {
+        "value": "#212a3b",
+        "desc": "Highest-elevation panel surface"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#2a3445",
+        "desc": "Primary borders / dividers"
+      },
+      "line-soft": {
+        "value": "#222b3a",
+        "desc": "Subtle row and section dividers"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#e7ecf5",
+        "desc": "Primary text color"
+      },
+      "muted": {
+        "value": "#8995a8",
+        "desc": "Secondary text / field labels / meta"
+      },
+      "faint": {
+        "value": "#5d6a7e",
+        "desc": "Tertiary text / idle sort indicator"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#6ba4e8",
+        "desc": "Aetherial blue — primary interactive accent and focus"
+      },
+      "accent-dk": {
+        "value": "#3f6fae",
+        "desc": "Darker accent — focus border / active sort header"
+      },
+      "gold": {
+        "value": "#e2bd72",
+        "desc": "Section titles and brand highlight"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#45c78a",
+        "desc": "Earth Crystal analog - completion green"
+      },
+      "crystal-fire": {
+        "value": "#d96b6b",
+        "desc": "Fire Crystal analog - danger red"
+      },
+      "crystal-water": {
+        "value": "#6ba4e8",
+        "desc": "Water Crystal analog - primary aetherial blue"
+      },
+      "crystal-wind": {
+        "value": "#e2bd72",
+        "desc": "Wind Crystal analog - luminous gold highlight"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#45c78a",
+        "desc": "Completed state (jade)"
+      },
+      "done-dk": {
+        "value": "#2f8c61",
+        "desc": "Darker shade of the done state"
+      },
+      "todo": {
+        "value": "#586374",
+        "desc": "To-do / not-yet-done state"
+      },
+      "excluded": {
+        "value": "#4a4f5c",
+        "desc": "Excluded state"
+      },
+      "danger": {
+        "value": "#d96b6b",
+        "desc": "Destructive actions / error"
+      }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg": {
+        "value": "#f2f3f5",
+        "desc": "App background / root canvas; also the first-paint fallback color"
+      },
+      "bg-soft": {
+        "value": "#e6e8ed",
+        "desc": "Sticky header and search-panel background"
+      },
+      "panel": {
+        "value": "#fefefe",
+        "desc": "Base panel / input background"
+      },
+      "panel-2": {
+        "value": "#f6f7f8",
+        "desc": "Elevated panel (search results dropdown)"
+      },
+      "panel-3": {
+        "value": "#edeff1",
+        "desc": "Highest-elevation panel surface"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#3d5b8f",
+        "desc": "Primary borders / dividers"
+      },
+      "line-soft": {
+        "value": "#9faec6",
+        "desc": "Subtle row and section dividers"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#1c2c3f",
+        "desc": "Primary text color"
+      },
+      "muted": {
+        "value": "#425a76",
+        "desc": "Secondary text / field labels / meta"
+      },
+      "faint": {
+        "value": "#6c829d",
+        "desc": "Tertiary text / idle sort indicator"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#1f6bc7",
+        "desc": "Aetherial blue — primary interactive accent and focus"
+      },
+      "accent-dk": {
+        "value": "#275591",
+        "desc": "Darker accent — focus border / active sort header"
+      },
+      "gold": {
+        "value": "#b8851e",
+        "desc": "Section titles and brand highlight"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#36ba7c",
+        "desc": "Earth Crystal analog - completion green"
+      },
+      "crystal-fire": {
+        "value": "#bf3131",
+        "desc": "Fire Crystal analog - danger red"
+      },
+      "crystal-water": {
+        "value": "#2070cf",
+        "desc": "Water Crystal analog - primary aetherial blue"
+      },
+      "crystal-wind": {
+        "value": "#c79329",
+        "desc": "Wind Crystal analog - luminous gold highlight"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#2e9e69",
+        "desc": "Completed state (jade)"
+      },
+      "done-dk": {
+        "value": "#277c55",
+        "desc": "Darker shade of the done state"
+      },
+      "todo": {
+        "value": "#657285",
+        "desc": "To-do / not-yet-done state"
+      },
+      "excluded": {
+        "value": "#969cab",
+        "desc": "Excluded state"
+      },
+      "danger": {
+        "value": "#ba2c2c",
+        "desc": "Destructive actions / error"
+      }
+    }
+  }
+}

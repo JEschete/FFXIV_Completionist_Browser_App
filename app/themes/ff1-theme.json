@@ -1,0 +1,216 @@
+{
+  "meta": {
+    "name": "Warriors of Light (8-bit)",
+    "id": "ff1-classic-nes",
+    "colorScheme": "dual",
+    "version": 1,
+    "source": "app/static/styles.css :root (captured 2026-05-22)",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). The group names (surfaces, lines, text, accents, crystals, states) are for human organization only and are NOT part of the variable name. The four crystal-* tokens are extra identity colors; wire them up where supported.",
+    "notExportedYet": "Non-color :root tokens. Suggest changing --radius to 0px (sharp 8-bit corners), removing box-shadows, and replacing --font-family with a monospaced pixel font (e.g., 'Press Start 2P') to complete the retro illusion.",
+    "defaultScheme": "dark"
+  },
+  "colors": {
+    "surfaces": {
+      "bg": {
+        "value": "#000000",
+        "desc": "Pure black — the classic NES battle and overworld void"
+      },
+      "bg-soft": {
+        "value": "#02091f",
+        "desc": "Slightly elevated background for structure"
+      },
+      "panel": {
+        "value": "#050d2a",
+        "desc": "Pure black — replicating the iconic opaque menu boxes"
+      },
+      "panel-2": {
+        "value": "#102252",
+        "desc": "Slight lift for dropdowns, avoiding pure black overlap"
+      },
+      "panel-3": {
+        "value": "#1b3a80",
+        "desc": "Highest-elevation panel surface"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#ffffff",
+        "desc": "Stark NES white — the iconic, unmistakable double-line menu border"
+      },
+      "line-soft": {
+        "value": "#4b7cff",
+        "desc": "NES gray for subtle inner dividers"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#ffffff",
+        "desc": "Stark NES white for all primary dialogue and stats"
+      },
+      "muted": {
+        "value": "#c3d4ff",
+        "desc": "Light gray for inactive menu items or low MP"
+      },
+      "faint": {
+        "value": "#6f86c0",
+        "desc": "Dark gray for empty slots and tertiary text"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#2f6bff",
+        "desc": "Black Mage Blue — primary interactive accent"
+      },
+      "accent-dk": {
+        "value": "#1230b8",
+        "desc": "Deep royal blue — dark focus border or active state"
+      },
+      "gold": {
+        "value": "#ffcd38",
+        "desc": "Gil Yellow / Treasure — highlights and currency"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#39d84a",
+        "desc": "Earth Crystal analog - healthy green"
+      },
+      "crystal-fire": {
+        "value": "#ff4c30",
+        "desc": "Fire Crystal analog - critical red-orange"
+      },
+      "crystal-water": {
+        "value": "#2ab8ff",
+        "desc": "Water Crystal analog - classic NES blue"
+      },
+      "crystal-wind": {
+        "value": "#ffe14f",
+        "desc": "Wind Crystal analog - treasure gold"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#39d84a",
+        "desc": "Cure Green — healthy HP or completed status"
+      },
+      "done-dk": {
+        "value": "#1f7f2e",
+        "desc": "Darker shade of the healthy state"
+      },
+      "todo": {
+        "value": "#6f86c0",
+        "desc": "To-do / waiting state (NES gray)"
+      },
+      "excluded": {
+        "value": "#5a2b58",
+        "desc": "Dark crimson — Stone/Petrified or disabled state"
+      },
+      "danger": {
+        "value": "#ff4c30",
+        "desc": "Fighter Red / Fire Magic — critical HP or error"
+      }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg": {
+        "value": "#f4f4f4",
+        "desc": "Pure black — the classic NES battle and overworld void"
+      },
+      "bg-soft": {
+        "value": "#e6e8ed",
+        "desc": "Slightly elevated background for structure"
+      },
+      "panel": {
+        "value": "#fefefe",
+        "desc": "Pure black — replicating the iconic opaque menu boxes"
+      },
+      "panel-2": {
+        "value": "#f6f7f8",
+        "desc": "Slight lift for dropdowns, avoiding pure black overlap"
+      },
+      "panel-3": {
+        "value": "#edeef1",
+        "desc": "Highest-elevation panel surface"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#8f3d3d",
+        "desc": "Stark NES white — the iconic, unmistakable double-line menu border"
+      },
+      "line-soft": {
+        "value": "#98a6cd",
+        "desc": "NES gray for subtle inner dividers"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#1c273f",
+        "desc": "Stark NES white for all primary dialogue and stats"
+      },
+      "muted": {
+        "value": "#425176",
+        "desc": "Light gray for inactive menu items or low MP"
+      },
+      "faint": {
+        "value": "#6c7a9d",
+        "desc": "Dark gray for empty slots and tertiary text"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#0042e6",
+        "desc": "Black Mage Blue — primary interactive accent"
+      },
+      "accent-dk": {
+        "value": "#102ca7",
+        "desc": "Deep royal blue — dark focus border or active state"
+      },
+      "gold": {
+        "value": "#d6a000",
+        "desc": "Gil Yellow / Treasure — highlights and currency"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#27c839",
+        "desc": "Earth Crystal analog - healthy green"
+      },
+      "crystal-fire": {
+        "value": "#f02000",
+        "desc": "Fire Crystal analog - critical red-orange"
+      },
+      "crystal-water": {
+        "value": "#00a0f0",
+        "desc": "Water Crystal analog - classic NES blue"
+      },
+      "crystal-wind": {
+        "value": "#f0c700",
+        "desc": "Wind Crystal analog - treasure gold"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#22aa30",
+        "desc": "Cure Green — healthy HP or completed status"
+      },
+      "done-dk": {
+        "value": "#208330",
+        "desc": "Darker shade of the healthy state"
+      },
+      "todo": {
+        "value": "#4d649d",
+        "desc": "To-do / waiting state (NES gray)"
+      },
+      "excluded": {
+        "value": "#b48eb2",
+        "desc": "Dark crimson — Stone/Petrified or disabled state"
+      },
+      "danger": {
+        "value": "#e61f00",
+        "desc": "Fighter Red / Fire Magic — critical HP or error"
+      }
+    }
+  }
+}

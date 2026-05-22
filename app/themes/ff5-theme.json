@@ -1,0 +1,216 @@
+{
+  "meta": {
+    "name": "Dawn of the Crystals (FF5 Jobs)",
+    "id": "ff5-dawn-crystals",
+    "colorScheme": "dual",
+    "version": 1,
+    "source": "Inspired by Final Fantasy V: the four elemental crystals, world-map adventure, and the bright job-system era",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). The group names (surfaces, lines, text, accents, crystals, states) are for human organization only and are NOT part of the variable name. The four crystal-* tokens are extra identity colors; wire them up where supported.",
+    "notExportedYet": "Non-color tokens still live only in styles.css and are intentionally omitted here: --radius, --radius-s, --shadow. For stronger FF5 identity, consider subtle diagonal wind-texture overlays and tiny prismatic glints on hover states when non-color tokens are supported.",
+    "defaultScheme": "dark"
+  },
+  "colors": {
+    "surfaces": {
+      "bg": {
+        "value": "#1a0c09",
+        "desc": "Meteor-stained dusk over the FF5 horizon"
+      },
+      "bg-soft": {
+        "value": "#2a130f",
+        "desc": "Header elevation with ember dusk warmth"
+      },
+      "panel": {
+        "value": "#3a1d14",
+        "desc": "Primary panel in warm brick-brown adventure tone"
+      },
+      "panel-2": {
+        "value": "#552b1c",
+        "desc": "Raised controls with richer sunset contrast"
+      },
+      "panel-3": {
+        "value": "#753a24",
+        "desc": "Highest elevation with fiery crystal-lit warmth"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#ffd1a0",
+        "desc": "Warm parchment-gold frame line for crisp separation"
+      },
+      "line-soft": {
+        "value": "#b06c4f",
+        "desc": "Softer ember divider for internal structure"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#fff4e8",
+        "desc": "High-clarity text over deep sunset surfaces"
+      },
+      "muted": {
+        "value": "#e9c3a8",
+        "desc": "Secondary labels with warm dusk tone"
+      },
+      "faint": {
+        "value": "#b98b73",
+        "desc": "Tertiary text and metadata"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#6dff7f",
+        "desc": "Job-system energy green for primary interaction"
+      },
+      "accent-dk": {
+        "value": "#2ea853",
+        "desc": "Deep emerald for active/pressed states"
+      },
+      "gold": {
+        "value": "#ffd061",
+        "desc": "Relic/gil gold for totals and headers"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#79df4d",
+        "desc": "Earth Crystal analog - vivid growth green"
+      },
+      "crystal-fire": {
+        "value": "#ff6d3a",
+        "desc": "Fire Crystal analog - energetic flame orange"
+      },
+      "crystal-water": {
+        "value": "#4db9ff",
+        "desc": "Water Crystal analog - bright sapphire-blue"
+      },
+      "crystal-wind": {
+        "value": "#ffe14e",
+        "desc": "Wind Crystal analog - sunlit yellow"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#79df4d",
+        "desc": "Completed progression tied to Earth crystal"
+      },
+      "done-dk": {
+        "value": "#3f8d2c",
+        "desc": "Darker completion tone for layered visuals"
+      },
+      "todo": {
+        "value": "#c18a67",
+        "desc": "Pending state in warm bronze-brown"
+      },
+      "excluded": {
+        "value": "#7e5a72",
+        "desc": "Set-aside state in muted plum"
+      },
+      "danger": {
+        "value": "#ff4f4f",
+        "desc": "Critical/destructive actions in urgent scarlet"
+      }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg": {
+        "value": "#f5f2f2",
+        "desc": "Meteor-stained dusk over the FF5 horizon"
+      },
+      "bg-soft": {
+        "value": "#ede7e6",
+        "desc": "Header elevation with ember dusk warmth"
+      },
+      "panel": {
+        "value": "#fefefe",
+        "desc": "Primary panel in warm brick-brown adventure tone"
+      },
+      "panel-2": {
+        "value": "#f8f6f6",
+        "desc": "Raised controls with richer sunset contrast"
+      },
+      "panel-3": {
+        "value": "#f1eeed",
+        "desc": "Highest elevation with fiery crystal-lit warmth"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#a36829",
+        "desc": "Warm parchment-gold frame line for crisp separation"
+      },
+      "line-soft": {
+        "value": "#cda898",
+        "desc": "Softer ember divider for internal structure"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#1c3f21",
+        "desc": "High-clarity text over deep sunset surfaces"
+      },
+      "muted": {
+        "value": "#427648",
+        "desc": "Secondary labels with warm dusk tone"
+      },
+      "faint": {
+        "value": "#6c9d72",
+        "desc": "Tertiary text and metadata"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#00e61c",
+        "desc": "Job-system energy green for primary interaction"
+      },
+      "accent-dk": {
+        "value": "#279147",
+        "desc": "Deep emerald for active/pressed states"
+      },
+      "gold": {
+        "value": "#d69600",
+        "desc": "Relic/gil gold for totals and headers"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#57cb25",
+        "desc": "Earth Crystal analog - vivid growth green"
+      },
+      "crystal-fire": {
+        "value": "#f03e00",
+        "desc": "Fire Crystal analog - energetic flame orange"
+      },
+      "crystal-water": {
+        "value": "#0091f0",
+        "desc": "Water Crystal analog - bright sapphire-blue"
+      },
+      "crystal-wind": {
+        "value": "#f0c700",
+        "desc": "Wind Crystal analog - sunlit yellow"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#4aad1f",
+        "desc": "Completed progression tied to Earth crystal"
+      },
+      "done-dk": {
+        "value": "#387c27",
+        "desc": "Darker completion tone for layered visuals"
+      },
+      "todo": {
+        "value": "#9d6c4d",
+        "desc": "Pending state in warm bronze-brown"
+      },
+      "excluded": {
+        "value": "#b091a6",
+        "desc": "Set-aside state in muted plum"
+      },
+      "danger": {
+        "value": "#e60000",
+        "desc": "Critical/destructive actions in urgent scarlet"
+      }
+    }
+  }
+}

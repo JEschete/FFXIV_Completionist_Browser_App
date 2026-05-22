@@ -362,6 +362,71 @@ def record_state_change(
             _flush(path)
 
 
+def remove_state_change(
+    conn: sqlite3.Connection,
+    character_id: int,
+    run_id: int,
+    sheet_name: str,
+    row_index: int,
+) -> None:
+    """Remove a row's explicit progress entry from the character sidecar.
+
+    Called when DB override rows are deleted (restore inherited baseline state).
+    """
+    char = conn.execute(
+        "SELECT name, starting_class, created_at FROM characters WHERE id = ?",
+        (character_id,),
+    ).fetchone()
+    if not char or not char["name"]:
+        return
+    node = _node_for_row(conn, run_id, sheet_name, row_index)
+    if not node:
+        return
+
+    ids = compute_stable_ids(
+        sheet_name,
+        node["section_label"],
+        node["label"],
+        node["row_json"],
+        row_index,
+        precomputed_hash=node["stable_hash"] or None,
+    )
+    id_values = set(ids.values())
+    if not id_values:
+        return
+
+    path = sidecar_path(char["name"])
+    char_dict = dict(char)
+    with _path_lock(path):
+        doc = _get_doc(path, lambda: _new_doc(char_dict))
+        progress = doc.get("progress")
+        if not isinstance(progress, list) or not progress:
+            return
+
+        kept: list = []
+        removed_any = False
+        for entry in progress:
+            if not isinstance(entry, dict):
+                kept.append(entry)
+                continue
+            entry_ids = entry.get("ids")
+            if not isinstance(entry_ids, dict):
+                kept.append(entry)
+                continue
+            if any(v in id_values for v in entry_ids.values()):
+                removed_any = True
+                continue
+            kept.append(entry)
+
+        if not removed_any:
+            return
+
+        doc["progress"] = kept
+        _dirty.add(path)
+        if _batch_depth.get(path, 0) == 0:
+            _flush(path)
+
+
 # --- reconcile JSON sidecars -> DB at startup ------------------------------
 
 @dataclass

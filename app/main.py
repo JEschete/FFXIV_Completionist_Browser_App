@@ -360,6 +360,33 @@ def _append_character_import_run_log(run_id: str, message: str) -> None:
         _append_lodestone_log_file(log_path, line)
 
 
+def _active_character_import_run(character_id: int) -> dict[str, Any] | None:
+    with CHAR_IMPORT_RUNS_LOCK:
+        for run in CHAR_IMPORT_RUNS.values():
+            if int(run.get("character_id") or -1) != int(character_id):
+                continue
+            status = str(run.get("status") or "").lower()
+            if status in {"queued", "running"}:
+                return {
+                    "id": str(run.get("id") or ""),
+                    "status": status,
+                }
+    return None
+
+
+def _ensure_character_import_idle(character_id: int) -> None:
+    active = _active_character_import_run(character_id)
+    if active is None:
+        return
+    run_id = str(active.get("id") or "").strip()
+    status = str(active.get("status") or "running")
+    suffix = f" (run_id={run_id})" if run_id else ""
+    raise HTTPException(
+        409,
+        f"This character currently has an import {status}{suffix}. Wait for it to finish before editing progress.",
+    )
+
+
 def _row_snapshot(
     conn,
     *,
@@ -381,12 +408,16 @@ def _row_snapshot(
         return None
     pct_raw = row.get("progress_percent")
     pct = float(pct_raw) if isinstance(pct_raw, (int, float)) else None
+    explicit_state_raw = row.get("explicit_state")
+    explicit_state = str(explicit_state_raw) if explicit_state_raw is not None else None
     return {
         "sheet_name": str(sheet_name),
         "row_index": int(row_index),
         "row_type": str(row.get("row_type") or "checkbox"),
         "state": str(row.get("eff") or "todo"),
         "progress_percent": pct,
+        "explicit": explicit_state is not None,
+        "explicit_state": explicit_state,
     }
 
 
@@ -426,7 +457,8 @@ def _snapshot_diff_changes(
             continue
         same_state = b.get("state") == a.get("state")
         same_pct = b.get("progress_percent") == a.get("progress_percent")
-        if same_state and same_pct:
+        same_explicit = bool(b.get("explicit")) == bool(a.get("explicit"))
+        if same_state and same_pct and same_explicit:
             continue
         changes.append({
             "sheet_name": str(a.get("sheet_name") or b.get("sheet_name") or ""),
@@ -435,10 +467,12 @@ def _snapshot_diff_changes(
             "before": {
                 "state": str(b.get("state") or "todo"),
                 "progress_percent": b.get("progress_percent"),
+                "explicit": bool(b.get("explicit")),
             },
             "after": {
                 "state": str(a.get("state") or "todo"),
                 "progress_percent": a.get("progress_percent"),
+                "explicit": bool(a.get("explicit")),
             },
         })
     return changes
@@ -449,15 +483,49 @@ def _history_step(
     action: str,
     changes: list[dict[str, Any]],
     kind: str = "row-change",
+    run_id: int | None = None,
+    character_id: int | None = None,
 ) -> dict[str, Any] | None:
     if not changes:
         return None
-    return {
+    payload: dict[str, Any] = {
         "kind": kind,
         "action": action,
         "created_at": dt.datetime.now().isoformat(),
         "changes": changes,
     }
+    if run_id is not None:
+        payload["run_id"] = int(run_id)
+    if character_id is not None:
+        payload["character_id"] = int(character_id)
+    return payload
+
+
+def _normalize_history_snapshot(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    state = str(raw.get("state") or "todo")
+    pct_raw = raw.get("progress_percent")
+    pct = float(pct_raw) if isinstance(pct_raw, (int, float)) else None
+    snap: dict[str, Any] = {
+        "state": state,
+        "progress_percent": pct,
+    }
+    if "explicit" in raw:
+        snap["explicit"] = bool(raw.get("explicit"))
+    return snap
+
+
+def _history_snapshot_matches(expected: dict[str, Any], current: dict[str, Any] | None) -> bool:
+    if current is None:
+        return False
+    if str(expected.get("state") or "todo") != str(current.get("state") or "todo"):
+        return False
+    if expected.get("progress_percent") != current.get("progress_percent"):
+        return False
+    if "explicit" in expected and bool(expected.get("explicit")) != bool(current.get("explicit")):
+        return False
+    return True
 
 
 def _set_hx_triggers(resp: HTMLResponse, history_step: dict[str, Any] | None = None) -> None:
@@ -626,7 +694,8 @@ def _run_character_import_job(
                 continue
             same_state = before_item.get("state") == after_item.get("state")
             same_pct = before_item.get("progress_percent") == after_item.get("progress_percent")
-            if same_state and same_pct:
+            same_explicit = bool(before_item.get("explicit")) == bool(after_item.get("explicit"))
+            if same_state and same_pct and same_explicit:
                 continue
             import_changes.append({
                 "sheet_name": str(after_item.get("sheet_name") or before_item.get("sheet_name") or ""),
@@ -635,10 +704,12 @@ def _run_character_import_job(
                 "before": {
                     "state": str(before_item.get("state") or "todo"),
                     "progress_percent": before_item.get("progress_percent"),
+                    "explicit": bool(before_item.get("explicit")),
                 },
                 "after": {
                     "state": str(after_item.get("state") or "todo"),
                     "progress_percent": after_item.get("progress_percent"),
+                    "explicit": bool(after_item.get("explicit")),
                 },
             })
 
@@ -647,7 +718,8 @@ def _run_character_import_job(
         if import_changes:
             history_payload = {
                 "kind": "import-run",
-                "run_id": run_id,
+                "import_run_id": run_id,
+                "run_id": run_id_db,
                 "character_id": character_id,
                 "created_at": dt.datetime.now().isoformat(),
                 "changes": import_changes,
@@ -662,6 +734,8 @@ def _run_character_import_job(
                 "kind": "import-run",
                 "action": import_label,
                 "import_run_id": run_id,
+                "run_id": run_id_db,
+                "character_id": character_id,
                 "changes_count": len(import_changes),
             }
 
@@ -1125,6 +1199,15 @@ def _submit_character_import(
             status_code=303,
         )
 
+    active_run = _active_character_import_run(character_id)
+    if active_run is not None:
+        run_ref = str(active_run.get("id") or "").strip()
+        detail = f" (run_id={run_ref})" if run_ref else ""
+        return RedirectResponse(
+            f"/characters?error={quote(f'An import is already in progress for this character{detail}. Wait for it to finish.')}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}",
+            status_code=303,
+        )
+
     run_id = uuid.uuid4().hex
     log_path = CHAR_IMPORT_LOG_DIR / f"{run_id}.log"
     clear_existing_flag = clear_existing == "1"
@@ -1286,6 +1369,8 @@ def character_import_history_step(run_id: str):
         "action": action,
         "created_at": str(payload.get("created_at") or dt.datetime.now().isoformat()),
         "import_run_id": run_id,
+        "run_id": payload.get("run_id"),
+        "character_id": payload.get("character_id"),
         "changes": payload.get("changes") if isinstance(payload.get("changes"), list) else [],
     }
     return JSONResponse(response_step)
@@ -1385,6 +1470,15 @@ def credits_page(request: Request):
     ctx = Ctx(request)
     try:
         return ctx.render("credits.html", {"active_sheet": None})
+    finally:
+        ctx.close()
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request):
+    ctx = Ctx(request)
+    try:
+        return ctx.render("settings.html", {"active_sheet": None})
     finally:
         ctx.close()
 
@@ -1539,6 +1633,7 @@ def api_toggle(
     `<tr>` fragments so HTMX patches them in place."""
     ctx = Ctx(request, full=False)
     try:
+        _ensure_character_import_idle(ctx.character_id)
         sheet = ctx.require_content_sheet(sheet_name)
 
         current_state = db.effective_state(
@@ -1597,6 +1692,8 @@ def api_toggle(
         history_step = _history_step(
             action="Toggle row",
             changes=_snapshot_diff_changes(before_snapshots, after_snapshots),
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
         )
 
         import json as _json
@@ -1628,6 +1725,7 @@ def api_set_value(
     """Set a value-row's numeric level (0-100); state is derived."""
     ctx = Ctx(request, full=False)
     try:
+        _ensure_character_import_idle(ctx.character_id)
         sheet = ctx.require_content_sheet(sheet_name)
         before_snapshots = _row_snapshots(
             ctx.conn,
@@ -1652,6 +1750,8 @@ def api_set_value(
         history_step = _history_step(
             action="Set value",
             changes=_snapshot_diff_changes(before_snapshots, after_snapshots),
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
         )
         import json as _json
         columns = _json.loads(sheet["data_columns_json"])
@@ -1676,6 +1776,7 @@ def api_toggle_excluded(
     """Two-state exclude toggle for value rows."""
     ctx = Ctx(request, full=False)
     try:
+        _ensure_character_import_idle(ctx.character_id)
         sheet = ctx.require_content_sheet(sheet_name)
         before_snapshots = _row_snapshots(
             ctx.conn,
@@ -1700,6 +1801,8 @@ def api_toggle_excluded(
         history_step = _history_step(
             action="Toggle excluded",
             changes=_snapshot_diff_changes(before_snapshots, after_snapshots),
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
         )
         import json as _json
         columns = _json.loads(sheet["data_columns_json"])
@@ -1724,6 +1827,7 @@ def api_set_state(
 ):
     ctx = Ctx(request, full=False)
     try:
+        _ensure_character_import_idle(ctx.character_id)
         sheet = ctx.require_content_sheet(sheet_name)
         before_snapshots = _row_snapshots(
             ctx.conn,
@@ -1748,6 +1852,8 @@ def api_set_state(
         history_step = _history_step(
             action="Set state",
             changes=_snapshot_diff_changes(before_snapshots, after_snapshots),
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
         )
         import json as _json
         columns = _json.loads(sheet["data_columns_json"])
@@ -1773,6 +1879,7 @@ def api_complete_chain(
     fragments so HTMX patches every changed `<tr>` in place — no page reload."""
     ctx = Ctx(request, full=False)
     try:
+        _ensure_character_import_idle(ctx.character_id)
         sheet = ctx.require_content_sheet(sheet_name)
         before_rows = _rows_to_complete_for_history(
             ctx.conn,
@@ -1805,6 +1912,8 @@ def api_complete_chain(
         history_step = _history_step(
             action="Complete chain",
             changes=_snapshot_diff_changes(before_snapshots, after_snapshots),
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
         )
         import json as _json
         columns = _json.loads(sheet["data_columns_json"])
@@ -1847,6 +1956,7 @@ def api_bulk_set_section(
 
     ctx = Ctx(request, full=False)
     try:
+        _ensure_character_import_idle(ctx.character_id)
         sheet = ctx.require_content_sheet(sheet_name)
         row_indices_set: set[int] = set()
         for raw in raw_indices:
@@ -1958,6 +2068,8 @@ def api_bulk_set_section(
         history_step = _history_step(
             action=f"Bulk set section to {target_state}",
             changes=_snapshot_diff_changes(before_snapshots, after_snapshots),
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
         )
 
         import json as _json
@@ -2003,7 +2115,50 @@ def api_history_apply(
 
     ctx = Ctx(request, full=False)
     try:
-        touched_by_sheet: dict[str, set[int]] = {}
+        _ensure_character_import_idle(ctx.character_id)
+
+        step_character_id: int | None = None
+        try:
+            if step.get("character_id") is not None:
+                step_character_id = int(step.get("character_id"))
+        except (TypeError, ValueError):
+            step_character_id = None
+        if step_character_id is not None and step_character_id != ctx.character_id:
+            msg = (
+                "This history step belongs to a different character. "
+                "Switch to the original character or discard this stale step."
+            )
+            return HTMLResponse(
+                "",
+                status_code=409,
+                headers={
+                    "X-History-Error": msg,
+                    "HX-Trigger": json.dumps({"history-stale": {"reason": "character-mismatch"}}),
+                },
+            )
+
+        step_run_id: int | None = None
+        try:
+            if step.get("run_id") is not None:
+                step_run_id = int(step.get("run_id"))
+        except (TypeError, ValueError):
+            step_run_id = None
+        if step_run_id is not None and step_run_id != ctx.run_id:
+            msg = (
+                "This history step was recorded against an older workbook run. "
+                "Refresh and continue from current data."
+            )
+            return HTMLResponse(
+                "",
+                status_code=409,
+                headers={
+                    "X-History-Error": msg,
+                    "HX-Trigger": json.dumps({"history-stale": {"reason": "run-mismatch"}}),
+                },
+            )
+
+        parsed_changes: list[dict[str, Any]] = []
+        conflicts: list[dict[str, Any]] = []
         for change in raw_changes:
             if not isinstance(change, dict):
                 continue
@@ -2015,57 +2170,136 @@ def api_history_apply(
             except (TypeError, ValueError):
                 continue
 
-            target = change.get("before") if direction == "undo" else change.get("after")
-            if not isinstance(target, dict):
+            before = _normalize_history_snapshot(change.get("before"))
+            after = _normalize_history_snapshot(change.get("after"))
+            if before is None or after is None:
                 continue
 
-            row_type = str(change.get("row_type") or "checkbox")
-            target_state = str(target.get("state") or "todo")
-            target_pct = target.get("progress_percent")
+            expected = after if direction == "undo" else before
+            target = before if direction == "undo" else after
+            current = _row_snapshot(
+                ctx.conn,
+                run_id=ctx.run_id,
+                character_id=ctx.character_id,
+                sheet_name=sheet_name,
+                row_index=row_index,
+                starting_class=ctx.starting_class,
+            )
+            if not _history_snapshot_matches(expected, current):
+                conflicts.append({
+                    "sheet_name": sheet_name,
+                    "row_index": row_index,
+                })
+                continue
 
-            try:
-                if row_type == "value":
-                    pct_value: float
-                    if isinstance(target_pct, (int, float)):
-                        pct_value = float(target_pct)
+            parsed_changes.append({
+                "sheet_name": sheet_name,
+                "row_index": row_index,
+                "row_type": str(change.get("row_type") or "checkbox"),
+                "target": target,
+            })
+
+        if conflicts:
+            msg = (
+                "Undo/redo step is stale because current row state no longer matches the "
+                "expected preconditions. Refresh and continue from current state."
+            )
+            return HTMLResponse(
+                "",
+                status_code=409,
+                headers={
+                    "X-History-Error": msg,
+                    "HX-Trigger": json.dumps({
+                        "history-stale": {
+                            "reason": "precondition-failed",
+                            "count": len(conflicts),
+                        }
+                    }),
+                },
+            )
+
+        if not parsed_changes and raw_changes:
+            msg = "Undo/redo step contains no applicable row changes for the current workbook state."
+            return HTMLResponse(
+                "",
+                status_code=409,
+                headers={
+                    "X-History-Error": msg,
+                    "HX-Trigger": json.dumps({"history-stale": {"reason": "no-applicable-changes"}}),
+                },
+            )
+
+        touched_by_sheet: dict[str, set[int]] = {}
+        with progress_io.batch(ctx.conn, ctx.character_id):
+            for change in parsed_changes:
+                sheet_name = str(change.get("sheet_name") or "")
+                row_index = int(change.get("row_index") or 0)
+                row_type = str(change.get("row_type") or "checkbox")
+                target = change.get("target") if isinstance(change.get("target"), dict) else {}
+                target_state = str(target.get("state") or "todo")
+                target_pct = target.get("progress_percent")
+                target_explicit = bool(target.get("explicit")) if "explicit" in target else True
+
+                try:
+                    if not target_explicit:
+                        db.clear_row_override(
+                            ctx.conn,
+                            ctx.character_id,
+                            ctx.run_id,
+                            sheet_name,
+                            row_index,
+                            commit=False,
+                            starting_class=ctx.starting_class,
+                        )
+                    elif row_type == "value":
+                        if isinstance(target_pct, (int, float)):
+                            db.set_row_value(
+                                ctx.conn,
+                                ctx.character_id,
+                                ctx.run_id,
+                                sheet_name,
+                                row_index,
+                                float(target_pct),
+                                commit=False,
+                                starting_class=ctx.starting_class,
+                            )
+                            if target_state == "excluded":
+                                db.set_row_state(
+                                    ctx.conn,
+                                    ctx.character_id,
+                                    ctx.run_id,
+                                    sheet_name,
+                                    row_index,
+                                    "excluded",
+                                    commit=False,
+                                    starting_class=ctx.starting_class,
+                                )
+                        else:
+                            db.set_row_state(
+                                ctx.conn,
+                                ctx.character_id,
+                                ctx.run_id,
+                                sheet_name,
+                                row_index,
+                                target_state,
+                                commit=False,
+                                starting_class=ctx.starting_class,
+                            )
                     else:
-                        pct_value = 100.0 if target_state == "done" else 0.0
-                    db.set_row_value(
-                        ctx.conn,
-                        ctx.character_id,
-                        ctx.run_id,
-                        sheet_name,
-                        row_index,
-                        pct_value,
-                        commit=False,
-                        starting_class=ctx.starting_class,
-                    )
-                    if target_state == "excluded":
                         db.set_row_state(
                             ctx.conn,
                             ctx.character_id,
                             ctx.run_id,
                             sheet_name,
                             row_index,
-                            "excluded",
+                            target_state,
                             commit=False,
                             starting_class=ctx.starting_class,
                         )
-                else:
-                    db.set_row_state(
-                        ctx.conn,
-                        ctx.character_id,
-                        ctx.run_id,
-                        sheet_name,
-                        row_index,
-                        target_state,
-                        commit=False,
-                        starting_class=ctx.starting_class,
-                    )
-            except ValueError:
-                continue
+                except ValueError as exc:
+                    raise HTTPException(400, f"Invalid history change for row {sheet_name}:{row_index}: {exc}") from exc
 
-            touched_by_sheet.setdefault(sheet_name, set()).add(row_index)
+                touched_by_sheet.setdefault(sheet_name, set()).add(row_index)
 
         if touched_by_sheet:
             ctx.conn.commit()

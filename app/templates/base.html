@@ -132,6 +132,7 @@
             <a href="/characters" class="quick-link {{ 'active' if request.url.path == '/characters' }}">Characters</a>
             <a href="/lodestone-probe" class="quick-link {{ 'active' if request.url.path == '/lodestone-probe' }}">Lodestone Probe</a>
             <a href="/credits" class="quick-link {{ 'active' if request.url.path == '/credits' }}">Credits</a>
+            <a href="/settings" class="quick-link {{ 'active' if request.url.path == '/settings' }}">Settings</a>
             <a href="/export/current.csv" class="quick-link quick-link-export">Export CSV</a>
           </nav>
         </div>
@@ -179,7 +180,11 @@
     }
     const valueState = String(raw.state || 'todo');
     const pct = typeof raw.progress_percent === 'number' ? raw.progress_percent : null;
-    return { state: valueState, progress_percent: pct };
+    const out = { state: valueState, progress_percent: pct };
+    if (Object.prototype.hasOwnProperty.call(raw, 'explicit')) {
+      out.explicit = Boolean(raw.explicit);
+    }
+    return out;
   };
 
   const cleanStep = (raw) => {
@@ -213,11 +218,17 @@
     if (!changes.length) {
       return null;
     }
+    const runId = Number(raw.run_id);
+    const stepRunId = Number.isInteger(runId) ? runId : undefined;
+    const characterId = Number(raw.character_id);
+    const stepCharacterId = Number.isInteger(characterId) ? characterId : undefined;
     return {
       kind: String(raw.kind || 'row-change'),
       action: String(raw.action || 'Update rows'),
       created_at: String(raw.created_at || new Date().toISOString()),
       import_run_id: raw.import_run_id ? String(raw.import_run_id) : undefined,
+      run_id: stepRunId,
+      character_id: stepCharacterId,
       changes,
     };
   };
@@ -362,7 +373,9 @@
       credentials: 'same-origin',
     });
     if (!response.ok) {
-      throw new Error(`History apply failed (${response.status})`);
+      const serverMessage = response.headers.get('X-History-Error');
+      const fallback = `History apply failed (${response.status})`;
+      throw new Error(serverMessage || fallback);
     }
 
     const html = await response.text();
@@ -395,6 +408,10 @@
     } catch (err) {
       // Keep stack as-is if apply fails so the user can retry.
       console.error(err);
+      const msg = err instanceof Error ? err.message : String(err || 'History apply failed');
+      if (msg) {
+        window.alert(msg);
+      }
     } finally {
       state.pending = false;
       updateButtons();

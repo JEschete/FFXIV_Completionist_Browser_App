@@ -1,0 +1,216 @@
+{
+  "meta": {
+    "name": "Ivalice Sky Armada (FF12)",
+    "id": "ff12-ivalice-sky-armada",
+    "colorScheme": "dual",
+    "defaultScheme": "dark",
+    "version": 1,
+    "source": "Inspired by Final Fantasy XII: sky pirates, Judge armor metals, and sun-scorched Ivalice cities",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). The group names (surfaces, lines, text, accents, crystals, states) are for human organization only and are NOT part of the variable name. The four crystal-* tokens are extra identity colors; wire them up where supported.",
+    "notExportedYet": "Non-color tokens still live only in styles.css and are intentionally omitted here: --radius, --radius-s, --shadow. FF12 can be pushed further with subtle brass filigree lines and light dust gradients across large surfaces."
+  },
+  "colors": {
+    "surfaces": {
+      "bg": {
+        "value": "#120f0a",
+        "desc": "Night over Ivalice sandstone and steel"
+      },
+      "bg-soft": {
+        "value": "#1e1a12",
+        "desc": "Header in dimmed bronze dusk"
+      },
+      "panel": {
+        "value": "#2b2417",
+        "desc": "Primary panel in weathered brass-brown"
+      },
+      "panel-2": {
+        "value": "#3a311f",
+        "desc": "Raised controls with Judge-metal depth"
+      },
+      "panel-3": {
+        "value": "#4d4228",
+        "desc": "Highest elevation in gilded desert shadow"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#d8c08a",
+        "desc": "Ornate brass frame line"
+      },
+      "line-soft": {
+        "value": "#7d6a43",
+        "desc": "Soft divider in aged bronze"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#fff4dd",
+        "desc": "Primary text with parchment warmth"
+      },
+      "muted": {
+        "value": "#d8c6a0",
+        "desc": "Secondary labels"
+      },
+      "faint": {
+        "value": "#a89163",
+        "desc": "Tertiary metadata"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#46d0c6",
+        "desc": "Sky-pirate turquoise for primary interactions"
+      },
+      "accent-dk": {
+        "value": "#248b84",
+        "desc": "Pressed/active turquoise depth"
+      },
+      "gold": {
+        "value": "#f7b955",
+        "desc": "Imperial sun-gold highlights"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#91c766",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#f27b4b",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#5ac0ff",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#f0d763",
+        "desc": "Wind analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#6bb978",
+        "desc": "Completed state"
+      },
+      "done-dk": {
+        "value": "#3d7c4b",
+        "desc": "Darker completion shade"
+      },
+      "todo": {
+        "value": "#9f8a5c",
+        "desc": "Pending state in bronze tan"
+      },
+      "excluded": {
+        "value": "#7b6a52",
+        "desc": "Set-aside state"
+      },
+      "danger": {
+        "value": "#e7584f",
+        "desc": "Critical/destructive actions"
+      }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg": {
+        "value": "#fff7e6",
+        "desc": "Sunlit desert parchment backdrop"
+      },
+      "bg-soft": {
+        "value": "#f8ecd2",
+        "desc": "Header in warm sandstone haze"
+      },
+      "panel": {
+        "value": "#fffdf7",
+        "desc": "Primary panel"
+      },
+      "panel-2": {
+        "value": "#fff3df",
+        "desc": "Raised panel"
+      },
+      "panel-3": {
+        "value": "#f8e6c2",
+        "desc": "Highest elevation in sun-gold tint"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#7b6740",
+        "desc": "Primary structural line"
+      },
+      "line-soft": {
+        "value": "#b9a07a",
+        "desc": "Soft divider"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#3c2f1c",
+        "desc": "Primary text"
+      },
+      "muted": {
+        "value": "#685538",
+        "desc": "Secondary text"
+      },
+      "faint": {
+        "value": "#917951",
+        "desc": "Tertiary text"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#008f86",
+        "desc": "Sky-pirate turquoise accent"
+      },
+      "accent-dk": {
+        "value": "#00655d",
+        "desc": "Pressed accent"
+      },
+      "gold": {
+        "value": "#b1781f",
+        "desc": "Imperial gold highlight"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#66903f",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#d9653a",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#2f8ec4",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#a8902a",
+        "desc": "Wind analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#4f8f58",
+        "desc": "Completed state"
+      },
+      "done-dk": {
+        "value": "#356640",
+        "desc": "Dark completion shade"
+      },
+      "todo": {
+        "value": "#7f7456",
+        "desc": "Pending state"
+      },
+      "excluded": {
+        "value": "#9c927e",
+        "desc": "Set-aside state"
+      },
+      "danger": {
+        "value": "#c8443d",
+        "desc": "Critical state"
+      }
+    }
+  }
+}

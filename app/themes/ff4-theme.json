@@ -1,0 +1,216 @@
+{
+  "meta": {
+    "name": "Moonlit Baron (FF4 Cecil, Kain, Rosa)",
+    "id": "ff4-moonlit-baron",
+    "colorScheme": "dual",
+    "version": 1,
+    "source": "Inspired by Final Fantasy IV: Baron nights, Cecil's redemption arc, Kain's dragoon steel, and Rosa's moonlit grace",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). The group names (surfaces, lines, text, accents, crystals, states) are for human organization only and are NOT part of the variable name. The four crystal-* tokens are extra identity colors; wire them up where supported.",
+    "notExportedYet": "Non-color tokens still live only in styles.css and are intentionally omitted here: --radius, --radius-s, --shadow. To push the FF4 identity further, add a subtle moonbeam gradient on elevated panels and a faint mist layer over backgrounds when non-color tokens are supported.",
+    "defaultScheme": "dark"
+  },
+  "colors": {
+    "surfaces": {
+      "bg": {
+        "value": "#07031c",
+        "desc": "Midnight over Baron with deep lunar indigo"
+      },
+      "bg-soft": {
+        "value": "#130a36",
+        "desc": "Header elevation in cool pre-dawn blue"
+      },
+      "panel": {
+        "value": "#1f1358",
+        "desc": "Primary panel tone inspired by Baron armor blue"
+      },
+      "panel-2": {
+        "value": "#2e1d7f",
+        "desc": "Raised controls and cards with stronger moonlight"
+      },
+      "panel-3": {
+        "value": "#4430a8",
+        "desc": "Highest elevation surface with crystalline night glow"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#b8b9ff",
+        "desc": "Moon-silver frame line for clear structure"
+      },
+      "line-soft": {
+        "value": "#645eb1",
+        "desc": "Subtle divider for inner rows and sections"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#f7f3ff",
+        "desc": "Primary text with bright moonlit contrast"
+      },
+      "muted": {
+        "value": "#d0c0ee",
+        "desc": "Secondary labels in cool misted blue-gray"
+      },
+      "faint": {
+        "value": "#9386bf",
+        "desc": "Tertiary text and quiet metadata"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#9bb7ff",
+        "desc": "Cecil paladin moonlight for core interactive emphasis"
+      },
+      "accent-dk": {
+        "value": "#7b46ff",
+        "desc": "Kain dragoon violet for active and pressed states"
+      },
+      "gold": {
+        "value": "#ffd780",
+        "desc": "Baron crest gold for headings and highlighted totals"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#75d8ac",
+        "desc": "Terra-green crystal analog for grounded milestones"
+      },
+      "crystal-fire": {
+        "value": "#ff6a93",
+        "desc": "Rosa-rose crimson crystal analog"
+      },
+      "crystal-water": {
+        "value": "#7dcfff",
+        "desc": "Lunar water crystal analog in clear cyan-blue"
+      },
+      "crystal-wind": {
+        "value": "#c79dff",
+        "desc": "Dragoon-lilac wind crystal analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#75d8ac",
+        "desc": "Completed state aligned with crystal-earth"
+      },
+      "done-dk": {
+        "value": "#3f8b68",
+        "desc": "Darker done shade for depth and contrast"
+      },
+      "todo": {
+        "value": "#8f7dbe",
+        "desc": "Pending state in cool steel-blue"
+      },
+      "excluded": {
+        "value": "#6f4b93",
+        "desc": "Set-aside state in muted dragoon violet"
+      },
+      "danger": {
+        "value": "#ff5684",
+        "desc": "Critical and destructive actions with rose-red urgency"
+      }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg": {
+        "value": "#f2f2f5",
+        "desc": "Midnight over Baron with deep lunar indigo"
+      },
+      "bg-soft": {
+        "value": "#e7e6ed",
+        "desc": "Header elevation in cool pre-dawn blue"
+      },
+      "panel": {
+        "value": "#fefefe",
+        "desc": "Primary panel tone inspired by Baron armor blue"
+      },
+      "panel-2": {
+        "value": "#f6f6f8",
+        "desc": "Raised controls and cards with stronger moonlight"
+      },
+      "panel-3": {
+        "value": "#eeedf1",
+        "desc": "Highest elevation surface with crystalline night glow"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#292ba3",
+        "desc": "Moon-silver frame line for clear structure"
+      },
+      "line-soft": {
+        "value": "#9c98cd",
+        "desc": "Subtle divider for inner rows and sections"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#1c263f",
+        "desc": "Primary text with bright moonlit contrast"
+      },
+      "muted": {
+        "value": "#425076",
+        "desc": "Secondary labels in cool misted blue-gray"
+      },
+      "faint": {
+        "value": "#6c7a9d",
+        "desc": "Tertiary text and quiet metadata"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#0040e6",
+        "desc": "Cecil paladin moonlight for core interactive emphasis"
+      },
+      "accent-dk": {
+        "value": "#3500b8",
+        "desc": "Kain dragoon violet for active and pressed states"
+      },
+      "gold": {
+        "value": "#d69300",
+        "desc": "Baron crest gold for headings and highlighted totals"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#35bb7f",
+        "desc": "Terra-green crystal analog for grounded milestones"
+      },
+      "crystal-fire": {
+        "value": "#f00042",
+        "desc": "Rosa-rose crimson crystal analog"
+      },
+      "crystal-water": {
+        "value": "#0097f0",
+        "desc": "Lunar water crystal analog in clear cyan-blue"
+      },
+      "crystal-wind": {
+        "value": "#6700f0",
+        "desc": "Dragoon-lilac wind crystal analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#2d9f6c",
+        "desc": "Completed state aligned with crystal-earth"
+      },
+      "done-dk": {
+        "value": "#277c55",
+        "desc": "Darker done shade for depth and contrast"
+      },
+      "todo": {
+        "value": "#644e9c",
+        "desc": "Pending state in cool steel-blue"
+      },
+      "excluded": {
+        "value": "#a18eb4",
+        "desc": "Set-aside state in muted dragoon violet"
+      },
+      "danger": {
+        "value": "#e6003e",
+        "desc": "Critical and destructive actions with rose-red urgency"
+      }
+    }
+  }
+}

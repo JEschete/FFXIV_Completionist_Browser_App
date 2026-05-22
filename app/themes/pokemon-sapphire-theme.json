@@ -1,0 +1,84 @@
+{
+  "meta": {
+    "name": "Pokemon Sapphire Current",
+    "id": "pokemon-sapphire-hoenn",
+    "colorScheme": "dual",
+    "defaultScheme": "dark",
+    "version": 1,
+    "source": "Inspired by Pokemon Sapphire: deep sea blue, rain-route clarity, and cool tactical energy.",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). Group names are organization only and are NOT part of the variable name.",
+    "notExportedYet": "Non-color tokens still live in styles.css. For stronger Sapphire identity, add subtle ripple sheens and wave gradients."
+  },
+  "colors": {
+    "surfaces": {
+      "bg": { "value": "#050d1b", "desc": "Dark sapphire ocean" },
+      "bg-soft": { "value": "#08172e", "desc": "Header layer" },
+      "panel": { "value": "#0d2345", "desc": "Primary card surface" },
+      "panel-2": { "value": "#14325f", "desc": "Raised panel" },
+      "panel-3": { "value": "#1d437a", "desc": "Highest elevation" }
+    },
+    "lines": {
+      "line": { "value": "#8fd5ff", "desc": "Strong frame line" },
+      "line-soft": { "value": "#3f6b97", "desc": "Subtle divider" }
+    },
+    "text": {
+      "text": { "value": "#edf6ff", "desc": "Primary text" },
+      "muted": { "value": "#b6d1eb", "desc": "Secondary labels" },
+      "faint": { "value": "#7f9fc2", "desc": "Tertiary metadata" }
+    },
+    "accents": {
+      "accent": { "value": "#0f7bff", "desc": "Core Sapphire accent" },
+      "accent-dk": { "value": "#0b4fad", "desc": "Pressed state" },
+      "gold": { "value": "#ffd073", "desc": "Highlight token" }
+    },
+    "crystals": {
+      "crystal-earth": { "value": "#84c86f", "desc": "Earth analog" },
+      "crystal-fire": { "value": "#ff8458", "desc": "Fire analog" },
+      "crystal-water": { "value": "#46b8ff", "desc": "Water analog" },
+      "crystal-wind": { "value": "#d8ea75", "desc": "Wind analog" }
+    },
+    "states": {
+      "done": { "value": "#66c584", "desc": "Completed" },
+      "done-dk": { "value": "#397d54", "desc": "Completed dark" },
+      "todo": { "value": "#5f7ba7", "desc": "Pending" },
+      "excluded": { "value": "#58667f", "desc": "Excluded" },
+      "danger": { "value": "#eb5a52", "desc": "Danger" }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg": { "value": "#edf6ff", "desc": "Light ocean sky" },
+      "bg-soft": { "value": "#deecff", "desc": "Header" },
+      "panel": { "value": "#ffffff", "desc": "Primary card" },
+      "panel-2": { "value": "#f2f8ff", "desc": "Raised panel" },
+      "panel-3": { "value": "#e6f1ff", "desc": "Highest elevation" }
+    },
+    "lines": {
+      "line": { "value": "#3466a7", "desc": "Frame line" },
+      "line-soft": { "value": "#95b3db", "desc": "Subtle divider" }
+    },
+    "text": {
+      "text": { "value": "#1d375f", "desc": "Primary text" },
+      "muted": { "value": "#42628f", "desc": "Secondary labels" },
+      "faint": { "value": "#6d8db8", "desc": "Tertiary metadata" }
+    },
+    "accents": {
+      "accent": { "value": "#175fd1", "desc": "Core Sapphire accent" },
+      "accent-dk": { "value": "#15479a", "desc": "Pressed state" },
+      "gold": { "value": "#b78323", "desc": "Highlight token" }
+    },
+    "crystals": {
+      "crystal-earth": { "value": "#5e9c4a", "desc": "Earth analog" },
+      "crystal-fire": { "value": "#d46946", "desc": "Fire analog" },
+      "crystal-water": { "value": "#2f8fc6", "desc": "Water analog" },
+      "crystal-wind": { "value": "#a0b641", "desc": "Wind analog" }
+    },
+    "states": {
+      "done": { "value": "#4f9d6a", "desc": "Completed" },
+      "done-dk": { "value": "#366d49", "desc": "Completed dark" },
+      "todo": { "value": "#5573a0", "desc": "Pending" },
+      "excluded": { "value": "#99a9c0", "desc": "Excluded" },
+      "danger": { "value": "#c94843", "desc": "Danger" }
+    }
+  }
+}
