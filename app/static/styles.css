@@ -826,6 +826,15 @@ img.brand-mark { object-fit: cover; }
   align-items: center;
   gap: 8px;
 }
+.import-source-radios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.import-source-radios .probe-check {
+  font-size: 13px;
+  color: var(--text);
+}
 .probe-check input {
   accent-color: var(--accent);
 }
