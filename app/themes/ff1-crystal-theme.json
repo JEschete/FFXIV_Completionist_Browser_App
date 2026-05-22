@@ -1,0 +1,248 @@
+{
+  "meta": {
+    "name": "Light of the Crystals (FF1 refined)",
+    "id": "ff1-crystal-refined",
+    "colorScheme": "dual",
+    "version": 1,
+    "source": "Reimagined from ff1-theme.json — adds surface depth + Crystal identity",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). The four crystal-* tokens are extra identity colors; wire them up when the theme system supports custom tokens.",
+    "notExportedYet": "Non-color tokens. The faceted-gem look really wants subtle gradients on panels and a luminous border-glow (box-shadow) — neither is expressible as a flat color token yet. For a strict NES feel keep --radius: 0; for a 'remake' feel allow rounded corners. The crystal-earth/fire/water/wind tokens are not yet referenced by styles.css.",
+    "defaultScheme": "dark"
+  },
+  "colors": {
+    "surfaces": {
+      "bg": {
+        "value": "#030616",
+        "desc": "Cavern of the Crystals — deep indigo void instead of flat black"
+      },
+      "bg-soft": {
+        "value": "#07113a",
+        "desc": "Sticky header / search elevation, a step up from the void"
+      },
+      "panel": {
+        "value": "#0c1f55",
+        "desc": "Crystalline navy menu panel — now distinct from the background"
+      },
+      "panel-2": {
+        "value": "#13307a",
+        "desc": "Elevated panel (dropdowns, search results)"
+      },
+      "panel-3": {
+        "value": "#1d47ab",
+        "desc": "Highest-elevation surface — lit crystal facet"
+      },
+      "sidebar-top": {
+        "value": "#07113a",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#030616",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#13307a",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#0c1f55",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#77adff",
+        "desc": "Crystal-lit steel blue border — keeps the iconic frame without stark white"
+      },
+      "line-soft": {
+        "value": "#2f58b8",
+        "desc": "Dim navy divider for inner rows and sections"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#f2f7ff",
+        "desc": "Moonlit white with a cool crystal tint"
+      },
+      "muted": {
+        "value": "#b7cbff",
+        "desc": "Hazy blue-gray for labels and captions"
+      },
+      "faint": {
+        "value": "#7897df",
+        "desc": "Dim blue-gray for tertiary text / idle indicators"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#20b8ff",
+        "desc": "Water Crystal blue — FF's signature accent and focus glow"
+      },
+      "accent-dk": {
+        "value": "#0b5dff",
+        "desc": "Deeper crystal blue — focus border / active sort header"
+      },
+      "gold": {
+        "value": "#ffd54a",
+        "desc": "Crystal light & Gil — section titles and treasure highlights"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#3ae07a",
+        "desc": "Earth Crystal — verdant green"
+      },
+      "crystal-fire": {
+        "value": "#ff503f",
+        "desc": "Fire Crystal — molten red-orange"
+      },
+      "crystal-water": {
+        "value": "#2cc9ff",
+        "desc": "Water Crystal — luminous cyan-blue"
+      },
+      "crystal-wind": {
+        "value": "#ccff4f",
+        "desc": "Wind Crystal — pale yellow-green"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#3ae07a",
+        "desc": "Light restored — completed (Earth Crystal green)"
+      },
+      "done-dk": {
+        "value": "#1f9350",
+        "desc": "Darker shade of the restored state"
+      },
+      "todo": {
+        "value": "#6789d0",
+        "desc": "Dormant crystal slate — waiting to be restored"
+      },
+      "excluded": {
+        "value": "#594f87",
+        "desc": "Petrified stone — muted violet-gray, set aside"
+      },
+      "danger": {
+        "value": "#ff503f",
+        "desc": "Fire Crystal red — critical state / destructive actions"
+      }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg": {
+        "value": "#f2f2f5",
+        "desc": "Cavern of the Crystals — deep indigo void instead of flat black"
+      },
+      "bg-soft": {
+        "value": "#e6e7ed",
+        "desc": "Sticky header / search elevation, a step up from the void"
+      },
+      "panel": {
+        "value": "#fefefe",
+        "desc": "Crystalline navy menu panel — now distinct from the background"
+      },
+      "panel-2": {
+        "value": "#f6f7f8",
+        "desc": "Elevated panel (dropdowns, search results)"
+      },
+      "panel-3": {
+        "value": "#edeef1",
+        "desc": "Highest-elevation surface — lit crystal facet"
+      },
+      "sidebar-top": {
+        "value": "#e6e7ed",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#f2f2f5",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#f6f7f8",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#fefefe",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#2959a3",
+        "desc": "Crystal-lit steel blue border — keeps the iconic frame without stark white"
+      },
+      "line-soft": {
+        "value": "#98a8cd",
+        "desc": "Dim navy divider for inner rows and sections"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#1c343f",
+        "desc": "Moonlit white with a cool crystal tint"
+      },
+      "muted": {
+        "value": "#426576",
+        "desc": "Hazy blue-gray for labels and captions"
+      },
+      "faint": {
+        "value": "#6c8d9d",
+        "desc": "Dim blue-gray for tertiary text / idle indicators"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#009ce6",
+        "desc": "Water Crystal blue — FF's signature accent and focus glow"
+      },
+      "accent-dk": {
+        "value": "#003eb8",
+        "desc": "Deeper crystal blue — focus border / active sort header"
+      },
+      "gold": {
+        "value": "#d6a400",
+        "desc": "Crystal light & Gil — section titles and treasure highlights"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#21cf64",
+        "desc": "Earth Crystal — verdant green"
+      },
+      "crystal-fire": {
+        "value": "#f01500",
+        "desc": "Fire Crystal — molten red-orange"
+      },
+      "crystal-water": {
+        "value": "#00b2f0",
+        "desc": "Water Crystal — luminous cyan-blue"
+      },
+      "crystal-wind": {
+        "value": "#aaf000",
+        "desc": "Wind Crystal — pale yellow-green"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#1cb055",
+        "desc": "Light restored — completed (Earth Crystal green)"
+      },
+      "done-dk": {
+        "value": "#1c8749",
+        "desc": "Darker shade of the restored state"
+      },
+      "todo": {
+        "value": "#4d679d",
+        "desc": "Dormant crystal slate — waiting to be restored"
+      },
+      "excluded": {
+        "value": "#958eb4",
+        "desc": "Petrified stone — muted violet-gray, set aside"
+      },
+      "danger": {
+        "value": "#e61400",
+        "desc": "Fire Crystal red — critical state / destructive actions"
+      }
+    }
+  }
+}

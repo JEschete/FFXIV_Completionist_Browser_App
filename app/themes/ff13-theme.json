@@ -1,0 +1,248 @@
+{
+  "meta": {
+    "name": "Cocoon Pulse Protocol (FF13)",
+    "id": "ff13-cocoon-pulse-protocol",
+    "colorScheme": "dual",
+    "defaultScheme": "dark",
+    "version": 1,
+    "source": "Inspired by Final Fantasy XIII: Cocoon futurism, Pulse wild contrast, and crystallized L'Cie energy",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). The group names (surfaces, lines, text, accents, crystals, states) are for human organization only and are NOT part of the variable name. The four crystal-* tokens are extra identity colors; wire them up where supported.",
+    "notExportedYet": "Non-color tokens still live only in styles.css and are intentionally omitted here: --radius, --radius-s, --shadow. For stronger FF13 identity, consider holographic edge glints and subtle crystalline noise overlays in interactive regions."
+  },
+  "colors": {
+    "surfaces": {
+      "bg": {
+        "value": "#09081a",
+        "desc": "Cocoon night core in deep synthetic violet"
+      },
+      "bg-soft": {
+        "value": "#121031",
+        "desc": "Header layer with data-grid indigo tone"
+      },
+      "panel": {
+        "value": "#1b1748",
+        "desc": "Primary panel in luminous tech-violet"
+      },
+      "panel-2": {
+        "value": "#251f63",
+        "desc": "Raised surface with crystalline depth"
+      },
+      "panel-3": {
+        "value": "#322a84",
+        "desc": "Highest elevation in energized cocoon-blue violet"
+      },
+      "sidebar-top": {
+        "value": "#121031",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#09081a",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#251f63",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#1b1748",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#8fe8ff",
+        "desc": "Laser-cyan frame line"
+      },
+      "line-soft": {
+        "value": "#4d5aa8",
+        "desc": "Subtle divider in digital indigo"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#f7f7ff",
+        "desc": "Primary high-clarity text"
+      },
+      "muted": {
+        "value": "#c6caf8",
+        "desc": "Secondary labels"
+      },
+      "faint": {
+        "value": "#8f95d2",
+        "desc": "Tertiary metadata"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#ff4fd8",
+        "desc": "L'Cie magenta for primary interactions"
+      },
+      "accent-dk": {
+        "value": "#b33098",
+        "desc": "Pressed/active magenta depth"
+      },
+      "gold": {
+        "value": "#6de7ff",
+        "desc": "Holographic cyan highlight token"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#7ee37d",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#ff6f8a",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#58dbff",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#d1b4ff",
+        "desc": "Wind analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#6ed986",
+        "desc": "Completed state"
+      },
+      "done-dk": {
+        "value": "#368652",
+        "desc": "Darker completion shade"
+      },
+      "todo": {
+        "value": "#6f78c3",
+        "desc": "Pending state in cool digital blue"
+      },
+      "excluded": {
+        "value": "#625d8f",
+        "desc": "Set-aside state"
+      },
+      "danger": {
+        "value": "#ff4f74",
+        "desc": "Critical/destructive actions"
+      }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg": {
+        "value": "#f5f7ff",
+        "desc": "Bright Cocoon architecture white"
+      },
+      "bg-soft": {
+        "value": "#e9ecff",
+        "desc": "Header in clean synthetic lavender"
+      },
+      "panel": {
+        "value": "#ffffff",
+        "desc": "Primary panel"
+      },
+      "panel-2": {
+        "value": "#f2f4ff",
+        "desc": "Raised panel"
+      },
+      "panel-3": {
+        "value": "#e6eaff",
+        "desc": "Highest light elevation"
+      },
+      "sidebar-top": {
+        "value": "#e9ecff",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#f5f7ff",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#f2f4ff",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#ffffff",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#5d6ad4",
+        "desc": "Primary structural line"
+      },
+      "line-soft": {
+        "value": "#a7b1ef",
+        "desc": "Soft divider"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#21264f",
+        "desc": "Primary text"
+      },
+      "muted": {
+        "value": "#4d5c92",
+        "desc": "Secondary text"
+      },
+      "faint": {
+        "value": "#7d87b8",
+        "desc": "Tertiary text"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#e940c2",
+        "desc": "L'Cie magenta accent"
+      },
+      "accent-dk": {
+        "value": "#9d2a86",
+        "desc": "Pressed accent"
+      },
+      "gold": {
+        "value": "#00a7d8",
+        "desc": "Cocoon cyan highlight"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#5eac5a",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#de5974",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#33add1",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#a480db",
+        "desc": "Wind analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#4ca966",
+        "desc": "Completed state"
+      },
+      "done-dk": {
+        "value": "#33764a",
+        "desc": "Dark completion shade"
+      },
+      "todo": {
+        "value": "#6877b1",
+        "desc": "Pending state"
+      },
+      "excluded": {
+        "value": "#9b96b8",
+        "desc": "Set-aside state"
+      },
+      "danger": {
+        "value": "#d84266",
+        "desc": "Critical state"
+      }
+    }
+  }
+}

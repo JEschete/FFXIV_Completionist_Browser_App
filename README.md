@@ -185,16 +185,18 @@ and are not currently tracked or confirmed as matched in this database.
 1. Open `/lodestone-probe` and save your Lodestone character URL.
 2. Click **Open in new tab** and sign in to Lodestone in your chosen browser
    (Edge / Chrome / Firefox). The cookie source must match.
-3. Back on the probe page, pick the cookie source browser, leave **Include
+3. Ensure Lodestone is set to **English** before scraping/importing. Workbook
+  labels and matching aliases are English-based.
+4. Back on the probe page, pick the cookie source browser, leave **Include
    standard authenticated pages** checked, and click **Run authenticated
    scrape**. A status panel polls `/lodestone-probe/status` until the run
    reports `completed` and a payload path.
-4. Go to `/characters`, choose the target character, then either upload the
+5. Go to `/characters`, choose the target character, then either upload the
    payload JSON or select it from the server-side dropdown
    (`data/lodestone_probe/*.json`).
-5. Optionally tick **Clear existing character progress before import** to start
+6. Optionally tick **Clear existing character progress before import** to start
    from a blank slate. Click **Start import**.
-6. The Import monitor polls `/characters/import-status`. When complete, an
+7. The Import monitor polls `/characters/import-status`. When complete, an
    **Open unmatched items** link surfaces anything the matcher could not place
    so you can review or refile manually.
 

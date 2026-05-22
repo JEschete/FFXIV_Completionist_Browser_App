@@ -1,0 +1,248 @@
+{
+  "meta": {
+    "name": "Lifestream Reactor (FF7)",
+    "id": "ff7-lifestream-reactor",
+    "colorScheme": "dual",
+    "defaultScheme": "dark",
+    "version": 1,
+    "source": "Inspired by Final Fantasy VII: Midgar steel, Mako glow, and industrial neon grit",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). The group names (surfaces, lines, text, accents, crystals, states) are for human organization only and are NOT part of the variable name. The four crystal-* tokens are extra identity colors; wire them up where supported.",
+    "notExportedYet": "Non-color tokens still live only in styles.css and are intentionally omitted here: --radius, --radius-s, --shadow. FF7 can push further with subtle scanlines, thin terminal-style separators, and a restrained green bloom on primary actions."
+  },
+  "colors": {
+    "surfaces": {
+      "bg": {
+        "value": "#070c0c",
+        "desc": "Night reactor floor in soot-dark green-black"
+      },
+      "bg-soft": {
+        "value": "#0d1514",
+        "desc": "Header layer with oxidized steel atmosphere"
+      },
+      "panel": {
+        "value": "#14211f",
+        "desc": "Primary panel in industrial graphite-teal"
+      },
+      "panel-2": {
+        "value": "#1f312d",
+        "desc": "Raised surface with reinforced alloy depth"
+      },
+      "panel-3": {
+        "value": "#2b443e",
+        "desc": "Highest elevation with lit machine edge"
+      },
+      "sidebar-top": {
+        "value": "#0d1514",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#070c0c",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#1f312d",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#14211f",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#73d6b3",
+        "desc": "Mako-lit frame line"
+      },
+      "line-soft": {
+        "value": "#2f5f50",
+        "desc": "Muted reactor divider"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#e9fff7",
+        "desc": "High-contrast terminal-white with green cast"
+      },
+      "muted": {
+        "value": "#9fd4c3",
+        "desc": "Secondary labels in oxidized mint"
+      },
+      "faint": {
+        "value": "#628d7f",
+        "desc": "Tertiary copy and metadata"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#00ff9a",
+        "desc": "Raw Mako neon for primary interactions"
+      },
+      "accent-dk": {
+        "value": "#00a86a",
+        "desc": "Deep reactor green for active states"
+      },
+      "gold": {
+        "value": "#ffb24a",
+        "desc": "Warning amber for highlights and totals"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#7ed957",
+        "desc": "Earth analog - revitalized growth green"
+      },
+      "crystal-fire": {
+        "value": "#ff664f",
+        "desc": "Fire analog - demolition-orange red"
+      },
+      "crystal-water": {
+        "value": "#4dc3ff",
+        "desc": "Water analog - compressed coolant blue"
+      },
+      "crystal-wind": {
+        "value": "#ccff66",
+        "desc": "Wind analog - charged chartreuse"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#4fe38d",
+        "desc": "Completed state in reclaimed Mako green"
+      },
+      "done-dk": {
+        "value": "#1f8a56",
+        "desc": "Darker done shade"
+      },
+      "todo": {
+        "value": "#4e7a6e",
+        "desc": "Pending state in machine teal"
+      },
+      "excluded": {
+        "value": "#4a5d5b",
+        "desc": "Set-aside state in worn metal"
+      },
+      "danger": {
+        "value": "#ff4d5a",
+        "desc": "Critical state in emergency reactor red"
+      }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg": {
+        "value": "#ecf3f1",
+        "desc": "Sunlit concrete and brushed alloy"
+      },
+      "bg-soft": {
+        "value": "#ddeae6",
+        "desc": "Header elevation in pale machine mint"
+      },
+      "panel": {
+        "value": "#ffffff",
+        "desc": "Primary panel for bright readability"
+      },
+      "panel-2": {
+        "value": "#f5fbf8",
+        "desc": "Raised control surface"
+      },
+      "panel-3": {
+        "value": "#e9f7f2",
+        "desc": "Highest elevation with cool glow"
+      },
+      "sidebar-top": {
+        "value": "#ddeae6",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#ecf3f1",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#f5fbf8",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#ffffff",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#1f6d56",
+        "desc": "Structural line in reactor green"
+      },
+      "line-soft": {
+        "value": "#7ab7a2",
+        "desc": "Soft divider in desaturated mint"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#0f2821",
+        "desc": "Primary dark text"
+      },
+      "muted": {
+        "value": "#2f5b4e",
+        "desc": "Secondary text"
+      },
+      "faint": {
+        "value": "#5f877b",
+        "desc": "Tertiary text"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#00c577",
+        "desc": "Mako highlight for primary actions"
+      },
+      "accent-dk": {
+        "value": "#007f4f",
+        "desc": "Pressed/active depth"
+      },
+      "gold": {
+        "value": "#b87716",
+        "desc": "Amber highlight for totals"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#5eb339",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#e45742",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#299fda",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#9ccb2e",
+        "desc": "Wind analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#24a35f",
+        "desc": "Completed state"
+      },
+      "done-dk": {
+        "value": "#17713f",
+        "desc": "Dark done state"
+      },
+      "todo": {
+        "value": "#5f7a72",
+        "desc": "Pending state"
+      },
+      "excluded": {
+        "value": "#8f9a97",
+        "desc": "Set-aside state"
+      },
+      "danger": {
+        "value": "#d63b49",
+        "desc": "Critical state"
+      }
+    }
+  }
+}

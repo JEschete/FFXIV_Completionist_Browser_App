@@ -1,0 +1,248 @@
+{
+  "meta": {
+    "name": "Pokemon Gold Crown",
+    "id": "pokemon-gold-johto",
+    "colorScheme": "dual",
+    "defaultScheme": "dark",
+    "version": 1,
+    "source": "Inspired by Pokemon Gold: regal Johto tones, metallic warmth, and championship gold identity.",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). Group names are organization only and are NOT part of the variable name.",
+    "notExportedYet": "Non-color tokens still live in styles.css. For stronger Gold identity, add subtle medal embossing texture."
+  },
+  "colors": {
+    "surfaces": {
+      "bg": {
+        "value": "#120d04",
+        "desc": "Dark regal backdrop"
+      },
+      "bg-soft": {
+        "value": "#1c1508",
+        "desc": "Header layer"
+      },
+      "panel": {
+        "value": "#2a200d",
+        "desc": "Primary card surface"
+      },
+      "panel-2": {
+        "value": "#392b12",
+        "desc": "Raised panel"
+      },
+      "panel-3": {
+        "value": "#4c3819",
+        "desc": "Highest elevation"
+      },
+      "sidebar-top": {
+        "value": "#1c1508",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#120d04",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#392b12",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#2a200d",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#f4d27a",
+        "desc": "Strong frame line"
+      },
+      "line-soft": {
+        "value": "#8c6b2e",
+        "desc": "Subtle divider"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#fff4d8",
+        "desc": "Primary text"
+      },
+      "muted": {
+        "value": "#e4cca0",
+        "desc": "Secondary labels"
+      },
+      "faint": {
+        "value": "#b59a63",
+        "desc": "Tertiary metadata"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#d4af37",
+        "desc": "Core Gold accent"
+      },
+      "accent-dk": {
+        "value": "#987a20",
+        "desc": "Pressed state"
+      },
+      "gold": {
+        "value": "#ffd86b",
+        "desc": "Highlight token"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#95c66a",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#f18a4f",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#62b7e8",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#f2dd72",
+        "desc": "Wind analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#73bf73",
+        "desc": "Completed"
+      },
+      "done-dk": {
+        "value": "#438046",
+        "desc": "Completed dark"
+      },
+      "todo": {
+        "value": "#9c8251",
+        "desc": "Pending"
+      },
+      "excluded": {
+        "value": "#7f6d4f",
+        "desc": "Excluded"
+      },
+      "danger": {
+        "value": "#ec6546",
+        "desc": "Danger"
+      }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg": {
+        "value": "#fff9eb",
+        "desc": "Light royal parchment"
+      },
+      "bg-soft": {
+        "value": "#f8f0d8",
+        "desc": "Header"
+      },
+      "panel": {
+        "value": "#ffffff",
+        "desc": "Primary card"
+      },
+      "panel-2": {
+        "value": "#fdf6e4",
+        "desc": "Raised panel"
+      },
+      "panel-3": {
+        "value": "#f6ebcc",
+        "desc": "Highest elevation"
+      },
+      "sidebar-top": {
+        "value": "#f8f0d8",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#fff9eb",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#fdf6e4",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#ffffff",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#87661f",
+        "desc": "Frame line"
+      },
+      "line-soft": {
+        "value": "#ceb682",
+        "desc": "Subtle divider"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#3f2f0f",
+        "desc": "Primary text"
+      },
+      "muted": {
+        "value": "#6d5730",
+        "desc": "Secondary labels"
+      },
+      "faint": {
+        "value": "#9a7f52",
+        "desc": "Tertiary metadata"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#b48b24",
+        "desc": "Core Gold accent"
+      },
+      "accent-dk": {
+        "value": "#88681c",
+        "desc": "Pressed state"
+      },
+      "gold": {
+        "value": "#b9891f",
+        "desc": "Highlight token"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#6e9a4b",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#d06f3f",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#447fa6",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#ad9541",
+        "desc": "Wind analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#569d56",
+        "desc": "Completed"
+      },
+      "done-dk": {
+        "value": "#3a6f3d",
+        "desc": "Completed dark"
+      },
+      "todo": {
+        "value": "#8f7748",
+        "desc": "Pending"
+      },
+      "excluded": {
+        "value": "#b2a58f",
+        "desc": "Excluded"
+      },
+      "danger": {
+        "value": "#c85339",
+        "desc": "Danger"
+      }
+    }
+  }
+}

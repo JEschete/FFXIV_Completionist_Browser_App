@@ -1,0 +1,248 @@
+{
+  "meta": {
+    "name": "Dreams and Ruin (FFX)",
+    "id": "ff10-dreams-and-ruin",
+    "colorScheme": "dual",
+    "defaultScheme": "dark",
+    "version": 1,
+    "source": "Inspired by Final Fantasy X: Besaid tropical waters, Tidus yellow, Sin's destruction, and ruined Zanarkand nights",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). The group names (surfaces, lines, text, accents, crystals, states) are for human organization only and are NOT part of the variable name. The four crystal-* tokens are extra identity colors; wire them up where supported.",
+    "notExportedYet": "Non-color tokens still live only in styles.css and are intentionally omitted here: --radius, --radius-s, --shadow. For stronger FFX identity, consider soft water caustic overlays in light mode and faint pyrefly drift plus fractured glow streaks in dark mode."
+  },
+  "colors": {
+    "surfaces": {
+      "bg": {
+        "value": "#060a14",
+        "desc": "Abyssal Zanarkand midnight after devastation"
+      },
+      "bg-soft": {
+        "value": "#0d1326",
+        "desc": "Distant ruin glow over collapsed city edges"
+      },
+      "panel": {
+        "value": "#141d35",
+        "desc": "Primary panel in deep shattered indigo"
+      },
+      "panel-2": {
+        "value": "#1d2a49",
+        "desc": "Raised surface with cold ruin depth"
+      },
+      "panel-3": {
+        "value": "#29395f",
+        "desc": "Highest elevation with moonlit stone contrast"
+      },
+      "sidebar-top": {
+        "value": "#0d1326",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#060a14",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#1d2a49",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#141d35",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#7ca7e8",
+        "desc": "Fractured blue frame line like broken neon remnants"
+      },
+      "line-soft": {
+        "value": "#4b5f8d",
+        "desc": "Subtle divider in worn ruin steel"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#edf3ff",
+        "desc": "Primary text with bright moonlit readability"
+      },
+      "muted": {
+        "value": "#b2c0e0",
+        "desc": "Secondary labels in cold faded blue"
+      },
+      "faint": {
+        "value": "#7888ad",
+        "desc": "Tertiary metadata and low-emphasis copy"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#ff4f6d",
+        "desc": "Sin scarlet for primary interaction urgency"
+      },
+      "accent-dk": {
+        "value": "#b72a4e",
+        "desc": "Pressed/active crimson depth"
+      },
+      "gold": {
+        "value": "#7ed8ff",
+        "desc": "Pyrefly-cyan highlight for headings and totals"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#67cb87",
+        "desc": "Earth analog - lingering life amid ruin"
+      },
+      "crystal-fire": {
+        "value": "#ff5a4c",
+        "desc": "Fire analog - destructive Sin flare"
+      },
+      "crystal-water": {
+        "value": "#4cc8ff",
+        "desc": "Water analog - memory of Spira seas"
+      },
+      "crystal-wind": {
+        "value": "#a995ff",
+        "desc": "Wind analog - ghostly violet current"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#58c97f",
+        "desc": "Recovered progress and calm after chaos"
+      },
+      "done-dk": {
+        "value": "#2f8654",
+        "desc": "Darker completion tone"
+      },
+      "todo": {
+        "value": "#6378a6",
+        "desc": "Pending state in tempered ruin blue"
+      },
+      "excluded": {
+        "value": "#5f5577",
+        "desc": "Set-aside state in ashen violet"
+      },
+      "danger": {
+        "value": "#ff425a",
+        "desc": "Critical and destructive action color"
+      }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg": {
+        "value": "#e8faff",
+        "desc": "Besaid daylight sky and sea haze"
+      },
+      "bg-soft": {
+        "value": "#d8f3ff",
+        "desc": "Header in tropical lagoon mist"
+      },
+      "panel": {
+        "value": "#ffffff",
+        "desc": "Primary panel for bright island readability"
+      },
+      "panel-2": {
+        "value": "#f1fbff",
+        "desc": "Raised surface like sunlit shallow water"
+      },
+      "panel-3": {
+        "value": "#dff4ff",
+        "desc": "Highest elevation with reflective aqua lift"
+      },
+      "sidebar-top": {
+        "value": "#d8f3ff",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#e8faff",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#f1fbff",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#ffffff",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#2f94c9",
+        "desc": "Clean ocean-blue frame line"
+      },
+      "line-soft": {
+        "value": "#84c5df",
+        "desc": "Soft divider in tropical seafoam"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#12324a",
+        "desc": "Primary text with deep coastal contrast"
+      },
+      "muted": {
+        "value": "#365d78",
+        "desc": "Secondary labels in tide-blue"
+      },
+      "faint": {
+        "value": "#6a90a8",
+        "desc": "Tertiary metadata tone"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#ffd53a",
+        "desc": "Tidus blitzball yellow for primary interactions"
+      },
+      "accent-dk": {
+        "value": "#d49c00",
+        "desc": "Pressed/active golden-yellow depth"
+      },
+      "gold": {
+        "value": "#00a8d8",
+        "desc": "Lagoon cyan heading highlight"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#5fc068",
+        "desc": "Earth analog - palm green"
+      },
+      "crystal-fire": {
+        "value": "#ff8c3f",
+        "desc": "Fire analog - sunset orange"
+      },
+      "crystal-water": {
+        "value": "#2cc6ff",
+        "desc": "Water analog - bright tropical cyan"
+      },
+      "crystal-wind": {
+        "value": "#ffe658",
+        "desc": "Wind analog - sunlit yellow"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#2faa61",
+        "desc": "Completed state in island green"
+      },
+      "done-dk": {
+        "value": "#1f7944",
+        "desc": "Dark completion shade"
+      },
+      "todo": {
+        "value": "#4d94b7",
+        "desc": "Pending state in oceanic blue"
+      },
+      "excluded": {
+        "value": "#90aab8",
+        "desc": "Set-aside state in soft driftwood gray-blue"
+      },
+      "danger": {
+        "value": "#e24b4b",
+        "desc": "Critical state in warm coral red"
+      }
+    }
+  }
+}

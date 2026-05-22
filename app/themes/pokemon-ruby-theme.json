@@ -1,0 +1,248 @@
+{
+  "meta": {
+    "name": "Pokemon Ruby Ember",
+    "id": "pokemon-ruby-hoenn",
+    "colorScheme": "dual",
+    "defaultScheme": "dark",
+    "version": 1,
+    "source": "Inspired by Pokemon Ruby: volcanic crimson, gemstone saturation, and dramatic Hoenn heat.",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). Group names are organization only and are NOT part of the variable name.",
+    "notExportedYet": "Non-color tokens still live in styles.css. For stronger Ruby identity, add ember speckle overlays and jewel-like edge glows."
+  },
+  "colors": {
+    "surfaces": {
+      "bg": {
+        "value": "#14060f",
+        "desc": "Dark ruby backdrop"
+      },
+      "bg-soft": {
+        "value": "#210a18",
+        "desc": "Header layer"
+      },
+      "panel": {
+        "value": "#2f1023",
+        "desc": "Primary card surface"
+      },
+      "panel-2": {
+        "value": "#401634",
+        "desc": "Raised panel"
+      },
+      "panel-3": {
+        "value": "#541f45",
+        "desc": "Highest elevation"
+      },
+      "sidebar-top": {
+        "value": "#210a18",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#14060f",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#401634",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#2f1023",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#ff9ad5",
+        "desc": "Strong frame line"
+      },
+      "line-soft": {
+        "value": "#8a3b69",
+        "desc": "Subtle divider"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#fff0fa",
+        "desc": "Primary text"
+      },
+      "muted": {
+        "value": "#e2b2d2",
+        "desc": "Secondary labels"
+      },
+      "faint": {
+        "value": "#b579a0",
+        "desc": "Tertiary metadata"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#d81b60",
+        "desc": "Core Ruby accent"
+      },
+      "accent-dk": {
+        "value": "#8f0f3f",
+        "desc": "Pressed state"
+      },
+      "gold": {
+        "value": "#ffcf72",
+        "desc": "Highlight token"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#84c66b",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#ff6a58",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#5ab6ff",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#e8e071",
+        "desc": "Wind analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#69c178",
+        "desc": "Completed"
+      },
+      "done-dk": {
+        "value": "#3c7f4d",
+        "desc": "Completed dark"
+      },
+      "todo": {
+        "value": "#9b6789",
+        "desc": "Pending"
+      },
+      "excluded": {
+        "value": "#745969",
+        "desc": "Excluded"
+      },
+      "danger": {
+        "value": "#f14e59",
+        "desc": "Danger"
+      }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg": {
+        "value": "#fff0f8",
+        "desc": "Light ruby parchment"
+      },
+      "bg-soft": {
+        "value": "#ffe2f0",
+        "desc": "Header"
+      },
+      "panel": {
+        "value": "#ffffff",
+        "desc": "Primary card"
+      },
+      "panel-2": {
+        "value": "#fff5fa",
+        "desc": "Raised panel"
+      },
+      "panel-3": {
+        "value": "#ffeaf4",
+        "desc": "Highest elevation"
+      },
+      "sidebar-top": {
+        "value": "#ffe2f0",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#fff0f8",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#fff5fa",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#ffffff",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#a3477a",
+        "desc": "Frame line"
+      },
+      "line-soft": {
+        "value": "#d7a2c0",
+        "desc": "Subtle divider"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#4b1534",
+        "desc": "Primary text"
+      },
+      "muted": {
+        "value": "#7f3d61",
+        "desc": "Secondary labels"
+      },
+      "faint": {
+        "value": "#a96b8c",
+        "desc": "Tertiary metadata"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#b0174f",
+        "desc": "Core Ruby accent"
+      },
+      "accent-dk": {
+        "value": "#7a103a",
+        "desc": "Pressed state"
+      },
+      "gold": {
+        "value": "#b88523",
+        "desc": "Highlight token"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#5f9a48",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#d45446",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#3f89c8",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#a8a441",
+        "desc": "Wind analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#4e9d5e",
+        "desc": "Completed"
+      },
+      "done-dk": {
+        "value": "#356b42",
+        "desc": "Completed dark"
+      },
+      "todo": {
+        "value": "#855d76",
+        "desc": "Pending"
+      },
+      "excluded": {
+        "value": "#b79caf",
+        "desc": "Excluded"
+      },
+      "danger": {
+        "value": "#c7404c",
+        "desc": "Danger"
+      }
+    }
+  }
+}

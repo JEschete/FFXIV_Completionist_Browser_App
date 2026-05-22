@@ -375,6 +375,21 @@ def extract_menu_groups(
     return out
 
 
+def extract_menu_link_targets(ws) -> set[str]:
+    """Return every sheet name directly referenced by hyperlinks in a menu sheet.
+
+    Used as a structural source of truth for child-parent relationships when a
+    content sheet's own "Main Page" link points to a top menu instead of the
+    submenu that actually contains it."""
+    targets: set[str] = set()
+    for row in ws.iter_rows(min_row=1, max_row=(ws.max_row or 0)):
+        for cell in row:
+            target = link_target_sheet(cell)
+            if target:
+                targets.add(target)
+    return targets
+
+
 def detect_data_columns(ws) -> list[dict]:
     """Detect non-empty data headers from B onward until the sidebar link."""
     cols: list[dict] = []
@@ -1109,7 +1124,68 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
         for s, n in sorted(per_sheet.items(), key=lambda x: -x[1]):
             print(f"    {s:<52} {n}")
 
-    # --- Second pass: capture menu-sheet column groupings -----------------
+    # --- Second pass: repair child parentage + capture menu sections ------
+    # Some workbook tabs link "Main Page" back to a top menu even though they
+    # are visually nested under a submenu. Use menu-sheet hyperlinks as the
+    # structural source of truth so future ingests keep submenu children in the
+    # correct branch.
+    print("\nRepairing child parent links from menu hyperlinks...")
+
+    menu_rows = list(conn.execute(
+        "SELECT sheet_name, sheet_index FROM sheets "
+        "WHERE run_id = ? AND is_menu = 1 ORDER BY sheet_index",
+        (run_id,),
+    ))
+    content_sheet_names = {
+        r[0] for r in conn.execute(
+            "SELECT sheet_name FROM sheets "
+            "WHERE run_id = ? AND is_menu = 0 AND is_readonly = 0",
+            (run_id,),
+        )
+    }
+
+    relinked_total = 0
+    for menu_row in menu_rows:
+        menu_name = menu_row[0]
+        try:
+            ws = wb[menu_name]
+        except KeyError:
+            continue
+
+        targets = sorted(t for t in extract_menu_link_targets(ws) if t in content_sheet_names)
+        if not targets:
+            continue
+
+        submenu_parent = menu_parent(menu_name)
+        applied = 0
+        for target in targets:
+            if submenu_parent is None:
+                # Top menus should only adopt currently-unparented sheets.
+                cur = conn.execute(
+                    "UPDATE sheets SET parent_sheet = ? "
+                    "WHERE run_id = ? AND sheet_name = ? "
+                    "AND is_menu = 0 AND is_readonly = 0 "
+                    "AND parent_sheet IS NULL",
+                    (menu_name, run_id, target),
+                )
+            else:
+                # Submenus may override a top-menu parent from Main Page links.
+                cur = conn.execute(
+                    "UPDATE sheets SET parent_sheet = ? "
+                    "WHERE run_id = ? AND sheet_name = ? "
+                    "AND is_menu = 0 AND is_readonly = 0 "
+                    "AND (parent_sheet IS NULL OR parent_sheet = ? OR parent_sheet = ?)",
+                    (menu_name, run_id, target, submenu_parent, menu_name),
+                )
+            applied += int(cur.rowcount or 0)
+
+        relinked_total += applied
+        if applied:
+            print(f"  [{menu_name}]: re-parented {applied} child sheets")
+
+    print(f"  total re-parented: {relinked_total}")
+
+    # --- Third pass: capture menu-sheet column groupings ------------------
     # Each menu sheet's children are physically arranged in side-by-side
     # columns under group headers (e.g. Duty Menu - Journal: Main Scenario /
     # Sidequests / Allied Society / Other Quests). The first ingest pass
@@ -1173,10 +1249,7 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
     grouped_total = 0
     unmatched_total = 0
     unmatched_samples: list[str] = []
-    for menu_name in [r[0] for r in conn.execute(
-        "SELECT sheet_name FROM sheets WHERE run_id = ? AND is_menu = 1",
-        (run_id,),
-    )]:
+    for menu_name in [r[0] for r in menu_rows]:
         try:
             ws = wb[menu_name]
         except KeyError:

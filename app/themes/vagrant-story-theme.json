@@ -1,0 +1,248 @@
+{
+  "meta": {
+    "name": "Lea Monde Relic Sigil (Vagrant Story)",
+    "id": "vagrant-story-lea-monde",
+    "colorScheme": "dual",
+    "defaultScheme": "dark",
+    "version": 1,
+    "source": "Inspired by Vagrant Story: Lea Monde catacombs, blood sigils, bronze relicwork, and grimoire parchment",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). The group names (surfaces, lines, text, accents, crystals, states) are for human organization only and are NOT part of the variable name. The four crystal-* tokens are extra identity colors; wire them up where supported.",
+    "notExportedYet": "Non-color tokens still live only in styles.css and are intentionally omitted here: --radius, --radius-s, --shadow. For stronger Vagrant Story identity, add subtle engraved filigree overlays and low-opacity sigil glows around active controls."
+  },
+  "colors": {
+    "surfaces": {
+      "bg": {
+        "value": "#04070d",
+        "desc": "Deep catacomb black with cold blue undertone"
+      },
+      "bg-soft": {
+        "value": "#0a1220",
+        "desc": "Header in moonlit crypt stone"
+      },
+      "panel": {
+        "value": "#0f1a2c",
+        "desc": "Primary panel in dark cobalt masonry"
+      },
+      "panel-2": {
+        "value": "#162742",
+        "desc": "Raised panel with sigil-lit blue depth"
+      },
+      "panel-3": {
+        "value": "#22365a",
+        "desc": "Highest elevation in aether-charged slate"
+      },
+      "sidebar-top": {
+        "value": "#101a2d",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#060b14",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#1c2f4f",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#111d33",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#6f86ac",
+        "desc": "Stone-edge line in worn steel blue"
+      },
+      "line-soft": {
+        "value": "#344a67",
+        "desc": "Soft divider in dim cobalt shadow"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#d8e5f7",
+        "desc": "Primary text in pale moonlit parchment"
+      },
+      "muted": {
+        "value": "#9ab0cd",
+        "desc": "Secondary labels"
+      },
+      "faint": {
+        "value": "#6984a5",
+        "desc": "Tertiary metadata"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#3a8fe0",
+        "desc": "Aether glyph blue for primary interaction"
+      },
+      "accent-dk": {
+        "value": "#275fa6",
+        "desc": "Pressed/active sigil depth"
+      },
+      "gold": {
+        "value": "#b48745",
+        "desc": "Torchlit bronze highlight"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#6f8f63",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#c65d3f",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#54b7e4",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#c8ab65",
+        "desc": "Wind analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#5d8b6a",
+        "desc": "Completed state"
+      },
+      "done-dk": {
+        "value": "#3b6147",
+        "desc": "Darker completion shade"
+      },
+      "todo": {
+        "value": "#6d7f97",
+        "desc": "Pending state in steel-blue fog"
+      },
+      "excluded": {
+        "value": "#535f73",
+        "desc": "Set-aside state"
+      },
+      "danger": {
+        "value": "#d05a5f",
+        "desc": "Critical/destructive actions"
+      }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg": {
+        "value": "#e8ece6",
+        "desc": "Fog-washed manuscript background"
+      },
+      "bg-soft": {
+        "value": "#d7dfd4",
+        "desc": "Soft header in oxidized vellum haze"
+      },
+      "panel": {
+        "value": "#f4f1e7",
+        "desc": "Primary panel in pale parchment"
+      },
+      "panel-2": {
+        "value": "#e8e2d3",
+        "desc": "Raised panel in weathered page tan"
+      },
+      "panel-3": {
+        "value": "#d9cfbd",
+        "desc": "Highest elevation in antique relic paper"
+      },
+      "sidebar-top": {
+        "value": "#c9d4cc",
+        "desc": "Sidebar gradient start with misted stone-green"
+      },
+      "sidebar-bottom": {
+        "value": "#e2e8de",
+        "desc": "Sidebar gradient end in pale parchment"
+      },
+      "chrome-top": {
+        "value": "#d8d6c8",
+        "desc": "Top-right controls gradient start in brushed relic stone"
+      },
+      "chrome-bottom": {
+        "value": "#ebe8dc",
+        "desc": "Top-right controls gradient end in faded parchment"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#6b6654",
+        "desc": "Primary structural line in old bronze"
+      },
+      "line-soft": {
+        "value": "#9b937e",
+        "desc": "Soft divider in aged ink wash"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#2b2b24",
+        "desc": "Primary text in charcoal manuscript ink"
+      },
+      "muted": {
+        "value": "#4d4f46",
+        "desc": "Secondary text"
+      },
+      "faint": {
+        "value": "#6e7065",
+        "desc": "Tertiary text"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#3f5966",
+        "desc": "Ink-steel blue accent pulled from logo and misted metal"
+      },
+      "accent-dk": {
+        "value": "#2b3f4a",
+        "desc": "Pressed accent"
+      },
+      "gold": {
+        "value": "#9b8758",
+        "desc": "Relic-gold highlight"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#708861",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#b45a3d",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#5c8194",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#b7a16e",
+        "desc": "Wind analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#5c7e61",
+        "desc": "Completed state"
+      },
+      "done-dk": {
+        "value": "#3d5f45",
+        "desc": "Dark completion shade"
+      },
+      "todo": {
+        "value": "#7a7668",
+        "desc": "Pending state"
+      },
+      "excluded": {
+        "value": "#9b9586",
+        "desc": "Set-aside state"
+      },
+      "danger": {
+        "value": "#a7473a",
+        "desc": "Critical state"
+      }
+    }
+  }
+}

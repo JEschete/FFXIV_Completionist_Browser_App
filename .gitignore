@@ -82,6 +82,8 @@ data/progress/
 # Lodestone probe outputs and diagnostics
 data/lodestone_probe/logs/
 data/lodestone_probe/import_logs/
+data/lodestone_probe/import_uploads/
+data/lodestone_probe/import_history/
 data/lodestone_probe/unmatched/
 data/lodestone_probe/*_auth_*.json
 

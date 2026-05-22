@@ -78,6 +78,503 @@ CHAR_IMPORT_RUNS_LOCK = threading.Lock()
 CHAR_IMPORT_LOG_DIR = LODESTONE_OUTPUT_DIR / "import_logs"
 CHAR_IMPORT_UPLOAD_DIR = LODESTONE_OUTPUT_DIR / "import_uploads"
 CHAR_IMPORT_UNMATCHED_DIR = LODESTONE_OUTPUT_DIR / "unmatched"
+CHAR_IMPORT_HISTORY_DIR = LODESTONE_OUTPUT_DIR / "import_history"
+THEME_COOKIE = "ffxiv_theme"
+THEME_SCHEME_COOKIE = "ffxiv_theme_scheme"
+THEME_ALLOWED_SCHEME_SETTINGS = {"default", "dark", "light"}
+THEME_TOKEN_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+THEME_HEX_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+THEME_REQUIRED_TOKENS = (
+    "bg",
+    "bg-soft",
+    "panel",
+    "panel-2",
+    "panel-3",
+    "line",
+    "line-soft",
+    "text",
+    "muted",
+    "faint",
+    "accent",
+    "accent-dk",
+    "gold",
+    "crystal-earth",
+    "crystal-fire",
+    "crystal-water",
+    "crystal-wind",
+    "done",
+    "done-dk",
+    "todo",
+    "excluded",
+    "danger",
+)
+THEME_REQUIRED_TOKEN_SET = set(THEME_REQUIRED_TOKENS)
+THEMES_DIR = BASE / "themes"
+THEME_CACHE_LOCK = threading.Lock()
+THEME_CACHE: dict[str, Any] = {"signature": None, "catalog": None}
+FF_THEME_NUMBER_RE = re.compile(
+    r"(?:^|[^a-z0-9])ff\s*0*(\d{1,2})(?:[^0-9]|$)",
+    re.IGNORECASE,
+)
+POKEMON_THEME_NAME_RE = re.compile(
+    r"pokemon[-_\s]*(red|blue|yellow|gold|silver|crystal|ruby|sapphire|emerald|diamond|pearl|platinum)",
+    re.IGNORECASE,
+)
+POKEMON_THEME_ORDER: dict[str, tuple[int, int]] = {
+    "red": (1, 1),
+    "blue": (1, 2),
+    "yellow": (1, 3),
+    "gold": (2, 1),
+    "silver": (2, 2),
+    "crystal": (2, 3),
+    "ruby": (3, 1),
+    "sapphire": (3, 2),
+    "emerald": (3, 3),
+    "diamond": (4, 1),
+    "pearl": (4, 2),
+    "platinum": (4, 3),
+}
+
+BUILTIN_THEME_DARK = {
+    "bg": "#0b0e15",
+    "bg-soft": "#10151f",
+    "panel": "#161c28",
+    "panel-2": "#1b2230",
+    "panel-3": "#212a3b",
+    "line": "#2a3445",
+    "line-soft": "#222b3a",
+    "text": "#e7ecf5",
+    "muted": "#8995a8",
+    "faint": "#5d6a7e",
+    "accent": "#6ba4e8",
+    "accent-dk": "#3f6fae",
+    "gold": "#e2bd72",
+    "crystal-earth": "#45c78a",
+    "crystal-fire": "#d96b6b",
+    "crystal-water": "#6ba4e8",
+    "crystal-wind": "#e2bd72",
+    "done": "#45c78a",
+    "done-dk": "#2f8c61",
+    "todo": "#586374",
+    "excluded": "#4a4f5c",
+    "danger": "#d96b6b",
+}
+
+BUILTIN_THEME_LIGHT = {
+    "bg": "#f2f3f5",
+    "bg-soft": "#e6e8ed",
+    "panel": "#fefefe",
+    "panel-2": "#f6f7f8",
+    "panel-3": "#edeff1",
+    "line": "#3d5b8f",
+    "line-soft": "#9faec6",
+    "text": "#1c2c3f",
+    "muted": "#425a76",
+    "faint": "#6c829d",
+    "accent": "#1f6bc7",
+    "accent-dk": "#275591",
+    "gold": "#b8851e",
+    "crystal-earth": "#36ba7c",
+    "crystal-fire": "#bf3131",
+    "crystal-water": "#2070cf",
+    "crystal-wind": "#c79329",
+    "done": "#2e9e69",
+    "done-dk": "#277c55",
+    "todo": "#657285",
+    "excluded": "#969cab",
+    "danger": "#ba2c2c",
+}
+
+
+def cookie_theme_id(request: Request) -> str:
+    return (request.cookies.get(THEME_COOKIE) or "").strip()
+
+
+def set_theme_cookie(response, theme_id: str) -> None:
+    response.set_cookie(
+        THEME_COOKIE,
+        theme_id.strip(),
+        max_age=60 * 60 * 24 * 365,
+        samesite="lax",
+    )
+
+
+def cookie_theme_scheme(request: Request) -> str:
+    raw = (request.cookies.get(THEME_SCHEME_COOKIE) or "default").strip().lower()
+    return raw if raw in THEME_ALLOWED_SCHEME_SETTINGS else "default"
+
+
+def set_theme_scheme_cookie(response, scheme: str) -> None:
+    value = normalize_theme_scheme_setting(scheme)
+    response.set_cookie(
+        THEME_SCHEME_COOKIE,
+        value,
+        max_age=60 * 60 * 24 * 365,
+        samesite="lax",
+    )
+
+
+def normalize_theme_scheme_setting(raw: str) -> str:
+    value = (raw or "").strip().lower()
+    return value if value in THEME_ALLOWED_SCHEME_SETTINGS else "default"
+
+
+def _extract_theme_color(raw: object) -> str | None:
+    if isinstance(raw, str):
+        return raw.strip()
+    if isinstance(raw, dict):
+        value = raw.get("value")
+        if isinstance(value, str):
+            return value.strip()
+    return None
+
+
+def _flatten_theme_tokens(raw_colors: object) -> dict[str, str]:
+    tokens: dict[str, str] = {}
+    if not isinstance(raw_colors, dict):
+        return tokens
+
+    for key, value in raw_colors.items():
+        direct = _extract_theme_color(value)
+        if direct is not None:
+            tokens[str(key)] = direct
+            continue
+
+        if not isinstance(value, dict):
+            continue
+        for token, entry in value.items():
+            color = _extract_theme_color(entry)
+            if color is not None:
+                tokens[str(token)] = color
+
+    return tokens
+
+
+def _looks_like_scheme_map(raw_colors: dict[str, Any]) -> bool:
+    if not raw_colors:
+        return False
+    keys = {str(key).lower() for key in raw_colors}
+    if not keys.issubset({"dark", "light"}):
+        return False
+    return all(isinstance(value, dict) for value in raw_colors.values())
+
+
+def _extract_theme_schemes(raw_doc: dict[str, Any]) -> dict[str, dict[str, str]]:
+    schemes: dict[str, dict[str, str]] = {}
+
+    raw_colors = raw_doc.get("colors")
+    if isinstance(raw_colors, dict):
+        if _looks_like_scheme_map(raw_colors):
+            for scheme_name, block in raw_colors.items():
+                tokens = _flatten_theme_tokens(block)
+                if tokens:
+                    schemes[str(scheme_name).lower()] = tokens
+        else:
+            tokens = _flatten_theme_tokens(raw_colors)
+            if tokens:
+                schemes["dark"] = tokens
+
+    raw_colors_light = raw_doc.get("colorsLight")
+    if isinstance(raw_colors_light, dict):
+        tokens = _flatten_theme_tokens(raw_colors_light)
+        if tokens:
+            schemes["light"] = tokens
+
+    raw_schemes = raw_doc.get("schemes")
+    if isinstance(raw_schemes, dict):
+        for scheme_name, scheme_block in raw_schemes.items():
+            if not isinstance(scheme_block, dict):
+                continue
+            color_block = scheme_block.get("colors", scheme_block)
+            tokens = _flatten_theme_tokens(color_block)
+            if tokens:
+                schemes[str(scheme_name).lower()] = tokens
+
+    return schemes
+
+
+def _validate_theme(path: Path, raw_doc: dict[str, Any]) -> dict[str, Any]:
+    meta = raw_doc.get("meta")
+    if not isinstance(meta, dict):
+        meta = {}
+
+    theme_id = str(meta.get("id") or path.stem).strip() or path.stem
+    name = str(meta.get("name") or theme_id).strip() or theme_id
+    schemes = _extract_theme_schemes(raw_doc)
+    default_scheme = str(meta.get("defaultScheme") or "dark").strip().lower()
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    for required_scheme in ("dark", "light"):
+        if required_scheme not in schemes:
+            errors.append(f"Missing required {required_scheme} scheme.")
+
+    for scheme_name, tokens in schemes.items():
+        missing = sorted(THEME_REQUIRED_TOKEN_SET.difference(tokens.keys()))
+        if missing:
+            errors.append(
+                f"{scheme_name}: missing required tokens: {', '.join(missing)}"
+            )
+
+        for token, value in tokens.items():
+            if not THEME_TOKEN_NAME_RE.fullmatch(token):
+                errors.append(f"{scheme_name}: invalid token name '{token}'")
+                continue
+            if token in THEME_REQUIRED_TOKEN_SET and not THEME_HEX_RE.fullmatch(value):
+                errors.append(f"{scheme_name}: token '{token}' has invalid hex value '{value}'")
+
+    light_tokens = schemes.get("light")
+    if isinstance(light_tokens, dict):
+        light_surfaces = [
+            light_tokens.get("bg"),
+            light_tokens.get("bg-soft"),
+            light_tokens.get("panel"),
+            light_tokens.get("panel-2"),
+            light_tokens.get("panel-3"),
+        ]
+        unique_surfaces = {value for value in light_surfaces if value}
+        if len(unique_surfaces) <= 2:
+            warnings.append(
+                "light scheme surfaces are nearly flat (bg/bg-soft/panel/panel-2/panel-3)."
+            )
+        if light_tokens.get("muted") == light_tokens.get("faint"):
+            warnings.append("light scheme text ramp collapsed: muted equals faint.")
+        if light_tokens.get("todo") == light_tokens.get("excluded"):
+            warnings.append("light scheme state ramp collapsed: todo equals excluded.")
+
+    if default_scheme not in schemes:
+        warnings.append(
+            f"defaultScheme '{default_scheme}' is unavailable; falling back to dark/first available scheme."
+        )
+        if "dark" in schemes:
+            default_scheme = "dark"
+        elif schemes:
+            default_scheme = next(iter(schemes))
+        else:
+            default_scheme = "dark"
+
+    return {
+        "id": theme_id,
+        "name": name,
+        "file_name": path.name,
+        "path": str(path),
+        "default_scheme": default_scheme,
+        "schemes": schemes,
+        "errors": errors,
+        "warnings": warnings,
+        "valid": not errors,
+    }
+
+
+def _theme_signature(theme_paths: list[Path]) -> tuple[tuple[str, int, int], ...]:
+    signature: list[tuple[str, int, int]] = []
+    for path in theme_paths:
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        signature.append((path.name, int(stat.st_mtime_ns), int(stat.st_size)))
+    return tuple(signature)
+
+
+def _builtin_theme_entry() -> dict[str, Any]:
+    return {
+        "id": "builtin-aetherial",
+        "name": "Builtin Aetherial",
+        "file_name": "<builtin>",
+        "path": "<builtin>",
+        "default_scheme": "dark",
+        "schemes": {
+            "dark": dict(BUILTIN_THEME_DARK),
+            "light": dict(BUILTIN_THEME_LIGHT),
+        },
+        "errors": [],
+        "warnings": ["Using builtin fallback theme because no valid theme files were found."],
+        "valid": True,
+    }
+
+
+def _extract_ff_theme_number(*values: object) -> int | None:
+    for value in values:
+        if value is None:
+            continue
+        match = FF_THEME_NUMBER_RE.search(str(value))
+        if match is None:
+            continue
+        try:
+            return int(match.group(1))
+        except ValueError:
+            continue
+    return None
+
+
+def _extract_pokemon_theme_order(*values: object) -> tuple[int, int, str] | None:
+    for value in values:
+        if value is None:
+            continue
+        match = POKEMON_THEME_NAME_RE.search(str(value))
+        if match is None:
+            continue
+        token = match.group(1).lower()
+        order = POKEMON_THEME_ORDER.get(token)
+        if order is not None:
+            return order[0], order[1], token
+    return None
+
+
+def _theme_sort_key(theme: dict[str, Any]) -> tuple[int, int, str, str]:
+    theme_id = str(theme.get("id") or "")
+    file_name = str(theme.get("file_name") or "")
+    file_stem = Path(file_name).stem if file_name and file_name != "<builtin>" else ""
+    name = str(theme.get("name") or file_stem or theme_id)
+
+    ff_number = _extract_ff_theme_number(theme_id, file_stem, name)
+    if ff_number is not None:
+        variant = (theme_id or file_stem or name).lower()
+        return (0, ff_number, variant, name.lower())
+
+    pokemon_order = _extract_pokemon_theme_order(theme_id, file_stem, name)
+    if pokemon_order is not None:
+        generation, position, token = pokemon_order
+        return (1, generation * 10 + position, token, name.lower())
+
+    if file_stem.lower() == "template":
+        return (3, 9999, file_stem.lower(), name.lower())
+
+    label = (theme_id or file_stem or name).lower()
+    return (2, 9999, label, name.lower())
+
+
+def get_theme_catalog() -> dict[str, Any]:
+    theme_paths = sorted(path for path in THEMES_DIR.glob("*.json") if path.is_file())
+    signature = _theme_signature(theme_paths)
+    with THEME_CACHE_LOCK:
+        cached_signature = THEME_CACHE.get("signature")
+        cached_catalog = THEME_CACHE.get("catalog")
+    if signature == cached_signature and isinstance(cached_catalog, dict):
+        return cached_catalog
+
+    themes: list[dict[str, Any]] = []
+    invalid: list[dict[str, Any]] = []
+
+    for path in theme_paths:
+        try:
+            raw_doc = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            invalid.append({
+                "id": path.stem,
+                "name": path.stem,
+                "file_name": path.name,
+                "path": str(path),
+                "default_scheme": "dark",
+                "schemes": {},
+                "errors": [f"Could not parse JSON: {exc}"],
+                "warnings": [],
+                "valid": False,
+            })
+            continue
+
+        if not isinstance(raw_doc, dict):
+            invalid.append({
+                "id": path.stem,
+                "name": path.stem,
+                "file_name": path.name,
+                "path": str(path),
+                "default_scheme": "dark",
+                "schemes": {},
+                "errors": ["Theme root must be a JSON object."],
+                "warnings": [],
+                "valid": False,
+            })
+            continue
+
+        entry = _validate_theme(path, raw_doc)
+        if entry["valid"]:
+            themes.append(entry)
+        else:
+            invalid.append(entry)
+
+    themes.sort(key=_theme_sort_key)
+    if not themes:
+        themes.append(_builtin_theme_entry())
+
+    preferred_default = next(
+        (
+            theme
+            for theme in themes
+            if str(theme.get("file_name") or "").lower() == "aetherial-dark.json"
+        ),
+        None,
+    )
+    if preferred_default is None:
+        preferred_default = next(
+            (theme for theme in themes if str(theme.get("id")) == "aetherial-dark"),
+            themes[0],
+        )
+    catalog = {
+        "themes": themes,
+        "invalid": invalid,
+        "default_theme_id": str(preferred_default.get("id") or themes[0]["id"]),
+    }
+    with THEME_CACHE_LOCK:
+        THEME_CACHE["signature"] = signature
+        THEME_CACHE["catalog"] = catalog
+    return catalog
+
+
+def _render_theme_css(tokens: dict[str, str]) -> str:
+    ordered_tokens = [token for token in THEME_REQUIRED_TOKENS if token in tokens]
+    extra_tokens = sorted(
+        token
+        for token in tokens.keys()
+        if token not in THEME_REQUIRED_TOKEN_SET and THEME_TOKEN_NAME_RE.fullmatch(token)
+    )
+    lines = [":root {"]
+    for token in ordered_tokens + extra_tokens:
+        lines.append(f"  --{token}: {tokens[token]};")
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def resolve_theme_state(request: Request) -> dict[str, Any]:
+    catalog = get_theme_catalog()
+    themes = catalog["themes"]
+    by_id = {str(theme.get("id")): theme for theme in themes}
+
+    requested_theme_id = cookie_theme_id(request)
+    theme = by_id.get(requested_theme_id)
+    if theme is None:
+        default_theme_id = str(catalog.get("default_theme_id") or "")
+        theme = by_id.get(default_theme_id) or themes[0]
+
+    scheme_setting = normalize_theme_scheme_setting(cookie_theme_scheme(request))
+    if scheme_setting == "default":
+        effective_scheme = str(theme.get("default_scheme") or "dark")
+    else:
+        effective_scheme = scheme_setting
+
+    schemes = theme.get("schemes") if isinstance(theme.get("schemes"), dict) else {}
+    if effective_scheme not in schemes:
+        effective_scheme = "dark" if "dark" in schemes else next(iter(schemes), "dark")
+
+    active_tokens = schemes.get(effective_scheme)
+    if not isinstance(active_tokens, dict):
+        active_tokens = dict(BUILTIN_THEME_DARK)
+
+    return {
+        "catalog": catalog,
+        "theme": theme,
+        "theme_id": str(theme.get("id") or ""),
+        "scheme_setting": scheme_setting,
+        "effective_scheme": effective_scheme,
+        "theme_css": _render_theme_css(active_tokens),
+        "first_paint_bg": active_tokens.get("bg", BUILTIN_THEME_DARK["bg"]),
+        "first_paint_text": active_tokens.get("text", BUILTIN_THEME_DARK["text"]),
+        "color_scheme_meta": effective_scheme,
+    }
+
+
+# --- request context --------------------------------------------------------
 
 
 # --- request context --------------------------------------------------------
@@ -151,6 +648,11 @@ def normalize_cookie_source(raw: str) -> str | None:
 def normalize_import_source(raw: str) -> str | None:
     value = raw.strip().lower()
     return value if value in {"lodestone-json", "desktop-app"} else None
+
+
+def normalize_import_input_method(raw: str) -> str | None:
+    value = raw.strip().lower()
+    return value if value in {"upload-file", "server-file", "auto"} else None
 
 
 def parse_extra_paths(raw: str) -> list[str]:
@@ -354,6 +856,277 @@ def _append_character_import_run_log(run_id: str, message: str) -> None:
         _append_lodestone_log_file(log_path, line)
 
 
+def _active_character_import_run(character_id: int) -> dict[str, Any] | None:
+    with CHAR_IMPORT_RUNS_LOCK:
+        for run in CHAR_IMPORT_RUNS.values():
+            if int(run.get("character_id") or -1) != int(character_id):
+                continue
+            status = str(run.get("status") or "").lower()
+            if status in {"queued", "running"}:
+                return {
+                    "id": str(run.get("id") or ""),
+                    "status": status,
+                }
+    return None
+
+
+def _ensure_character_import_idle(character_id: int) -> None:
+    active = _active_character_import_run(character_id)
+    if active is None:
+        return
+    run_id = str(active.get("id") or "").strip()
+    status = str(active.get("status") or "running")
+    suffix = f" (run_id={run_id})" if run_id else ""
+    raise HTTPException(
+        409,
+        f"This character currently has an import {status}{suffix}. Wait for it to finish before editing progress.",
+    )
+
+
+def _row_snapshot(
+    conn,
+    *,
+    run_id: int,
+    character_id: int,
+    sheet_name: str,
+    row_index: int,
+    starting_class: str | None,
+) -> dict[str, Any] | None:
+    row = db.fetch_row(
+        conn,
+        run_id,
+        character_id,
+        sheet_name,
+        row_index,
+        starting_class,
+    )
+    if row is None or row.get("row_type") == "section":
+        return None
+    pct_raw = row.get("progress_percent")
+    pct = float(pct_raw) if isinstance(pct_raw, (int, float)) else None
+    explicit_state_raw = row.get("explicit_state")
+    explicit_state = str(explicit_state_raw) if explicit_state_raw is not None else None
+    return {
+        "sheet_name": str(sheet_name),
+        "row_index": int(row_index),
+        "row_type": str(row.get("row_type") or "checkbox"),
+        "state": str(row.get("eff") or "todo"),
+        "progress_percent": pct,
+        "explicit": explicit_state is not None,
+        "explicit_state": explicit_state,
+    }
+
+
+def _row_snapshots(
+    conn,
+    *,
+    run_id: int,
+    character_id: int,
+    sheet_name: str,
+    row_indices: list[int],
+    starting_class: str | None,
+) -> dict[int, dict[str, Any]]:
+    out: dict[int, dict[str, Any]] = {}
+    for idx in sorted(set(int(i) for i in row_indices)):
+        snap = _row_snapshot(
+            conn,
+            run_id=run_id,
+            character_id=character_id,
+            sheet_name=sheet_name,
+            row_index=idx,
+            starting_class=starting_class,
+        )
+        if snap is not None:
+            out[idx] = snap
+    return out
+
+
+def _snapshot_diff_changes(
+    before: dict[int, dict[str, Any]],
+    after: dict[int, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    changes: list[dict[str, Any]] = []
+    for idx in sorted(set(before.keys()) | set(after.keys())):
+        b = before.get(idx)
+        a = after.get(idx)
+        if b is None or a is None:
+            continue
+        same_state = b.get("state") == a.get("state")
+        same_pct = b.get("progress_percent") == a.get("progress_percent")
+        same_explicit = bool(b.get("explicit")) == bool(a.get("explicit"))
+        if same_state and same_pct and same_explicit:
+            continue
+        changes.append({
+            "sheet_name": str(a.get("sheet_name") or b.get("sheet_name") or ""),
+            "row_index": int(idx),
+            "row_type": str(a.get("row_type") or b.get("row_type") or "checkbox"),
+            "before": {
+                "state": str(b.get("state") or "todo"),
+                "progress_percent": b.get("progress_percent"),
+                "explicit": bool(b.get("explicit")),
+            },
+            "after": {
+                "state": str(a.get("state") or "todo"),
+                "progress_percent": a.get("progress_percent"),
+                "explicit": bool(a.get("explicit")),
+            },
+        })
+    return changes
+
+
+def _history_step(
+    *,
+    action: str,
+    changes: list[dict[str, Any]],
+    kind: str = "row-change",
+    run_id: int | None = None,
+    character_id: int | None = None,
+) -> dict[str, Any] | None:
+    if not changes:
+        return None
+    payload: dict[str, Any] = {
+        "kind": kind,
+        "action": action,
+        "created_at": dt.datetime.now().isoformat(),
+        "changes": changes,
+    }
+    if run_id is not None:
+        payload["run_id"] = int(run_id)
+    if character_id is not None:
+        payload["character_id"] = int(character_id)
+    return payload
+
+
+def _normalize_history_snapshot(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    state = str(raw.get("state") or "todo")
+    pct_raw = raw.get("progress_percent")
+    pct = float(pct_raw) if isinstance(pct_raw, (int, float)) else None
+    snap: dict[str, Any] = {
+        "state": state,
+        "progress_percent": pct,
+    }
+    if "explicit" in raw:
+        snap["explicit"] = bool(raw.get("explicit"))
+    return snap
+
+
+def _history_snapshot_matches(expected: dict[str, Any], current: dict[str, Any] | None) -> bool:
+    if current is None:
+        return False
+    if str(expected.get("state") or "todo") != str(current.get("state") or "todo"):
+        return False
+    if expected.get("progress_percent") != current.get("progress_percent"):
+        return False
+    if "explicit" in expected and bool(expected.get("explicit")) != bool(current.get("explicit")):
+        return False
+    return True
+
+
+def _set_hx_triggers(resp: HTMLResponse, history_step: dict[str, Any] | None = None) -> None:
+    payload: dict[str, Any] = {"progress-changed": True}
+    if history_step is not None:
+        payload["history-step"] = history_step
+    resp.headers["HX-Trigger"] = json.dumps(payload)
+
+
+def _rows_to_complete_for_history(
+    conn,
+    *,
+    character_id: int,
+    run_id: int,
+    sheet_name: str,
+    row_index: int,
+    starting_class: str | None,
+) -> list[int]:
+    impacted: list[int] = []
+    seen: set[int] = set()
+    stack = [int(row_index)]
+    while stack:
+        current = stack.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        if db.effective_state(
+            conn,
+            character_id,
+            run_id,
+            sheet_name,
+            current,
+            starting_class,
+        ) != "done":
+            impacted.append(current)
+        prereqs = conn.execute(
+            """
+            SELECT source_row_index FROM edges
+            WHERE run_id = ? AND sheet_name = ? AND edge_type = 'sequence'
+              AND target_row_index = ? AND source_row_index IS NOT NULL
+            """,
+            (run_id, sheet_name, current),
+        ).fetchall()
+        for pr in prereqs:
+            stack.append(int(pr["source_row_index"]))
+    return impacted
+
+
+def _rows_to_revert_for_history(
+    conn,
+    *,
+    character_id: int,
+    run_id: int,
+    sheet_name: str,
+    row_index: int,
+    new_state: str,
+    starting_class: str | None,
+) -> list[int]:
+    impacted: list[int] = []
+    seen: set[int] = set()
+    root = int(row_index)
+    stack = [root]
+    while stack:
+        current = stack.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+
+        cur_state = db.effective_state(
+            conn,
+            character_id,
+            run_id,
+            sheet_name,
+            current,
+            starting_class,
+        )
+        if current == root:
+            if cur_state != new_state:
+                impacted.append(current)
+        elif cur_state == "done":
+            impacted.append(current)
+
+        successors = conn.execute(
+            """
+            SELECT target_row_index FROM edges
+            WHERE run_id = ? AND sheet_name = ? AND edge_type = 'sequence'
+              AND source_row_index = ? AND target_row_index IS NOT NULL
+            """,
+            (run_id, sheet_name, current),
+        ).fetchall()
+        for nxt in successors:
+            stack.append(int(nxt["target_row_index"]))
+    return impacted
+
+
+def _write_import_history(run_id: str, payload: dict[str, Any]) -> Path | None:
+    try:
+        CHAR_IMPORT_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+        path = CHAR_IMPORT_HISTORY_DIR / f"{run_id}.json"
+        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        return path
+    except OSError:
+        return None
+
+
 def _run_character_import_job(
     run_id: str,
     *,
@@ -371,6 +1144,21 @@ def _run_character_import_job(
     _append_character_import_run_log(run_id, f"{import_label} job started")
     conn = db.get_connection()
     try:
+        run_id_db = db.latest_run_id(conn)
+        if run_id_db is None:
+            raise ValueError("No ingest run found. Run scripts/prep_xlsx_to_sqlite.py first.")
+        character = db.get_character(conn, character_id)
+        if character is None:
+            raise ValueError(f"Character id {character_id} was not found")
+        starting_class = character["starting_class"]
+
+        before_snapshot = db.snapshot_trackable_rows(
+            conn,
+            run_id_db,
+            character_id,
+            starting_class,
+        )
+
         if import_type == "desktop-app":
             summary = lodestone_import.import_desktop_completion(
                 conn,
@@ -387,12 +1175,73 @@ def _run_character_import_job(
                 clear_existing=clear_existing,
                 progress=lambda msg: _append_character_import_run_log(run_id, msg),
             )
+
+        after_snapshot = db.snapshot_trackable_rows(
+            conn,
+            run_id_db,
+            character_id,
+            starting_class,
+        )
+
+        import_changes: list[dict[str, Any]] = []
+        for key, after_item in after_snapshot.items():
+            before_item = before_snapshot.get(key)
+            if before_item is None:
+                continue
+            same_state = before_item.get("state") == after_item.get("state")
+            same_pct = before_item.get("progress_percent") == after_item.get("progress_percent")
+            same_explicit = bool(before_item.get("explicit")) == bool(after_item.get("explicit"))
+            if same_state and same_pct and same_explicit:
+                continue
+            import_changes.append({
+                "sheet_name": str(after_item.get("sheet_name") or before_item.get("sheet_name") or ""),
+                "row_index": int(after_item.get("row_index") or before_item.get("row_index") or 0),
+                "row_type": str(after_item.get("row_type") or before_item.get("row_type") or "checkbox"),
+                "before": {
+                    "state": str(before_item.get("state") or "todo"),
+                    "progress_percent": before_item.get("progress_percent"),
+                    "explicit": bool(before_item.get("explicit")),
+                },
+                "after": {
+                    "state": str(after_item.get("state") or "todo"),
+                    "progress_percent": after_item.get("progress_percent"),
+                    "explicit": bool(after_item.get("explicit")),
+                },
+            })
+
+        history_step_summary: dict[str, Any] | None = None
+        history_path: Path | None = None
+        if import_changes:
+            history_payload = {
+                "kind": "import-run",
+                "import_run_id": run_id,
+                "run_id": run_id_db,
+                "character_id": character_id,
+                "created_at": dt.datetime.now().isoformat(),
+                "changes": import_changes,
+            }
+            history_path = _write_import_history(run_id, history_payload)
+            if history_path is not None:
+                _append_character_import_run_log(
+                    run_id,
+                    f"Saved import history to {history_path}",
+                )
+            history_step_summary = {
+                "kind": "import-run",
+                "action": import_label,
+                "import_run_id": run_id,
+                "run_id": run_id_db,
+                "character_id": character_id,
+                "changes_count": len(import_changes),
+            }
+
         unmatched_report_path = _write_unmatched_report(run_id, summary)
         _update_character_import_run(
             run_id,
             status="completed",
             finished_at=dt.datetime.now().isoformat(),
             unmatched_report_path=(str(unmatched_report_path) if unmatched_report_path else None),
+            history_path=(str(history_path) if history_path else None),
             summary={
                 "character_id": summary.character_id,
                 "character_name": summary.character_name,
@@ -404,6 +1253,7 @@ def _run_character_import_job(
                 "rows_applied": summary.rows_applied,
                 "rows_skipped_already_done": summary.rows_skipped_already_done,
                 "unmatched_sample": summary.unmatched_items[:20],
+                "history_step": history_step_summary,
             },
         )
         _append_character_import_run_log(run_id, f"{import_label} job completed")
@@ -473,6 +1323,7 @@ class Ctx:
         if run_id is None:
             raise HTTPException(503, "No ingest run found. Run the prep script first.")
         self.run_id: int = run_id
+        self.theme_state = resolve_theme_state(request)
         self.character = db.resolve_active_character(
             self.conn, cookie_character_id(request)
         )
@@ -510,6 +1361,8 @@ class Ctx:
 
     def base_context(self) -> dict:
         avatar_path = BASE / "static" / "avatars" / f"{self.character_id}.jpg"
+        theme = self.theme_state
+        active_theme = theme["theme"] if isinstance(theme.get("theme"), dict) else {}
         return {
             "request": self.request,
             "characters": self.characters,
@@ -518,6 +1371,14 @@ class Ctx:
             "overall": self.overall,
             "overall_pct": db.pct(self.overall),
             "avatar_url": f"/static/avatars/{self.character_id}.jpg" if avatar_path.exists() else None,
+            "theme_id": theme["theme_id"],
+            "theme_name": str(active_theme.get("name") or theme["theme_id"]),
+            "theme_css": theme["theme_css"],
+            "theme_scheme_setting": theme["scheme_setting"],
+            "theme_effective_scheme": theme["effective_scheme"],
+            "theme_first_paint_bg": theme["first_paint_bg"],
+            "theme_first_paint_text": theme["first_paint_text"],
+            "theme_color_scheme_meta": theme["color_scheme_meta"],
         }
 
     def header_context(self, sheet_name: str | None) -> dict:
@@ -538,6 +1399,8 @@ class Ctx:
         ctx = {**self.base_context(), **self.header_context(active), **extra}
         resp = templates.TemplateResponse(self.request, template, ctx)
         set_char_cookie(resp, self.character_id)
+        set_theme_cookie(resp, self.theme_state["theme_id"])
+        set_theme_scheme_cookie(resp, self.theme_state["scheme_setting"])
         return resp
 
 
@@ -677,6 +1540,7 @@ def characters_page(
     payload_path: str = "",
     desktop_path: str = "",
     import_source: str = "",
+    import_input: str = "",
 ):
     ctx = Ctx(request)
     try:
@@ -686,10 +1550,19 @@ def characters_page(
                 run = CHAR_IMPORT_RUNS.get(run_id)
 
         run_import_source = ""
+        run_import_input = ""
         if isinstance(run, dict):
             run_import_source = str(run.get("import_type") or "").strip().lower()
+            run_import_input = str(run.get("input_method") or "").strip().lower()
 
         selected_import_source = normalize_import_source(import_source) or normalize_import_source(run_import_source) or "lodestone-json"
+        selected_import_input_method = (
+            normalize_import_input_method(import_input)
+            or normalize_import_input_method(run_import_input)
+            or "upload-file"
+        )
+        if selected_import_input_method == "auto":
+            selected_import_input_method = "upload-file"
 
         suggested_payload = ""
         suggested_desktop_path = ""
@@ -728,6 +1601,7 @@ def characters_page(
             "suggested_desktop_path": suggested_desktop_path,
             "desktop_completion_options": desktop_options,
             "selected_import_source": selected_import_source,
+            "selected_import_input_method": selected_import_input_method,
             "suggested_source_path": suggested_source_path,
             "active_sheet": None,
         })
@@ -738,9 +1612,10 @@ def characters_page(
 def _submit_character_import(
     *,
     import_source: str,
+    import_input_method: str,
     character_id: int,
     payload_path: str,
-    payload_file: UploadFile | str | None,
+    payload_file: UploadFile | None,
     clear_existing: str,
 ) -> RedirectResponse:
     normalized_source = normalize_import_source(import_source)
@@ -749,43 +1624,76 @@ def _submit_character_import(
             f"/characters?error={quote('Choose a valid import source.')}",
             status_code=303,
         )
+    normalized_input_method = normalize_import_input_method(import_input_method)
+    if normalized_input_method is None:
+        return RedirectResponse(
+            f"/characters?error={quote('Choose a valid import input method.')}",
+            status_code=303,
+        )
 
     resolved_path: Path | None = None
 
-    if isinstance(payload_file, UploadFile) and payload_file.filename:
-        try:
-            resolved_path = save_uploaded_payload(payload_file)
-        except OSError as exc:
-            label = "desktop completion file" if normalized_source == "desktop-app" else "payload"
-            return RedirectResponse(
-                f"/characters?error={quote(f'Could not save uploaded {label}: {exc}')}",
-                status_code=303,
-            )
-    elif isinstance(payload_file, str) and payload_file.strip():
-        resolved_path = resolve_payload_path(payload_file)
-    else:
-        resolved_path = resolve_payload_path(payload_path)
+    def _resolve_uploaded_file() -> Path | None:
+        nonlocal payload_file
+        if payload_file is not None and payload_file.filename:
+            try:
+                return save_uploaded_payload(payload_file)
+            except OSError as exc:
+                label = "desktop completion file" if normalized_source == "desktop-app" else "payload"
+                raise ValueError(f"Could not save uploaded {label}: {exc}") from exc
+        return None
 
-    if resolved_path is None and normalized_source == "desktop-app":
-        detected = lodestone_import.list_detected_completion_files(limit=1)
-        if detected:
-            resolved_path = detected[0]
+    def _resolve_server_file() -> Path | None:
+        nonlocal payload_path
+        path = resolve_payload_path(payload_path)
+        if path is None and normalized_source == "desktop-app":
+            detected = lodestone_import.list_detected_completion_files(limit=1)
+            if detected:
+                return detected[0]
+        return path
+
+    try:
+        if normalized_input_method == "upload-file":
+            resolved_path = _resolve_uploaded_file()
+        elif normalized_input_method == "server-file":
+            resolved_path = _resolve_server_file()
+        else:
+            # Backward-compatible precedence for legacy endpoints.
+            resolved_path = _resolve_uploaded_file() or _resolve_server_file()
+    except ValueError as exc:
+        return RedirectResponse(
+            f"/characters?error={quote(str(exc))}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}",
+            status_code=303,
+        )
 
     if resolved_path is None:
-        message = (
-            "Choose a desktop completion JSON file or pick a detected completion path."
-            if normalized_source == "desktop-app"
-            else "Choose a JSON payload file or pick a server payload below."
-        )
+        if normalized_input_method == "upload-file":
+            message = (
+                "Choose a desktop completion JSON file in the file picker."
+                if normalized_source == "desktop-app"
+                else "Choose a JSON payload file in the file picker."
+            )
+        elif normalized_input_method == "server-file":
+            message = (
+                "Choose a detected desktop completion path."
+                if normalized_source == "desktop-app"
+                else "Choose a server payload from data/lodestone_probe."
+            )
+        else:
+            message = (
+                "Choose a desktop completion JSON file or pick a detected completion path."
+                if normalized_source == "desktop-app"
+                else "Choose a JSON payload file or pick a server payload below."
+            )
         return RedirectResponse(
-            f"/characters?error={quote(message)}&import_source={quote(normalized_source)}",
+            f"/characters?error={quote(message)}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}",
             status_code=303,
         )
 
     if not resolved_path.exists() or not resolved_path.is_file():
         label = "Desktop completion file" if normalized_source == "desktop-app" else "Payload file"
         return RedirectResponse(
-            f"/characters?error={quote(f'{label} not found: {resolved_path}')}&import_source={quote(normalized_source)}",
+            f"/characters?error={quote(f'{label} not found: {resolved_path}')}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}",
             status_code=303,
         )
 
@@ -796,7 +1704,16 @@ def _submit_character_import(
         conn.close()
     if char is None:
         return RedirectResponse(
-            f"/characters?error={quote(f'Character id {character_id} was not found')}&import_source={quote(normalized_source)}",
+            f"/characters?error={quote(f'Character id {character_id} was not found')}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}",
+            status_code=303,
+        )
+
+    active_run = _active_character_import_run(character_id)
+    if active_run is not None:
+        run_ref = str(active_run.get("id") or "").strip()
+        detail = f" (run_id={run_ref})" if run_ref else ""
+        return RedirectResponse(
+            f"/characters?error={quote(f'An import is already in progress for this character{detail}. Wait for it to finish.')}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}",
             status_code=303,
         )
 
@@ -812,6 +1729,7 @@ def _submit_character_import(
         CHAR_IMPORT_RUNS[run_id] = {
             "id": run_id,
             "import_type": normalized_source,
+            "input_method": normalized_input_method,
             "status": "queued",
             "character_id": character_id,
             "character_name": char["name"],
@@ -835,7 +1753,7 @@ def _submit_character_import(
     worker.start()
 
     return RedirectResponse(
-        f"/characters?run_id={quote(run_id)}&import_source={quote(normalized_source)}&payload_path={quote(str(resolved_path))}",
+        f"/characters?run_id={quote(run_id)}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}&payload_path={quote(str(resolved_path))}",
         status_code=303,
     )
 
@@ -844,12 +1762,14 @@ def _submit_character_import(
 def character_import(
     character_id: int = Form(...),
     import_source: str = Form("lodestone-json"),
+    import_input_method: str = Form("upload-file"),
     payload_path: str = Form(""),
-    payload_file: UploadFile | str | None = File(None),
+    payload_file: UploadFile | None = File(None),
     clear_existing: str = Form("0"),
 ):
     return _submit_character_import(
         import_source=import_source,
+        import_input_method=import_input_method,
         character_id=character_id,
         payload_path=payload_path,
         payload_file=payload_file,
@@ -861,11 +1781,12 @@ def character_import(
 def character_import_lodestone(
     character_id: int = Form(...),
     payload_path: str = Form(""),
-    payload_file: UploadFile | str | None = File(None),
+    payload_file: UploadFile | None = File(None),
     clear_existing: str = Form("0"),
 ):
     return _submit_character_import(
         import_source="lodestone-json",
+        import_input_method="auto",
         character_id=character_id,
         payload_path=payload_path,
         payload_file=payload_file,
@@ -877,11 +1798,12 @@ def character_import_lodestone(
 def character_import_desktop_app(
     character_id: int = Form(...),
     completion_path: str = Form(""),
-    completion_file: UploadFile | str | None = File(None),
+    completion_file: UploadFile | None = File(None),
     clear_existing: str = Form("0"),
 ):
     return _submit_character_import(
         import_source="desktop-app",
+        import_input_method="auto",
         character_id=character_id,
         payload_path=completion_path,
         payload_file=completion_file,
@@ -918,6 +1840,49 @@ def character_import_status(run_id: str):
             "log_tail": "\n".join(logs[-160:]),
         }
     return JSONResponse(payload)
+
+
+@app.get("/characters/import-history-step")
+def character_import_history_step(run_id: str):
+    with CHAR_IMPORT_RUNS_LOCK:
+        run = CHAR_IMPORT_RUNS.get(run_id)
+        if run is None:
+            raise HTTPException(404, "Unknown run id")
+        history_path_raw = run.get("history_path")
+        summary = run.get("summary") if isinstance(run.get("summary"), dict) else {}
+
+    history_path: Path | None
+    if history_path_raw:
+        history_path = Path(str(history_path_raw))
+    else:
+        history_path = CHAR_IMPORT_HISTORY_DIR / f"{run_id}.json"
+
+    if not history_path.exists() or not history_path.is_file():
+        raise HTTPException(404, "No history payload for this run")
+
+    try:
+        payload = json.loads(history_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(500, f"Could not read history payload: {exc}") from exc
+
+    if not isinstance(payload, dict):
+        raise HTTPException(500, "History payload malformed")
+
+    action = "Imported progress"
+    history_summary = summary.get("history_step") if isinstance(summary, dict) else None
+    if isinstance(history_summary, dict):
+        action = str(history_summary.get("action") or action)
+
+    response_step = {
+        "kind": "import-run",
+        "action": action,
+        "created_at": str(payload.get("created_at") or dt.datetime.now().isoformat()),
+        "import_run_id": run_id,
+        "run_id": payload.get("run_id"),
+        "character_id": payload.get("character_id"),
+        "changes": payload.get("changes") if isinstance(payload.get("changes"), list) else [],
+    }
+    return JSONResponse(response_step)
 
 
 @app.get("/characters/import-unmatched", response_class=HTMLResponse)
@@ -1016,6 +1981,57 @@ def credits_page(request: Request):
         return ctx.render("credits.html", {"active_sheet": None})
     finally:
         ctx.close()
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request, saved: str = "", error: str = ""):
+    ctx = Ctx(request)
+    try:
+        theme_state = ctx.theme_state
+        catalog = theme_state["catalog"] if isinstance(theme_state.get("catalog"), dict) else {}
+        themes = catalog.get("themes") if isinstance(catalog.get("themes"), list) else []
+        invalid_themes = catalog.get("invalid") if isinstance(catalog.get("invalid"), list) else []
+        return ctx.render("settings.html", {
+            "active_sheet": None,
+            "saved": saved,
+            "error": error,
+            "themes": themes,
+            "invalid_themes": invalid_themes,
+            "selected_theme": theme_state.get("theme") or {},
+            "selected_theme_id": theme_state["theme_id"],
+            "selected_scheme_setting": theme_state["scheme_setting"],
+            "effective_scheme": theme_state["effective_scheme"],
+        })
+    finally:
+        ctx.close()
+
+
+@app.post("/settings/theme")
+def settings_theme_save(
+    theme_id: str = Form(""),
+    theme_scheme: str = Form("default"),
+):
+    catalog = get_theme_catalog()
+    themes = catalog.get("themes") if isinstance(catalog.get("themes"), list) else []
+    by_id = {str(theme.get("id")): theme for theme in themes}
+
+    normalized_theme_id = (theme_id or "").strip()
+    selected_theme = by_id.get(normalized_theme_id)
+    if selected_theme is None:
+        return RedirectResponse(
+            f"/settings?error={quote('Choose a valid theme.')}",
+            status_code=303,
+        )
+
+    normalized_scheme = normalize_theme_scheme_setting(theme_scheme)
+    selected_schemes = selected_theme.get("schemes") if isinstance(selected_theme.get("schemes"), dict) else {}
+    if normalized_scheme in {"dark", "light"} and normalized_scheme not in selected_schemes:
+        normalized_scheme = "default"
+
+    response = RedirectResponse("/settings?saved=Theme%20updated", status_code=303)
+    set_theme_cookie(response, normalized_theme_id)
+    set_theme_scheme_cookie(response, normalized_scheme)
+    return response
 
 
 @app.get("/lodestone-probe", response_class=HTMLResponse)
@@ -1168,11 +2184,69 @@ def api_toggle(
     `<tr>` fragments so HTMX patches them in place."""
     ctx = Ctx(request, full=False)
     try:
+        _ensure_character_import_idle(ctx.character_id)
         sheet = ctx.require_content_sheet(sheet_name)
+
+        current_state = db.effective_state(
+            ctx.conn,
+            ctx.character_id,
+            ctx.run_id,
+            sheet_name,
+            row_index,
+            ctx.starting_class,
+        )
+        next_state = db.NEXT_STATE.get(current_state, "done")
+        planned_rows: list[int]
+        if db.is_chain_row(ctx.conn, ctx.run_id, sheet_name, row_index) and next_state == "done":
+            planned_rows = _rows_to_complete_for_history(
+                ctx.conn,
+                character_id=ctx.character_id,
+                run_id=ctx.run_id,
+                sheet_name=sheet_name,
+                row_index=row_index,
+                starting_class=ctx.starting_class,
+            )
+        elif db.is_chain_row(ctx.conn, ctx.run_id, sheet_name, row_index) and current_state == "done":
+            planned_rows = _rows_to_revert_for_history(
+                ctx.conn,
+                character_id=ctx.character_id,
+                run_id=ctx.run_id,
+                sheet_name=sheet_name,
+                row_index=row_index,
+                new_state=next_state,
+                starting_class=ctx.starting_class,
+            )
+        else:
+            planned_rows = [row_index]
+
+        before_snapshots = _row_snapshots(
+            ctx.conn,
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
+            sheet_name=sheet_name,
+            row_indices=planned_rows,
+            starting_class=ctx.starting_class,
+        )
+
         _, changed = db.toggle_row(
             ctx.conn, ctx.character_id, ctx.run_id, sheet_name, row_index,
             ctx.starting_class,
         )
+        after_snapshots = _row_snapshots(
+            ctx.conn,
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
+            sheet_name=sheet_name,
+            row_indices=[int(i) for i in changed],
+            starting_class=ctx.starting_class,
+        )
+        history_step = _history_step(
+            action="Toggle row",
+            changes=_snapshot_diff_changes(before_snapshots, after_snapshots),
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
+        )
+
         import json as _json
         columns = _json.loads(sheet["data_columns_json"])
         flags = db.sheet_chain_flags(
@@ -1186,7 +2260,7 @@ def api_toggle(
             parts.append(_render_row(ctx, sheet, idx, columns, flags.get(idx), oob=True))
         parts.append(_render_row(ctx, sheet, row_index, columns, flags.get(row_index)))
         resp = HTMLResponse("\n".join(parts))
-        resp.headers["HX-Trigger"] = "progress-changed"
+        _set_hx_triggers(resp, history_step)
         return resp
     finally:
         ctx.close()
@@ -1202,10 +2276,33 @@ def api_set_value(
     """Set a value-row's numeric level (0-100); state is derived."""
     ctx = Ctx(request, full=False)
     try:
+        _ensure_character_import_idle(ctx.character_id)
         sheet = ctx.require_content_sheet(sheet_name)
+        before_snapshots = _row_snapshots(
+            ctx.conn,
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
+            sheet_name=sheet_name,
+            row_indices=[row_index],
+            starting_class=ctx.starting_class,
+        )
         db.set_row_value(
             ctx.conn, ctx.character_id, ctx.run_id, sheet_name, row_index,
             percent, starting_class=ctx.starting_class,
+        )
+        after_snapshots = _row_snapshots(
+            ctx.conn,
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
+            sheet_name=sheet_name,
+            row_indices=[row_index],
+            starting_class=ctx.starting_class,
+        )
+        history_step = _history_step(
+            action="Set value",
+            changes=_snapshot_diff_changes(before_snapshots, after_snapshots),
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
         )
         import json as _json
         columns = _json.loads(sheet["data_columns_json"])
@@ -1215,7 +2312,7 @@ def api_set_value(
         )
         body = _render_row(ctx, sheet, row_index, columns, flags.get(row_index))
         resp = HTMLResponse(body)
-        resp.headers["HX-Trigger"] = "progress-changed"
+        _set_hx_triggers(resp, history_step)
         return resp
     finally:
         ctx.close()
@@ -1230,10 +2327,33 @@ def api_toggle_excluded(
     """Two-state exclude toggle for value rows."""
     ctx = Ctx(request, full=False)
     try:
+        _ensure_character_import_idle(ctx.character_id)
         sheet = ctx.require_content_sheet(sheet_name)
+        before_snapshots = _row_snapshots(
+            ctx.conn,
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
+            sheet_name=sheet_name,
+            row_indices=[row_index],
+            starting_class=ctx.starting_class,
+        )
         db.toggle_excluded(
             ctx.conn, ctx.character_id, ctx.run_id, sheet_name, row_index,
             ctx.starting_class,
+        )
+        after_snapshots = _row_snapshots(
+            ctx.conn,
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
+            sheet_name=sheet_name,
+            row_indices=[row_index],
+            starting_class=ctx.starting_class,
+        )
+        history_step = _history_step(
+            action="Toggle excluded",
+            changes=_snapshot_diff_changes(before_snapshots, after_snapshots),
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
         )
         import json as _json
         columns = _json.loads(sheet["data_columns_json"])
@@ -1243,7 +2363,7 @@ def api_toggle_excluded(
         )
         body = _render_row(ctx, sheet, row_index, columns, flags.get(row_index))
         resp = HTMLResponse(body)
-        resp.headers["HX-Trigger"] = "progress-changed"
+        _set_hx_triggers(resp, history_step)
         return resp
     finally:
         ctx.close()
@@ -1258,10 +2378,33 @@ def api_set_state(
 ):
     ctx = Ctx(request, full=False)
     try:
+        _ensure_character_import_idle(ctx.character_id)
         sheet = ctx.require_content_sheet(sheet_name)
+        before_snapshots = _row_snapshots(
+            ctx.conn,
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
+            sheet_name=sheet_name,
+            row_indices=[row_index],
+            starting_class=ctx.starting_class,
+        )
         db.set_row_state(
             ctx.conn, ctx.character_id, ctx.run_id, sheet_name, row_index, state,
             starting_class=ctx.starting_class,
+        )
+        after_snapshots = _row_snapshots(
+            ctx.conn,
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
+            sheet_name=sheet_name,
+            row_indices=[row_index],
+            starting_class=ctx.starting_class,
+        )
+        history_step = _history_step(
+            action="Set state",
+            changes=_snapshot_diff_changes(before_snapshots, after_snapshots),
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
         )
         import json as _json
         columns = _json.loads(sheet["data_columns_json"])
@@ -1271,7 +2414,7 @@ def api_set_state(
         )
         body = _render_row(ctx, sheet, row_index, columns, flags.get(row_index))
         resp = HTMLResponse(body)
-        resp.headers["HX-Trigger"] = "progress-changed"
+        _set_hx_triggers(resp, history_step)
         return resp
     finally:
         ctx.close()
@@ -1287,10 +2430,41 @@ def api_complete_chain(
     fragments so HTMX patches every changed `<tr>` in place — no page reload."""
     ctx = Ctx(request, full=False)
     try:
+        _ensure_character_import_idle(ctx.character_id)
         sheet = ctx.require_content_sheet(sheet_name)
+        before_rows = _rows_to_complete_for_history(
+            ctx.conn,
+            character_id=ctx.character_id,
+            run_id=ctx.run_id,
+            sheet_name=sheet_name,
+            row_index=row_index,
+            starting_class=ctx.starting_class,
+        )
+        before_snapshots = _row_snapshots(
+            ctx.conn,
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
+            sheet_name=sheet_name,
+            row_indices=before_rows,
+            starting_class=ctx.starting_class,
+        )
         changed = db.complete_with_prerequisites(
             ctx.conn, ctx.character_id, ctx.run_id, sheet_name, row_index,
             ctx.starting_class,
+        )
+        after_snapshots = _row_snapshots(
+            ctx.conn,
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
+            sheet_name=sheet_name,
+            row_indices=[int(i) for i in changed],
+            starting_class=ctx.starting_class,
+        )
+        history_step = _history_step(
+            action="Complete chain",
+            changes=_snapshot_diff_changes(before_snapshots, after_snapshots),
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
         )
         import json as _json
         columns = _json.loads(sheet["data_columns_json"])
@@ -1307,7 +2481,400 @@ def api_complete_chain(
             for idx in to_render
         ]
         resp = HTMLResponse("\n".join(parts))
-        resp.headers["HX-Trigger"] = "progress-changed"
+        _set_hx_triggers(resp, history_step)
+        return resp
+    finally:
+        ctx.close()
+
+
+@app.post("/api/bulk-set-section", response_class=HTMLResponse)
+def api_bulk_set_section(
+    request: Request,
+    sheet_name: str = Form(...),
+    target_state: str = Form(...),
+    row_indices_json: str = Form("[]"),
+    chain_done: str = Form("1"),
+):
+    if target_state not in {"done", "todo", "excluded"}:
+        raise HTTPException(400, "Unsupported bulk target state")
+
+    try:
+        raw_indices = json.loads(row_indices_json)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(400, f"Invalid row index payload: {exc}") from exc
+    if not isinstance(raw_indices, list):
+        raise HTTPException(400, "Row index payload must be a list")
+
+    ctx = Ctx(request, full=False)
+    try:
+        _ensure_character_import_idle(ctx.character_id)
+        sheet = ctx.require_content_sheet(sheet_name)
+        row_indices_set: set[int] = set()
+        for raw in raw_indices:
+            try:
+                row_indices_set.add(int(raw))
+            except (TypeError, ValueError):
+                continue
+        row_indices = sorted(row_indices_set)
+        checkbox_rows: list[int] = []
+        for idx in row_indices:
+            snap = _row_snapshot(
+                ctx.conn,
+                run_id=ctx.run_id,
+                character_id=ctx.character_id,
+                sheet_name=sheet_name,
+                row_index=idx,
+                starting_class=ctx.starting_class,
+            )
+            if snap is None:
+                continue
+            if snap.get("row_type") == "checkbox":
+                checkbox_rows.append(idx)
+
+        apply_chain_done = target_state == "done" and chain_done == "1"
+        planned_rows: list[int] = []
+        if apply_chain_done:
+            for idx in checkbox_rows:
+                planned_rows.extend(
+                    _rows_to_complete_for_history(
+                        ctx.conn,
+                        character_id=ctx.character_id,
+                        run_id=ctx.run_id,
+                        sheet_name=sheet_name,
+                        row_index=idx,
+                        starting_class=ctx.starting_class,
+                    )
+                )
+        else:
+            for idx in checkbox_rows:
+                current_state = db.effective_state(
+                    ctx.conn,
+                    ctx.character_id,
+                    ctx.run_id,
+                    sheet_name,
+                    idx,
+                    ctx.starting_class,
+                )
+                if current_state != target_state:
+                    planned_rows.append(idx)
+
+        planned_rows = sorted(set(planned_rows))
+        before_snapshots = _row_snapshots(
+            ctx.conn,
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
+            sheet_name=sheet_name,
+            row_indices=planned_rows,
+            starting_class=ctx.starting_class,
+        )
+
+        changed: set[int] = set()
+        if apply_chain_done:
+            for idx in checkbox_rows:
+                changed.update(
+                    db.complete_with_prerequisites(
+                        ctx.conn,
+                        ctx.character_id,
+                        ctx.run_id,
+                        sheet_name,
+                        idx,
+                        ctx.starting_class,
+                    )
+                )
+        else:
+            for idx in checkbox_rows:
+                current_state = db.effective_state(
+                    ctx.conn,
+                    ctx.character_id,
+                    ctx.run_id,
+                    sheet_name,
+                    idx,
+                    ctx.starting_class,
+                )
+                if current_state == target_state:
+                    continue
+                db.set_row_state(
+                    ctx.conn,
+                    ctx.character_id,
+                    ctx.run_id,
+                    sheet_name,
+                    idx,
+                    target_state,
+                    commit=False,
+                    starting_class=ctx.starting_class,
+                )
+                changed.add(idx)
+            if changed:
+                ctx.conn.commit()
+
+        changed_rows = sorted(set(int(i) for i in changed))
+        after_snapshots = _row_snapshots(
+            ctx.conn,
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
+            sheet_name=sheet_name,
+            row_indices=changed_rows,
+            starting_class=ctx.starting_class,
+        )
+        history_step = _history_step(
+            action=f"Bulk set section to {target_state}",
+            changes=_snapshot_diff_changes(before_snapshots, after_snapshots),
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
+        )
+
+        import json as _json
+        columns = _json.loads(sheet["data_columns_json"])
+        flags = db.sheet_chain_flags(
+            ctx.conn,
+            ctx.run_id,
+            ctx.character_id,
+            sheet_name,
+            ctx.starting_class,
+        )
+        parts = [
+            _render_row(ctx, sheet, idx, columns, flags.get(idx), oob=True)
+            for idx in changed_rows
+        ]
+        resp = HTMLResponse("\n".join(parts))
+        _set_hx_triggers(resp, history_step)
+        return resp
+    finally:
+        ctx.close()
+
+
+@app.post("/api/history/apply", response_class=HTMLResponse)
+def api_history_apply(
+    request: Request,
+    direction: str = Form(...),
+    step_json: str = Form(...),
+    current_sheet: str = Form(""),
+):
+    if direction not in {"undo", "redo"}:
+        raise HTTPException(400, "Direction must be 'undo' or 'redo'")
+
+    try:
+        step = json.loads(step_json)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(400, f"Invalid history payload: {exc}") from exc
+
+    if not isinstance(step, dict):
+        raise HTTPException(400, "History payload must be an object")
+    raw_changes = step.get("changes")
+    if not isinstance(raw_changes, list):
+        raise HTTPException(400, "History payload missing change list")
+
+    ctx = Ctx(request, full=False)
+    try:
+        _ensure_character_import_idle(ctx.character_id)
+
+        step_character_id: int | None = None
+        try:
+            if step.get("character_id") is not None:
+                step_character_id = int(step.get("character_id"))
+        except (TypeError, ValueError):
+            step_character_id = None
+        if step_character_id is not None and step_character_id != ctx.character_id:
+            msg = (
+                "This history step belongs to a different character. "
+                "Switch to the original character or discard this stale step."
+            )
+            return HTMLResponse(
+                "",
+                status_code=409,
+                headers={
+                    "X-History-Error": msg,
+                    "HX-Trigger": json.dumps({"history-stale": {"reason": "character-mismatch"}}),
+                },
+            )
+
+        step_run_id: int | None = None
+        try:
+            if step.get("run_id") is not None:
+                step_run_id = int(step.get("run_id"))
+        except (TypeError, ValueError):
+            step_run_id = None
+        if step_run_id is not None and step_run_id != ctx.run_id:
+            msg = (
+                "This history step was recorded against an older workbook run. "
+                "Refresh and continue from current data."
+            )
+            return HTMLResponse(
+                "",
+                status_code=409,
+                headers={
+                    "X-History-Error": msg,
+                    "HX-Trigger": json.dumps({"history-stale": {"reason": "run-mismatch"}}),
+                },
+            )
+
+        parsed_changes: list[dict[str, Any]] = []
+        conflicts: list[dict[str, Any]] = []
+        for change in raw_changes:
+            if not isinstance(change, dict):
+                continue
+            sheet_name = str(change.get("sheet_name") or "")
+            if not sheet_name:
+                continue
+            try:
+                row_index = int(change.get("row_index"))
+            except (TypeError, ValueError):
+                continue
+
+            before = _normalize_history_snapshot(change.get("before"))
+            after = _normalize_history_snapshot(change.get("after"))
+            if before is None or after is None:
+                continue
+
+            expected = after if direction == "undo" else before
+            target = before if direction == "undo" else after
+            current = _row_snapshot(
+                ctx.conn,
+                run_id=ctx.run_id,
+                character_id=ctx.character_id,
+                sheet_name=sheet_name,
+                row_index=row_index,
+                starting_class=ctx.starting_class,
+            )
+            if not _history_snapshot_matches(expected, current):
+                conflicts.append({
+                    "sheet_name": sheet_name,
+                    "row_index": row_index,
+                })
+                continue
+
+            parsed_changes.append({
+                "sheet_name": sheet_name,
+                "row_index": row_index,
+                "row_type": str(change.get("row_type") or "checkbox"),
+                "target": target,
+            })
+
+        if conflicts:
+            msg = (
+                "Undo/redo step is stale because current row state no longer matches the "
+                "expected preconditions. Refresh and continue from current state."
+            )
+            return HTMLResponse(
+                "",
+                status_code=409,
+                headers={
+                    "X-History-Error": msg,
+                    "HX-Trigger": json.dumps({
+                        "history-stale": {
+                            "reason": "precondition-failed",
+                            "count": len(conflicts),
+                        }
+                    }),
+                },
+            )
+
+        if not parsed_changes and raw_changes:
+            msg = "Undo/redo step contains no applicable row changes for the current workbook state."
+            return HTMLResponse(
+                "",
+                status_code=409,
+                headers={
+                    "X-History-Error": msg,
+                    "HX-Trigger": json.dumps({"history-stale": {"reason": "no-applicable-changes"}}),
+                },
+            )
+
+        touched_by_sheet: dict[str, set[int]] = {}
+        with progress_io.batch(ctx.conn, ctx.character_id):
+            for change in parsed_changes:
+                sheet_name = str(change.get("sheet_name") or "")
+                row_index = int(change.get("row_index") or 0)
+                row_type = str(change.get("row_type") or "checkbox")
+                target = change.get("target") if isinstance(change.get("target"), dict) else {}
+                target_state = str(target.get("state") or "todo")
+                target_pct = target.get("progress_percent")
+                target_explicit = bool(target.get("explicit")) if "explicit" in target else True
+
+                try:
+                    if not target_explicit:
+                        db.clear_row_override(
+                            ctx.conn,
+                            ctx.character_id,
+                            ctx.run_id,
+                            sheet_name,
+                            row_index,
+                            commit=False,
+                            starting_class=ctx.starting_class,
+                        )
+                    elif row_type == "value":
+                        if isinstance(target_pct, (int, float)):
+                            db.set_row_value(
+                                ctx.conn,
+                                ctx.character_id,
+                                ctx.run_id,
+                                sheet_name,
+                                row_index,
+                                float(target_pct),
+                                commit=False,
+                                starting_class=ctx.starting_class,
+                            )
+                            if target_state == "excluded":
+                                db.set_row_state(
+                                    ctx.conn,
+                                    ctx.character_id,
+                                    ctx.run_id,
+                                    sheet_name,
+                                    row_index,
+                                    "excluded",
+                                    commit=False,
+                                    starting_class=ctx.starting_class,
+                                )
+                        else:
+                            db.set_row_state(
+                                ctx.conn,
+                                ctx.character_id,
+                                ctx.run_id,
+                                sheet_name,
+                                row_index,
+                                target_state,
+                                commit=False,
+                                starting_class=ctx.starting_class,
+                            )
+                    else:
+                        db.set_row_state(
+                            ctx.conn,
+                            ctx.character_id,
+                            ctx.run_id,
+                            sheet_name,
+                            row_index,
+                            target_state,
+                            commit=False,
+                            starting_class=ctx.starting_class,
+                        )
+                except ValueError as exc:
+                    raise HTTPException(400, f"Invalid history change for row {sheet_name}:{row_index}: {exc}") from exc
+
+                touched_by_sheet.setdefault(sheet_name, set()).add(row_index)
+
+        if touched_by_sheet:
+            ctx.conn.commit()
+
+        body_parts: list[str] = []
+        render_sheet = current_sheet.strip()
+        if render_sheet and render_sheet in touched_by_sheet:
+            import json as _json
+            sheet = ctx.require_content_sheet(render_sheet)
+            columns = _json.loads(sheet["data_columns_json"])
+            flags = db.sheet_chain_flags(
+                ctx.conn,
+                ctx.run_id,
+                ctx.character_id,
+                render_sheet,
+                ctx.starting_class,
+            )
+            for idx in sorted(touched_by_sheet.get(render_sheet, set())):
+                body_parts.append(
+                    _render_row(ctx, sheet, idx, columns, flags.get(idx), oob=True)
+                )
+
+        resp = HTMLResponse("\n".join(body_parts))
+        resp.headers["HX-Trigger"] = json.dumps({"progress-changed": True})
         return resp
     finally:
         ctx.close()

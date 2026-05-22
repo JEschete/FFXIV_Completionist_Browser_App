@@ -1,0 +1,248 @@
+{
+  "meta": {
+    "name": "SeeD and Sorceress (FF8)",
+    "id": "ff8-seed-sorceress",
+    "colorScheme": "dual",
+    "defaultScheme": "dark",
+    "version": 1,
+    "source": "Inspired by Final Fantasy VIII: Balamb steel, SeeD uniforms, and sorceress magenta energy",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). The group names (surfaces, lines, text, accents, crystals, states) are for human organization only and are NOT part of the variable name. The four crystal-* tokens are extra identity colors; wire them up where supported.",
+    "notExportedYet": "Non-color tokens still live only in styles.css and are intentionally omitted here: --radius, --radius-s, --shadow. To strengthen FF8 identity, favor cleaner edges, tighter spacing rhythm, and restrained motion with occasional sorceress flare moments."
+  },
+  "colors": {
+    "surfaces": {
+      "bg": {
+        "value": "#0b0d16",
+        "desc": "Night sky steel over military academy blues"
+      },
+      "bg-soft": {
+        "value": "#13182a",
+        "desc": "Header elevation in cool gunmetal indigo"
+      },
+      "panel": {
+        "value": "#1b2340",
+        "desc": "Primary panel in polished naval steel"
+      },
+      "panel-2": {
+        "value": "#27345a",
+        "desc": "Raised panel with crisp command-center depth"
+      },
+      "panel-3": {
+        "value": "#35477b",
+        "desc": "Highest elevation with moonlit academy tone"
+      },
+      "sidebar-top": {
+        "value": "#13182a",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#0b0d16",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#27345a",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#1b2340",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#b7c5ff",
+        "desc": "Cold silver-blue structure line"
+      },
+      "line-soft": {
+        "value": "#5166a8",
+        "desc": "Subtle divider in desaturated indigo"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#f4f6ff",
+        "desc": "Primary text in bright cool white"
+      },
+      "muted": {
+        "value": "#b9c2e8",
+        "desc": "Secondary labels"
+      },
+      "faint": {
+        "value": "#7f89b0",
+        "desc": "Tertiary text"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#ff63d6",
+        "desc": "Sorceress magenta for primary interactions"
+      },
+      "accent-dk": {
+        "value": "#b23492",
+        "desc": "Pressed/active magenta depth"
+      },
+      "gold": {
+        "value": "#ffd06e",
+        "desc": "Warm insignia gold for callouts"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#7ed47b",
+        "desc": "Earth analog - grounded academy green"
+      },
+      "crystal-fire": {
+        "value": "#ff7b6a",
+        "desc": "Fire analog - duel-alert coral"
+      },
+      "crystal-water": {
+        "value": "#69b7ff",
+        "desc": "Water analog - oceanic Balamb blue"
+      },
+      "crystal-wind": {
+        "value": "#d7a7ff",
+        "desc": "Wind analog - arcane lilac"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#7ed47b",
+        "desc": "Completed state"
+      },
+      "done-dk": {
+        "value": "#3e8b4a",
+        "desc": "Dark done state"
+      },
+      "todo": {
+        "value": "#6978a8",
+        "desc": "Pending state"
+      },
+      "excluded": {
+        "value": "#5e567e",
+        "desc": "Set-aside state"
+      },
+      "danger": {
+        "value": "#ff5f7c",
+        "desc": "Critical state"
+      }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg": {
+        "value": "#f3f5ff",
+        "desc": "Bright academy paper tone"
+      },
+      "bg-soft": {
+        "value": "#e6eafd",
+        "desc": "Header in pale steel-blue"
+      },
+      "panel": {
+        "value": "#ffffff",
+        "desc": "Primary panel"
+      },
+      "panel-2": {
+        "value": "#f3f6ff",
+        "desc": "Raised panel"
+      },
+      "panel-3": {
+        "value": "#e7edff",
+        "desc": "Highest light elevation"
+      },
+      "sidebar-top": {
+        "value": "#e6eafd",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#f3f5ff",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#f3f6ff",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#ffffff",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#4d5e9f",
+        "desc": "Primary structural line"
+      },
+      "line-soft": {
+        "value": "#99a6d5",
+        "desc": "Soft divider line"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#1b2140",
+        "desc": "Primary text"
+      },
+      "muted": {
+        "value": "#49567d",
+        "desc": "Secondary text"
+      },
+      "faint": {
+        "value": "#7b85a8",
+        "desc": "Tertiary text"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#d64ab0",
+        "desc": "Sorceress magenta accent"
+      },
+      "accent-dk": {
+        "value": "#8e2e77",
+        "desc": "Pressed magenta"
+      },
+      "gold": {
+        "value": "#b07a17",
+        "desc": "Insignia gold"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#56ad58",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#e46054",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#418fd8",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#b57de5",
+        "desc": "Wind analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#4ea45f",
+        "desc": "Completed state"
+      },
+      "done-dk": {
+        "value": "#2f7a41",
+        "desc": "Dark done state"
+      },
+      "todo": {
+        "value": "#7080a5",
+        "desc": "Pending state"
+      },
+      "excluded": {
+        "value": "#9a93b4",
+        "desc": "Set-aside state"
+      },
+      "danger": {
+        "value": "#d84460",
+        "desc": "Critical state"
+      }
+    }
+  }
+}

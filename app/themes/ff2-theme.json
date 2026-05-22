@@ -1,0 +1,248 @@
+{
+  "meta": {
+    "name": "Wild Rose Rebellion (8-bit)",
+    "id": "ff2-famicom-rebellion",
+    "colorScheme": "dual",
+    "version": 1,
+    "source": "app/static/styles.css :root (captured 2026-05-22)",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). The group names (surfaces, lines, text, accents, crystals, states) are for human organization only and are NOT part of the variable name. The four crystal-* tokens are extra identity colors; wire them up where supported.",
+    "notExportedYet": "Non-color :root tokens. Like FF1, maintain sharp borders (--radius: 0px) and pure blocky Famicom aesthetics to match the era.",
+    "defaultScheme": "dark"
+  },
+  "colors": {
+    "surfaces": {
+      "bg": {
+        "value": "#120206",
+        "desc": "War-torn midnight backdrop - grim and less heroic than FF1"
+      },
+      "bg-soft": {
+        "value": "#25050d",
+        "desc": "Header elevation with a rose-tinted dusk cast"
+      },
+      "panel": {
+        "value": "#390a16",
+        "desc": "Imperial dossier panel tone - dark plum-brown"
+      },
+      "panel-2": {
+        "value": "#4d1024",
+        "desc": "Raised menu surface for keyword and command depth"
+      },
+      "panel-3": {
+        "value": "#67183a",
+        "desc": "Highest elevation in the rebellion dusk palette"
+      },
+      "sidebar-top": {
+        "value": "#25050d",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#120206",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#4d1024",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#390a16",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#ff9db8",
+        "desc": "Aged parchment border - softer than stark NES white"
+      },
+      "line-soft": {
+        "value": "#a7395d",
+        "desc": "Dusty rose divider for inner structure"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#fff0f4",
+        "desc": "Warm parchment white for story-heavy dialogue and stats"
+      },
+      "muted": {
+        "value": "#f0a9bc",
+        "desc": "Muted rose-gray for secondary labels"
+      },
+      "faint": {
+        "value": "#b56c82",
+        "desc": "Low-contrast ash-rose for tertiary UI hints"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#ff2f63",
+        "desc": "Wild Rose crimson - primary interactive identity"
+      },
+      "accent-dk": {
+        "value": "#b00037",
+        "desc": "Deep rebellion maroon for active/pressed states"
+      },
+      "gold": {
+        "value": "#ffbf47",
+        "desc": "Aged brass highlight for currency and section callouts"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#b9863c",
+        "desc": "Earth Crystal analog - weathered bronze earth tone"
+      },
+      "crystal-fire": {
+        "value": "#ff5a3a",
+        "desc": "Fire Crystal analog - battle-scarlet ember"
+      },
+      "crystal-water": {
+        "value": "#4aa4ff",
+        "desc": "Water Crystal analog - tempered steel-blue"
+      },
+      "crystal-wind": {
+        "value": "#ce8dff",
+        "desc": "Wind Crystal analog - sorrowful violet-lilac"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#52d68e",
+        "desc": "Muted military green for recovered progress"
+      },
+      "done-dk": {
+        "value": "#248556",
+        "desc": "Darker recovered state for depth"
+      },
+      "todo": {
+        "value": "#b27087",
+        "desc": "Somber pending state with ash-rose neutrality"
+      },
+      "excluded": {
+        "value": "#8a3f72",
+        "desc": "Ailment violet for disabled or set-aside progress"
+      },
+      "danger": {
+        "value": "#ff3d45",
+        "desc": "Urgent war-red for critical and destructive actions"
+      }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg": {
+        "value": "#f5f2f3",
+        "desc": "War-torn midnight backdrop - grim and less heroic than FF1"
+      },
+      "bg-soft": {
+        "value": "#ede6e8",
+        "desc": "Header elevation with a rose-tinted dusk cast"
+      },
+      "panel": {
+        "value": "#fefefe",
+        "desc": "Imperial dossier panel tone - dark plum-brown"
+      },
+      "panel-2": {
+        "value": "#f8f6f7",
+        "desc": "Raised menu surface for keyword and command depth"
+      },
+      "panel-3": {
+        "value": "#f1edef",
+        "desc": "Highest elevation in the rebellion dusk palette"
+      },
+      "sidebar-top": {
+        "value": "#ede6e8",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#f5f2f3",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#f8f6f7",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#fefefe",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#a3294b",
+        "desc": "Aged parchment border - softer than stark NES white"
+      },
+      "line-soft": {
+        "value": "#cd98a9",
+        "desc": "Dusty rose divider for inner structure"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#3f1c25",
+        "desc": "Warm parchment white for story-heavy dialogue and stats"
+      },
+      "muted": {
+        "value": "#76424f",
+        "desc": "Muted rose-gray for secondary labels"
+      },
+      "faint": {
+        "value": "#9d6c78",
+        "desc": "Low-contrast ash-rose for tertiary UI hints"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#e60039",
+        "desc": "Wild Rose crimson - primary interactive identity"
+      },
+      "accent-dk": {
+        "value": "#b80039",
+        "desc": "Deep rebellion maroon for active/pressed states"
+      },
+      "gold": {
+        "value": "#d68c00",
+        "desc": "Aged brass highlight for currency and section callouts"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#ba8436",
+        "desc": "Earth Crystal analog - weathered bronze earth tone"
+      },
+      "crystal-fire": {
+        "value": "#f02700",
+        "desc": "Fire Crystal analog - battle-scarlet ember"
+      },
+      "crystal-water": {
+        "value": "#0077f0",
+        "desc": "Water Crystal analog - tempered steel-blue"
+      },
+      "crystal-wind": {
+        "value": "#8900f0",
+        "desc": "Wind Crystal analog - sorrowful violet-lilac"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#27a560",
+        "desc": "Muted military green for recovered progress"
+      },
+      "done-dk": {
+        "value": "#238053",
+        "desc": "Darker recovered state for depth"
+      },
+      "todo": {
+        "value": "#98526b",
+        "desc": "Somber pending state with ash-rose neutrality"
+      },
+      "excluded": {
+        "value": "#b48ea7",
+        "desc": "Ailment violet for disabled or set-aside progress"
+      },
+      "danger": {
+        "value": "#e60009",
+        "desc": "Urgent war-red for critical and destructive actions"
+      }
+    }
+  }
+}

@@ -1,0 +1,248 @@
+{
+  "meta": {
+    "name": "Pokemon Crystal Prism",
+    "id": "pokemon-crystal-johto",
+    "colorScheme": "dual",
+    "defaultScheme": "dark",
+    "version": 1,
+    "source": "Inspired by Pokemon Crystal: prismatic cyan energy, transparent shimmer, and cool glass-like gradients.",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). Group names are organization only and are NOT part of the variable name.",
+    "notExportedYet": "Non-color tokens still live in styles.css. For stronger Crystal identity, add faint refraction lines and prism glints."
+  },
+  "colors": {
+    "surfaces": {
+      "bg": {
+        "value": "#07131a",
+        "desc": "Dark prismatic backdrop"
+      },
+      "bg-soft": {
+        "value": "#0b1f29",
+        "desc": "Header layer"
+      },
+      "panel": {
+        "value": "#10303d",
+        "desc": "Primary card surface"
+      },
+      "panel-2": {
+        "value": "#154252",
+        "desc": "Raised panel"
+      },
+      "panel-3": {
+        "value": "#1f586b",
+        "desc": "Highest elevation"
+      },
+      "sidebar-top": {
+        "value": "#0b1f29",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#07131a",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#154252",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#10303d",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#88f2ff",
+        "desc": "Strong frame line"
+      },
+      "line-soft": {
+        "value": "#3f7f91",
+        "desc": "Subtle divider"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#ecfcff",
+        "desc": "Primary text"
+      },
+      "muted": {
+        "value": "#b0e4ea",
+        "desc": "Secondary labels"
+      },
+      "faint": {
+        "value": "#75a8b4",
+        "desc": "Tertiary metadata"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#22d6ff",
+        "desc": "Core Crystal accent"
+      },
+      "accent-dk": {
+        "value": "#118ea8",
+        "desc": "Pressed state"
+      },
+      "gold": {
+        "value": "#d8b4ff",
+        "desc": "Prism highlight token"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#82d28e",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#ff7f7a",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#4fd7ff",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#d5f68c",
+        "desc": "Wind analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#69cb8e",
+        "desc": "Completed"
+      },
+      "done-dk": {
+        "value": "#3a805b",
+        "desc": "Completed dark"
+      },
+      "todo": {
+        "value": "#5f92a3",
+        "desc": "Pending"
+      },
+      "excluded": {
+        "value": "#5d6f7c",
+        "desc": "Excluded"
+      },
+      "danger": {
+        "value": "#ef6666",
+        "desc": "Danger"
+      }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg": {
+        "value": "#ebfbff",
+        "desc": "Light prism field"
+      },
+      "bg-soft": {
+        "value": "#d9f5fb",
+        "desc": "Header"
+      },
+      "panel": {
+        "value": "#ffffff",
+        "desc": "Primary card"
+      },
+      "panel-2": {
+        "value": "#f0fbff",
+        "desc": "Raised panel"
+      },
+      "panel-3": {
+        "value": "#def4fb",
+        "desc": "Highest elevation"
+      },
+      "sidebar-top": {
+        "value": "#d9f5fb",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#ebfbff",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#f0fbff",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#ffffff",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#2f7f95",
+        "desc": "Frame line"
+      },
+      "line-soft": {
+        "value": "#90c3d1",
+        "desc": "Subtle divider"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#134352",
+        "desc": "Primary text"
+      },
+      "muted": {
+        "value": "#2f697a",
+        "desc": "Secondary labels"
+      },
+      "faint": {
+        "value": "#5f93a3",
+        "desc": "Tertiary metadata"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#0fa2c2",
+        "desc": "Core Crystal accent"
+      },
+      "accent-dk": {
+        "value": "#0d758d",
+        "desc": "Pressed state"
+      },
+      "gold": {
+        "value": "#9666bf",
+        "desc": "Prism highlight token"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#5aa36a",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#d96663",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#2f9fbe",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#9db74b",
+        "desc": "Wind analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#4da06f",
+        "desc": "Completed"
+      },
+      "done-dk": {
+        "value": "#356e4f",
+        "desc": "Completed dark"
+      },
+      "todo": {
+        "value": "#557d8b",
+        "desc": "Pending"
+      },
+      "excluded": {
+        "value": "#9fb3bc",
+        "desc": "Excluded"
+      },
+      "danger": {
+        "value": "#c34d4d",
+        "desc": "Danger"
+      }
+    }
+  }
+}

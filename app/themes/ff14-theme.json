@@ -1,0 +1,248 @@
+{
+  "meta": {
+    "name": "Aetheryte Concord (FF14)",
+    "id": "ff14-aetheryte-concord",
+    "colorScheme": "dual",
+    "defaultScheme": "dark",
+    "version": 1,
+    "source": "Inspired by Final Fantasy XIV: Eorzea night skies, aetheryte glow, and imperial-gold quest framing",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). The group names (surfaces, lines, text, accents, crystals, states) are for human organization only and are NOT part of the variable name. The four crystal-* tokens are extra identity colors; wire them up where supported.",
+    "notExportedYet": "Non-color tokens still live only in styles.css and are intentionally omitted here: --radius, --radius-s, --shadow. For stronger FF14 identity, consider soft radial aetheryte bloom in key cards and subtle map-paper texture in light mode."
+  },
+  "colors": {
+    "surfaces": {
+      "bg": {
+        "value": "#0a1229",
+        "desc": "Eorzean night sky backdrop"
+      },
+      "bg-soft": {
+        "value": "#101d3d",
+        "desc": "Header in deep aetheric blue"
+      },
+      "panel": {
+        "value": "#182952",
+        "desc": "Primary panel in navy crystalsteel"
+      },
+      "panel-2": {
+        "value": "#22366a",
+        "desc": "Raised panel with deeper guildhall contrast"
+      },
+      "panel-3": {
+        "value": "#2f4888",
+        "desc": "Highest elevation in star-lit cobalt"
+      },
+      "sidebar-top": {
+        "value": "#101d3d",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#0a1229",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#22366a",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#182952",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#9cc4ff",
+        "desc": "Aetheryte-lit frame line"
+      },
+      "line-soft": {
+        "value": "#4d6ba5",
+        "desc": "Soft divider in cool sky-blue"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#eef4ff",
+        "desc": "Primary moonlit text"
+      },
+      "muted": {
+        "value": "#bfd0f2",
+        "desc": "Secondary labels"
+      },
+      "faint": {
+        "value": "#869cc5",
+        "desc": "Tertiary metadata"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#48c8ff",
+        "desc": "Aetheryte cyan for primary interaction"
+      },
+      "accent-dk": {
+        "value": "#1d8fcb",
+        "desc": "Pressed/active aether depth"
+      },
+      "gold": {
+        "value": "#f0c86e",
+        "desc": "Quest-gold headings and totals"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#7ed28d",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#ff7f64",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#55ceff",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#d8ee7f",
+        "desc": "Wind analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#68c98c",
+        "desc": "Completed state"
+      },
+      "done-dk": {
+        "value": "#338059",
+        "desc": "Darker completion shade"
+      },
+      "todo": {
+        "value": "#6c83b6",
+        "desc": "Pending state"
+      },
+      "excluded": {
+        "value": "#5f6786",
+        "desc": "Set-aside state"
+      },
+      "danger": {
+        "value": "#f15c63",
+        "desc": "Critical/destructive actions"
+      }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg": {
+        "value": "#edf5ff",
+        "desc": "Bright daytime Eorzean sky"
+      },
+      "bg-soft": {
+        "value": "#dfecff",
+        "desc": "Header with pale aether glow"
+      },
+      "panel": {
+        "value": "#ffffff",
+        "desc": "Primary panel"
+      },
+      "panel-2": {
+        "value": "#f3f8ff",
+        "desc": "Raised panel"
+      },
+      "panel-3": {
+        "value": "#e7f0ff",
+        "desc": "Highest elevation"
+      },
+      "sidebar-top": {
+        "value": "#dfecff",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#edf5ff",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#f3f8ff",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#ffffff",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#3a66a5",
+        "desc": "Primary structural line"
+      },
+      "line-soft": {
+        "value": "#96b2dd",
+        "desc": "Soft divider"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#1c3458",
+        "desc": "Primary text"
+      },
+      "muted": {
+        "value": "#3d5b86",
+        "desc": "Secondary text"
+      },
+      "faint": {
+        "value": "#6f87ad",
+        "desc": "Tertiary text"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#0b96d8",
+        "desc": "Aetheryte cyan accent"
+      },
+      "accent-dk": {
+        "value": "#0b6ea0",
+        "desc": "Pressed accent"
+      },
+      "gold": {
+        "value": "#b07e20",
+        "desc": "Quest-gold highlight"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#5da96a",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#d8664f",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#309cc8",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#9cb640",
+        "desc": "Wind analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#4a9c6a",
+        "desc": "Completed state"
+      },
+      "done-dk": {
+        "value": "#326d4a",
+        "desc": "Dark completion shade"
+      },
+      "todo": {
+        "value": "#6279ad",
+        "desc": "Pending state"
+      },
+      "excluded": {
+        "value": "#9ca7bc",
+        "desc": "Set-aside state"
+      },
+      "danger": {
+        "value": "#ce4850",
+        "desc": "Critical state"
+      }
+    }
+  }
+}

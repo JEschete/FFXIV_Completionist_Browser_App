@@ -21,22 +21,73 @@
   </div>
 </form>
 
+<div class="toolbar-section-actions section-bulk-actions" aria-label="Section visibility controls">
+  <button type="button" class="btn-mini toolbar-mini" id="sections-expand-all">Expand all</button>
+  <button type="button" class="btn-mini toolbar-mini" id="sections-collapse-all">Collapse all</button>
+</div>
+
 {% if not groups %}
   <div class="empty">Nothing matches that filter.</div>
 {% endif %}
 
 {% for group in groups %}
-<section class="sheet-section">
-  {% if group.section and group.section != sheet.title %}
-    <h2 class="section-title">{{ group.section }}</h2>
+{% set can_collapse = group.section and group.section != sheet.title %}
+{% set checkbox_ns = namespace(indices=[]) %}
+{% for row in group.rows %}
+  {% if row.row_type == 'checkbox' %}
+    {% set _ = checkbox_ns.indices.append(row.row_index) %}
   {% endif %}
+{% endfor %}
+<section class="sheet-section {{ 'is-collapsible' if can_collapse else '' }}"
+         data-collapsible="{{ '1' if can_collapse else '0' }}"
+         data-section-id="{{ group.row_index }}"
+         data-checkbox-indices='{{ checkbox_ns.indices|tojson }}'
+         data-checkbox-count="{{ checkbox_ns.indices|length }}">
+  <div class="section-head">
+    {% if can_collapse %}
+      <button class="section-toggle" type="button" aria-expanded="true">
+        <span class="section-toggle-icon" aria-hidden="true">▾</span>
+        <span class="section-toggle-label">{{ group.section }}</span>
+        <span class="section-toggle-meta">{{ group.rows|length }} rows</span>
+      </button>
+    {% endif %}
+
+    <div class="section-row-actions" role="group" aria-label="Section bulk actions">
+      <button type="button"
+              class="btn-mini section-action-btn"
+              data-bulk-state="done"
+              data-chain-done="1"
+              {% if checkbox_ns.indices|length == 0 %}disabled{% endif %}>
+        Done
+      </button>
+      <button type="button"
+              class="btn-mini section-action-btn"
+              data-bulk-state="todo"
+              {% if checkbox_ns.indices|length == 0 %}disabled{% endif %}>
+        To Do
+      </button>
+      <button type="button"
+              class="btn-mini section-action-btn"
+              data-bulk-state="excluded"
+              {% if checkbox_ns.indices|length == 0 %}disabled{% endif %}>
+        Excluded
+      </button>
+    </div>
+  </div>
   <div class="table-wrap">
     <table class="data-table">
       <thead>
         <tr>
           <th class="th-status">●</th>
           {% for col in columns %}
-            <th class="{{ 'th-label' if col.key == sheet.label_key }}">{{ col.label }}</th>
+            <th class="{{ 'th-label' if col.key == sheet.label_key }} th-sortable"
+                data-sort-col="{{ loop.index0 }}"
+                data-sort-type="{{ 'number' if sheet.value_key and col.key == sheet.value_key else 'auto' }}">
+              <button type="button" class="th-sort-btn" data-sort-trigger>
+                <span>{{ col.label }}</span>
+                <span class="th-sort-indicator" aria-hidden="true">↕</span>
+              </button>
+            </th>
           {% endfor %}
           <th class="th-chain">⛓</th>
         </tr>
@@ -51,4 +102,283 @@
   </div>
 </section>
 {% endfor %}
+
+<script>
+(() => {
+  const sectionNodes = Array.from(document.querySelectorAll('.sheet-section[data-collapsible="1"]'));
+  const collapsibleSections = [];
+  for (const section of sectionNodes) {
+    const toggleBtn = section.querySelector('.section-toggle');
+    const tableWrap = section.querySelector('.table-wrap');
+    if (!toggleBtn || !tableWrap) {
+      continue;
+    }
+
+    const sectionId = String(section.dataset.sectionId || '0');
+    const storageKey = `ffxiv:sheet-collapse:{{ sheet.sheet_name }}:${sectionId}`;
+
+    const applyCollapsed = (collapsed) => {
+      section.classList.toggle('is-collapsed', collapsed);
+      tableWrap.hidden = collapsed;
+      toggleBtn.setAttribute('aria-expanded', String(!collapsed));
+    };
+
+    const setCollapsed = (collapsed) => {
+      applyCollapsed(collapsed);
+      try {
+        window.localStorage.setItem(storageKey, collapsed ? '1' : '0');
+      } catch (_err) {
+        // Ignore storage failures (private browsing / blocked storage).
+      }
+    };
+
+    let initiallyCollapsed = false;
+    try {
+      initiallyCollapsed = window.localStorage.getItem(storageKey) === '1';
+    } catch (_err) {
+      initiallyCollapsed = false;
+    }
+    applyCollapsed(initiallyCollapsed);
+    collapsibleSections.push({ setCollapsed });
+
+    toggleBtn.addEventListener('click', () => {
+      const nowCollapsed = !section.classList.contains('is-collapsed');
+      setCollapsed(nowCollapsed);
+    });
+  }
+
+  const expandAllBtn = document.getElementById('sections-expand-all');
+  const collapseAllBtn = document.getElementById('sections-collapse-all');
+  const hasCollapsibleSections = collapsibleSections.length > 0;
+
+  if (expandAllBtn) {
+    expandAllBtn.disabled = !hasCollapsibleSections;
+    expandAllBtn.addEventListener('click', () => {
+      for (const section of collapsibleSections) {
+        section.setCollapsed(false);
+      }
+    });
+  }
+  if (collapseAllBtn) {
+    collapseAllBtn.disabled = !hasCollapsibleSections;
+    collapseAllBtn.addEventListener('click', () => {
+      for (const section of collapsibleSections) {
+        section.setCollapsed(true);
+      }
+    });
+  }
+
+  const parseSectionRowIndices = (sectionEl) => {
+    try {
+      const raw = JSON.parse(sectionEl.dataset.checkboxIndices || '[]');
+      if (!Array.isArray(raw)) {
+        return [];
+      }
+      return raw
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value));
+    } catch (_err) {
+      return [];
+    }
+  };
+
+  const runBulkAction = (sectionEl, targetState, chainDone) => {
+    if (!window.htmx || typeof window.htmx.ajax !== 'function') {
+      return;
+    }
+    const rowIndices = parseSectionRowIndices(sectionEl);
+    if (!rowIndices.length) {
+      return;
+    }
+    if (rowIndices.length > 25) {
+      const ok = window.confirm(`Apply ${targetState.toUpperCase()} to ${rowIndices.length} rows in this section?`);
+      if (!ok) {
+        return;
+      }
+    }
+
+    window.htmx.ajax('POST', '/api/bulk-set-section', {
+      target: '#history-oob-sink',
+      swap: 'innerHTML',
+      values: {
+        sheet_name: {{ sheet.sheet_name|tojson }},
+        target_state: targetState,
+        row_indices_json: JSON.stringify(rowIndices),
+        chain_done: chainDone ? '1' : '0',
+      },
+    });
+  };
+
+  const sectionActionButtons = Array.from(document.querySelectorAll('.section-action-btn[data-bulk-state]'));
+  for (const button of sectionActionButtons) {
+    button.addEventListener('click', () => {
+      const sectionEl = button.closest('.sheet-section');
+      if (!sectionEl) {
+        return;
+      }
+      const targetState = String(button.dataset.bulkState || '');
+      if (!targetState) {
+        return;
+      }
+      const chainDone = String(button.dataset.chainDone || '0') === '1';
+      runBulkAction(sectionEl, targetState, chainDone);
+    });
+  }
+
+  const sortableTables = [];
+
+  const toSortValue = (text, type) => {
+    const cleaned = String(text || '').trim();
+    if (!cleaned) {
+      return type === 'number' ? 0 : '';
+    }
+    if (type === 'number') {
+      const normalized = cleaned.replace(/,/g, '');
+      const parsed = Number(normalized);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    const maybeNumber = Number(cleaned.replace(/,/g, ''));
+    if (Number.isFinite(maybeNumber) && /^[-+]?\d+(?:\.\d+)?$/.test(cleaned.replace(/,/g, ''))) {
+      return maybeNumber;
+    }
+    return cleaned.toLocaleLowerCase();
+  };
+
+  const getCellValue = (row, sortCol, type) => {
+    // +1 offsets the status column at index 0.
+    const cell = row.cells[sortCol + 1];
+    if (!cell) {
+      return type === 'number' ? 0 : '';
+    }
+    const numInput = cell.querySelector('input[type="number"]');
+    if (numInput) {
+      return toSortValue(numInput.value, 'number');
+    }
+    return toSortValue(cell.textContent || '', type);
+  };
+
+  for (const table of document.querySelectorAll('.data-table')) {
+    const tbody = table.tBodies && table.tBodies[0];
+    if (!tbody) {
+      continue;
+    }
+
+    const headers = Array.from(table.querySelectorAll('th[data-sort-col]'));
+    if (!headers.length) {
+      continue;
+    }
+
+    const state = { col: -1, dir: 'none', type: 'auto' };
+
+    const setHeaderState = () => {
+      for (const header of headers) {
+        const col = Number(header.dataset.sortCol || '-1');
+        const indicator = header.querySelector('.th-sort-indicator');
+        if (col === state.col && state.dir !== 'none') {
+          header.dataset.sortDir = state.dir;
+          if (indicator) {
+            indicator.textContent = state.dir === 'asc' ? '▲' : '▼';
+          }
+        } else {
+          header.dataset.sortDir = 'none';
+          if (indicator) {
+            indicator.textContent = '↕';
+          }
+        }
+      }
+    };
+
+    const sortRows = () => {
+      const rows = Array.from(tbody.querySelectorAll('tr.data-row'));
+
+      // No active column sort means restore workbook row order.
+      if (state.col < 0 || state.dir === 'none') {
+        rows.sort((a, b) => {
+          const aIndex = Number(a.dataset.rowIndex || '0');
+          const bIndex = Number(b.dataset.rowIndex || '0');
+          return aIndex - bIndex;
+        });
+        for (const row of rows) {
+          tbody.appendChild(row);
+        }
+        return;
+      }
+
+      rows.sort((a, b) => {
+        const left = getCellValue(a, state.col, state.type);
+        const right = getCellValue(b, state.col, state.type);
+
+        let cmp = 0;
+        if (typeof left === 'number' && typeof right === 'number') {
+          cmp = left - right;
+        } else {
+          cmp = String(left).localeCompare(String(right), undefined, { numeric: true, sensitivity: 'base' });
+        }
+        if (cmp === 0) {
+          const aIndex = Number(a.dataset.rowIndex || '0');
+          const bIndex = Number(b.dataset.rowIndex || '0');
+          cmp = aIndex - bIndex;
+        }
+        return state.dir === 'asc' ? cmp : -cmp;
+      });
+
+      for (const row of rows) {
+        tbody.appendChild(row);
+      }
+    };
+
+    for (const header of headers) {
+      const trigger = header.querySelector('[data-sort-trigger]');
+      if (!trigger) {
+        continue;
+      }
+      trigger.addEventListener('click', () => {
+        const col = Number(header.dataset.sortCol || '-1');
+        const sortType = String(header.dataset.sortType || 'auto');
+        if (col < 0) {
+          return;
+        }
+        if (state.col === col) {
+          if (state.dir === 'asc') {
+            state.dir = 'desc';
+          } else if (state.dir === 'desc') {
+            state.col = -1;
+            state.dir = 'none';
+            state.type = 'auto';
+          } else {
+            state.dir = 'asc';
+          }
+        } else {
+          state.col = col;
+          state.dir = 'asc';
+          state.type = sortType;
+        }
+        sortRows();
+        setHeaderState();
+      });
+    }
+
+    setHeaderState();
+    sortableTables.push({ state, sortRows, setHeaderState });
+  }
+
+  document.body.addEventListener('htmx:afterSwap', () => {
+    for (const entry of sortableTables) {
+      if (entry.state.col >= 0) {
+        entry.sortRows();
+        entry.setHeaderState();
+      }
+    }
+  });
+
+  document.body.addEventListener('progress-changed', () => {
+    for (const entry of sortableTables) {
+      if (entry.state.col >= 0) {
+        entry.sortRows();
+        entry.setHeaderState();
+      }
+    }
+  });
+})();
+</script>
 {% endblock %}

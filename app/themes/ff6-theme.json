@@ -1,0 +1,248 @@
+{
+  "meta": {
+    "name": "Opera of Ruin (FF6)",
+    "id": "ff6-opera-of-ruin",
+    "colorScheme": "dual",
+    "version": 1,
+    "source": "Inspired by Final Fantasy VI: opera house drama, Magitek steel, Esper light, and the World of Ruin",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). The group names (surfaces, lines, text, accents, crystals, states) are for human organization only and are NOT part of the variable name. The four crystal-* tokens are extra identity colors; wire them up where supported.",
+    "notExportedYet": "Non-color tokens still live only in styles.css and are intentionally omitted here: --radius, --radius-s, --shadow. For stronger FF6 flavor, add subtle stage-curtain gradients, faint machinery scanlines, and localized Esper bloom effects when non-color tokens are supported.",
+    "defaultScheme": "dark"
+  },
+  "colors": {
+    "surfaces": {
+      "bg": {
+        "value": "#120d12",
+        "desc": "World of Ruin charcoal with a velvet undertone"
+      },
+      "bg-soft": {
+        "value": "#1e121d",
+        "desc": "Shadowed stage wing behind primary content"
+      },
+      "panel": {
+        "value": "#2c1623",
+        "desc": "Opera-curtain burgundy for main panels"
+      },
+      "panel-2": {
+        "value": "#3a1c2d",
+        "desc": "Raised surface with imperial wine depth"
+      },
+      "panel-3": {
+        "value": "#4a2539",
+        "desc": "Highest elevation with dramatic theater contrast"
+      },
+      "sidebar-top": {
+        "value": "#1e121d",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#120d12",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#3a1c2d",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#2c1623",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#d7bfd0",
+        "desc": "Pale moon-rose frame line for ornate structure"
+      },
+      "line-soft": {
+        "value": "#7d5b76",
+        "desc": "Muted plum divider for internal rhythm"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#fff2fb",
+        "desc": "High-clarity ivory for readable dramatic contrast"
+      },
+      "muted": {
+        "value": "#ddbcd0",
+        "desc": "Secondary labels in faded stage-light pink"
+      },
+      "faint": {
+        "value": "#ac87a0",
+        "desc": "Tertiary copy and metadata"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#4de8ff",
+        "desc": "Esper cyan for primary interactive energy"
+      },
+      "accent-dk": {
+        "value": "#1f9fc8",
+        "desc": "Magitek cyan-steel for active/pressed states"
+      },
+      "gold": {
+        "value": "#ffce68",
+        "desc": "Imperial gilt for totals and key headings"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#82d36f",
+        "desc": "Earth analog - reclaimed life in Ruin"
+      },
+      "crystal-fire": {
+        "value": "#ff6a4e",
+        "desc": "Fire analog - burning city embers"
+      },
+      "crystal-water": {
+        "value": "#55d9ff",
+        "desc": "Water analog - Esper-laced azure"
+      },
+      "crystal-wind": {
+        "value": "#cfa1ff",
+        "desc": "Wind analog - arcane amethyst current"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#82d36f",
+        "desc": "Recovered and rebuilt progress"
+      },
+      "done-dk": {
+        "value": "#4a8d42",
+        "desc": "Darker completion shade for depth"
+      },
+      "todo": {
+        "value": "#a77f95",
+        "desc": "Pending state in dusty rose-plum"
+      },
+      "excluded": {
+        "value": "#6a526f",
+        "desc": "Set-aside state in ashen violet"
+      },
+      "danger": {
+        "value": "#ff4f63",
+        "desc": "Crisis red for destructive and critical actions"
+      }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg": {
+        "value": "#f5f2f5",
+        "desc": "World of Ruin charcoal with a velvet undertone"
+      },
+      "bg-soft": {
+        "value": "#ede6ec",
+        "desc": "Shadowed stage wing behind primary content"
+      },
+      "panel": {
+        "value": "#fefefe",
+        "desc": "Opera-curtain burgundy for main panels"
+      },
+      "panel-2": {
+        "value": "#f8f6f7",
+        "desc": "Raised surface with imperial wine depth"
+      },
+      "panel-3": {
+        "value": "#f1edef",
+        "desc": "Highest elevation with dramatic theater contrast"
+      },
+      "sidebar-top": {
+        "value": "#ede6ec",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#f5f2f5",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#f8f6f7",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#fefefe",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#8f3d77",
+        "desc": "Pale moon-rose frame line for ornate structure"
+      },
+      "line-soft": {
+        "value": "#bfa6ba",
+        "desc": "Muted plum divider for internal rhythm"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#1c3b3f",
+        "desc": "High-clarity ivory for readable dramatic contrast"
+      },
+      "muted": {
+        "value": "#426f76",
+        "desc": "Secondary labels in faded stage-light pink"
+      },
+      "faint": {
+        "value": "#6c979d",
+        "desc": "Tertiary copy and metadata"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#00c8e6",
+        "desc": "Esper cyan for primary interactive energy"
+      },
+      "accent-dk": {
+        "value": "#197e9f",
+        "desc": "Magitek cyan-steel for active/pressed states"
+      },
+      "gold": {
+        "value": "#d69100",
+        "desc": "Imperial gilt for totals and key headings"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#4fba36",
+        "desc": "Earth analog - reclaimed life in Ruin"
+      },
+      "crystal-fire": {
+        "value": "#f02600",
+        "desc": "Fire analog - burning city embers"
+      },
+      "crystal-water": {
+        "value": "#00baf0",
+        "desc": "Water analog - Esper-laced azure"
+      },
+      "crystal-wind": {
+        "value": "#7500f0",
+        "desc": "Wind analog - arcane amethyst current"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#439e2e",
+        "desc": "Recovered and rebuilt progress"
+      },
+      "done-dk": {
+        "value": "#307c27",
+        "desc": "Darker completion shade for depth"
+      },
+      "todo": {
+        "value": "#8b6077",
+        "desc": "Pending state in dusty rose-plum"
+      },
+      "excluded": {
+        "value": "#aa92af",
+        "desc": "Set-aside state in ashen violet"
+      },
+      "danger": {
+        "value": "#e6001a",
+        "desc": "Crisis red for destructive and critical actions"
+      }
+    }
+  }
+}

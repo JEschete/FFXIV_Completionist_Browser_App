@@ -1,0 +1,248 @@
+{
+  "meta": {
+    "name": "Pokemon Red Legacy",
+    "id": "pokemon-red-kanto",
+    "colorScheme": "dual",
+    "defaultScheme": "dark",
+    "version": 1,
+    "source": "Inspired by Pokemon Red: Kanto urgency, gym battle reds, and bold trainer energy.",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). Group names are organization only and are NOT part of the variable name.",
+    "notExportedYet": "Non-color tokens still live in styles.css. For stronger Red identity, add subtle Pokedex scanline overlays and battle flash transitions."
+  },
+  "colors": {
+    "surfaces": {
+      "bg": {
+        "value": "#130708",
+        "desc": "Dark battle backdrop"
+      },
+      "bg-soft": {
+        "value": "#1f0b0d",
+        "desc": "Header layer"
+      },
+      "panel": {
+        "value": "#2c1115",
+        "desc": "Primary card surface"
+      },
+      "panel-2": {
+        "value": "#3a1720",
+        "desc": "Raised panel"
+      },
+      "panel-3": {
+        "value": "#4a1f2a",
+        "desc": "Highest elevation"
+      },
+      "sidebar-top": {
+        "value": "#1f0b0d",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#130708",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#3a1720",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#2c1115",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#ff9e96",
+        "desc": "Strong frame line"
+      },
+      "line-soft": {
+        "value": "#7a3c44",
+        "desc": "Subtle divider"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#fff1ef",
+        "desc": "Primary text"
+      },
+      "muted": {
+        "value": "#e2b7b2",
+        "desc": "Secondary labels"
+      },
+      "faint": {
+        "value": "#b67f7a",
+        "desc": "Tertiary metadata"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#ff3b30",
+        "desc": "Core Red accent"
+      },
+      "accent-dk": {
+        "value": "#b3201a",
+        "desc": "Pressed state"
+      },
+      "gold": {
+        "value": "#ffcc66",
+        "desc": "Highlight token"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#8bcf6f",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#ff5a4d",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#59b8ff",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#ffe266",
+        "desc": "Wind analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#6ecf7c",
+        "desc": "Completed"
+      },
+      "done-dk": {
+        "value": "#3a8a4a",
+        "desc": "Completed dark"
+      },
+      "todo": {
+        "value": "#9f6f74",
+        "desc": "Pending"
+      },
+      "excluded": {
+        "value": "#77565c",
+        "desc": "Excluded"
+      },
+      "danger": {
+        "value": "#ff3b30",
+        "desc": "Danger"
+      }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg": {
+        "value": "#fff1f1",
+        "desc": "Light battle parchment"
+      },
+      "bg-soft": {
+        "value": "#ffe4e4",
+        "desc": "Header"
+      },
+      "panel": {
+        "value": "#ffffff",
+        "desc": "Primary card"
+      },
+      "panel-2": {
+        "value": "#fff6f6",
+        "desc": "Raised panel"
+      },
+      "panel-3": {
+        "value": "#ffecec",
+        "desc": "Highest elevation"
+      },
+      "sidebar-top": {
+        "value": "#ffe4e4",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#fff1f1",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#fff6f6",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#ffffff",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#b94a44",
+        "desc": "Frame line"
+      },
+      "line-soft": {
+        "value": "#d79f9b",
+        "desc": "Subtle divider"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#4a1f1d",
+        "desc": "Primary text"
+      },
+      "muted": {
+        "value": "#7c4a46",
+        "desc": "Secondary labels"
+      },
+      "faint": {
+        "value": "#a27470",
+        "desc": "Tertiary metadata"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#d92b22",
+        "desc": "Core Red accent"
+      },
+      "accent-dk": {
+        "value": "#9d1f1a",
+        "desc": "Pressed state"
+      },
+      "gold": {
+        "value": "#b8851e",
+        "desc": "Highlight token"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#629f49",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#d84f43",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#3f8ec9",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#b9a235",
+        "desc": "Wind analog"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#4da15a",
+        "desc": "Completed"
+      },
+      "done-dk": {
+        "value": "#347040",
+        "desc": "Completed dark"
+      },
+      "todo": {
+        "value": "#8b6166",
+        "desc": "Pending"
+      },
+      "excluded": {
+        "value": "#b09a9e",
+        "desc": "Excluded"
+      },
+      "danger": {
+        "value": "#c5332b",
+        "desc": "Danger"
+      }
+    }
+  }
+}

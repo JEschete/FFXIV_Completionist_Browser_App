@@ -1,0 +1,248 @@
+{
+  "meta": {
+    "name": "Eternal Wind (FF3 Onion Knights)",
+    "id": "ff3-onion-knights",
+    "colorScheme": "dual",
+    "version": 1,
+    "source": "Inspired by Final Fantasy III: Onion Knights, Crystal Tower, and floating continent skies",
+    "tokenConvention": "Every color key maps to a CSS custom property named --<key>. e.g. \"accent\" -> var(--accent). The group names (surfaces, lines, text, accents, crystals, states) are for human organization only and are NOT part of the variable name. The four crystal-* tokens are extra identity colors; wire them up where supported.",
+    "notExportedYet": "Non-color tokens still live only in styles.css and are intentionally omitted here: --radius, --radius-s, --shadow. To push the FF3 identity further, add subtle sky-gradient panel fills and a faint wind-glow around interactive accents when non-color tokens are supported.",
+    "defaultScheme": "dark"
+  },
+  "colors": {
+    "surfaces": {
+      "bg": {
+        "value": "#001322",
+        "desc": "Night sky over the floating continent"
+      },
+      "bg-soft": {
+        "value": "#03243c",
+        "desc": "Header elevation with a cool dawn-blue cast"
+      },
+      "panel": {
+        "value": "#08365d",
+        "desc": "Primary menu panel inspired by Crystal Tower stone-blue"
+      },
+      "panel-2": {
+        "value": "#0f4d7d",
+        "desc": "Raised surface for menus and controls"
+      },
+      "panel-3": {
+        "value": "#1b68a9",
+        "desc": "Highest elevation surface with brighter sky tint"
+      },
+      "sidebar-top": {
+        "value": "#03243c",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#001322",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#0f4d7d",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#08365d",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#8cf0ff",
+        "desc": "Bright crystal-blue frame line"
+      },
+      "line-soft": {
+        "value": "#2f8dbc",
+        "desc": "Subtle divider for internal structure"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#edf5ff",
+        "desc": "Primary text with clean moonlit contrast"
+      },
+      "muted": {
+        "value": "#a8e7f4",
+        "desc": "Secondary labels and helper copy"
+      },
+      "faint": {
+        "value": "#62abc1",
+        "desc": "Tertiary text and quiet metadata"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#00e6ff",
+        "desc": "Eternal Wind cyan for primary interactive emphasis"
+      },
+      "accent-dk": {
+        "value": "#00a7d8",
+        "desc": "Deeper sky-blue for active and pressed states"
+      },
+      "gold": {
+        "value": "#ffe56a",
+        "desc": "Warm relic-gold for highlights and section titles"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#79e66d",
+        "desc": "Earth Crystal analog - vibrant growth green"
+      },
+      "crystal-fire": {
+        "value": "#ff8c3f",
+        "desc": "Fire Crystal analog - bright ember orange"
+      },
+      "crystal-water": {
+        "value": "#52ebff",
+        "desc": "Water Crystal analog - luminous cyan"
+      },
+      "crystal-wind": {
+        "value": "#c9ff63",
+        "desc": "Wind Crystal analog - bright wind-lime"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#79e66d",
+        "desc": "Completed state aligned with earth crystal green"
+      },
+      "done-dk": {
+        "value": "#3f9956",
+        "desc": "Darker done shade for depth and gradients"
+      },
+      "todo": {
+        "value": "#66a6c8",
+        "desc": "Pending state in cool steel-blue"
+      },
+      "excluded": {
+        "value": "#4b7591",
+        "desc": "Set-aside state in desaturated indigo"
+      },
+      "danger": {
+        "value": "#ff5f69",
+        "desc": "Critical and destructive actions"
+      }
+    }
+  },
+  "colorsLight": {
+    "surfaces": {
+      "bg": {
+        "value": "#f2f4f5",
+        "desc": "Night sky over the floating continent"
+      },
+      "bg-soft": {
+        "value": "#e6eaed",
+        "desc": "Header elevation with a cool dawn-blue cast"
+      },
+      "panel": {
+        "value": "#fefefe",
+        "desc": "Primary menu panel inspired by Crystal Tower stone-blue"
+      },
+      "panel-2": {
+        "value": "#f6f7f8",
+        "desc": "Raised surface for menus and controls"
+      },
+      "panel-3": {
+        "value": "#edeff1",
+        "desc": "Highest elevation surface with brighter sky tint"
+      },
+      "sidebar-top": {
+        "value": "#e6eaed",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#f2f4f5",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#f6f7f8",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#fefefe",
+        "desc": "Top-right controls gradient end"
+      }
+    },
+    "lines": {
+      "line": {
+        "value": "#2993a3",
+        "desc": "Bright crystal-blue frame line"
+      },
+      "line-soft": {
+        "value": "#98bbcd",
+        "desc": "Subtle divider for internal structure"
+      }
+    },
+    "text": {
+      "text": {
+        "value": "#1c303f",
+        "desc": "Primary text with clean moonlit contrast"
+      },
+      "muted": {
+        "value": "#425f76",
+        "desc": "Secondary labels and helper copy"
+      },
+      "faint": {
+        "value": "#6c879d",
+        "desc": "Tertiary text and quiet metadata"
+      }
+    },
+    "accents": {
+      "accent": {
+        "value": "#00cfe6",
+        "desc": "Eternal Wind cyan for primary interactive emphasis"
+      },
+      "accent-dk": {
+        "value": "#008eb8",
+        "desc": "Deeper sky-blue for active and pressed states"
+      },
+      "gold": {
+        "value": "#d6b100",
+        "desc": "Warm relic-gold for highlights and section titles"
+      }
+    },
+    "crystals": {
+      "crystal-earth": {
+        "value": "#34cd23",
+        "desc": "Earth Crystal analog - vibrant growth green"
+      },
+      "crystal-fire": {
+        "value": "#f06000",
+        "desc": "Fire Crystal analog - bright ember orange"
+      },
+      "crystal-water": {
+        "value": "#00d4f0",
+        "desc": "Water Crystal analog - luminous cyan"
+      },
+      "crystal-wind": {
+        "value": "#9df000",
+        "desc": "Wind Crystal analog - bright wind-lime"
+      }
+    },
+    "states": {
+      "done": {
+        "value": "#2cae1e",
+        "desc": "Completed state aligned with earth crystal green"
+      },
+      "done-dk": {
+        "value": "#277c3d",
+        "desc": "Darker done shade for depth and gradients"
+      },
+      "todo": {
+        "value": "#4d829d",
+        "desc": "Pending state in cool steel-blue"
+      },
+      "excluded": {
+        "value": "#8ea4b4",
+        "desc": "Set-aside state in desaturated indigo"
+      },
+      "danger": {
+        "value": "#e6000e",
+        "desc": "Critical and destructive actions"
+      }
+    }
+  }
+}
