@@ -899,6 +899,49 @@ def fetch_rows(
     return out
 
 
+def snapshot_trackable_rows(
+    conn: sqlite3.Connection,
+    run_id: int,
+    character_id: int,
+    starting_class: str | None = None,
+) -> dict[tuple[str, int], dict[str, Any]]:
+    """Snapshot effective state + progress for all trackable rows.
+
+    Used by import history to compute before/after diffs without depending on
+    UI filters or per-sheet traversal.
+    """
+    eff, join, jparams = _state_clauses(starting_class)
+    rows = conn.execute(
+        f"""
+        SELECT n.sheet_name, n.row_index, n.row_type,
+               {eff} AS eff,
+               p.progress_percent
+        FROM nodes n
+        LEFT JOIN character_progress p
+          ON p.character_id = ? AND p.run_id = n.run_id
+         AND p.sheet_name = n.sheet_name AND p.row_index = n.row_index
+        {join}
+        WHERE n.run_id = ?
+          AND n.row_type IN ('checkbox', 'value')
+        """,
+        (character_id, *jparams, run_id),
+    ).fetchall()
+
+    snap: dict[tuple[str, int], dict[str, Any]] = {}
+    for r in rows:
+        pct_raw = r["progress_percent"]
+        pct = float(pct_raw) if isinstance(pct_raw, (int, float)) else None
+        key = (str(r["sheet_name"]), int(r["row_index"]))
+        snap[key] = {
+            "sheet_name": key[0],
+            "row_index": key[1],
+            "row_type": str(r["row_type"]),
+            "state": str(r["eff"]),
+            "progress_percent": pct,
+        }
+    return snap
+
+
 def group_rows_by_section(rows: list[dict]) -> list[dict]:
     """Turn a flat row list into [{section, rows:[...]}] preserving order."""
     groups: list[dict] = []

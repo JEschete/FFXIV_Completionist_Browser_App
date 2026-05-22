@@ -4,6 +4,7 @@
 {% set lvl = (lvl_raw|float)|round(0, 'floor')|int %}
 <tr id="row-{{ row.row_index }}" class="data-row state-{{ row.eff }} {{ 'is-value' if is_value }}"
     data-row-index="{{ row.row_index }}"
+  data-row-type="{{ row.row_type }}"
     {% if oob|default(false) %}hx-swap-oob="outerHTML"{% endif %}>
   <td class="cell-status">
     {% if is_value %}

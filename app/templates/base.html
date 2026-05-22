@@ -3,7 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark" />
   <title>{% block title %}FFXIV Completion Tracker{% endblock %}</title>
+  <style>
+    /* First-paint fallback so full page navigations don't flash default gray. */
+    html, body {
+      background: #0b0e15;
+      color: #e7ecf5;
+    }
+  </style>
   <script>
     // Avoid first-paint sidebar flash on mobile before Alpine applies state.
     (function() {
@@ -16,12 +24,15 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/static/styles.css?v=13" />
+  <link rel="stylesheet" href="/static/styles.css?v=14" />
   <script src="/static/vendor/htmx.min.js" defer></script>
   <script src="/static/vendor/alpine-collapse.min.js" defer></script>
   <script src="/static/vendor/alpine.min.js" defer></script>
 </head>
-<body hx-headers='{"X-Requested-With": "htmx"}'>
+<body
+  hx-headers='{"X-Requested-With": "htmx"}'
+  data-character-id="{{ character.id if character else '' }}"
+  data-active-sheet="{{ active_sheet|default('') }}">
 {% from "macros.html" import tree_node, progress_bar %}
 <div class="layout"
      x-data="{ sidebarCollapsed: window.innerWidth < 880 }"
@@ -110,6 +121,11 @@
             </select>
           </form>
 
+          <div class="history-controls" role="group" aria-label="Undo and redo controls">
+            <button type="button" class="btn-mini history-btn" data-history-undo disabled>Undo</button>
+            <button type="button" class="btn-mini history-btn" data-history-redo disabled>Redo</button>
+          </div>
+
           <nav class="quick-links" aria-label="Quick links">
             <a href="/" class="quick-link {{ 'active' if request.url.path == '/' }}">Overview</a>
             <a href="/chains" class="quick-link {{ 'active' if request.url.path == '/chains' }}">Chains</a>
@@ -136,5 +152,278 @@
 </div>
 
 <div id="chain-drawer" class="chain-drawer"></div>
+<div id="history-oob-sink" hidden></div>
+
+<script>
+(() => {
+  const body = document.body;
+  const undoBtn = document.querySelector('[data-history-undo]');
+  const redoBtn = document.querySelector('[data-history-redo]');
+  const characterId = String(body?.dataset.characterId || '').trim();
+  const activeSheet = String(body?.dataset.activeSheet || '').trim();
+  if (!body || !undoBtn || !redoBtn || !characterId) {
+    return;
+  }
+
+  const MAX_STEPS = 100;
+  const storageKey = `ffxiv:history:v1:${characterId}`;
+  const state = {
+    past: [],
+    future: [],
+    pending: false,
+  };
+
+  const cleanSnapshot = (raw) => {
+    if (!raw || typeof raw !== 'object') {
+      return null;
+    }
+    const valueState = String(raw.state || 'todo');
+    const pct = typeof raw.progress_percent === 'number' ? raw.progress_percent : null;
+    return { state: valueState, progress_percent: pct };
+  };
+
+  const cleanStep = (raw) => {
+    if (!raw || typeof raw !== 'object') {
+      return null;
+    }
+    const rawChanges = Array.isArray(raw.changes) ? raw.changes : [];
+    const changes = [];
+    for (const change of rawChanges) {
+      if (!change || typeof change !== 'object') {
+        continue;
+      }
+      const sheetName = String(change.sheet_name || '').trim();
+      const rowIndex = Number(change.row_index);
+      if (!sheetName || !Number.isInteger(rowIndex)) {
+        continue;
+      }
+      const before = cleanSnapshot(change.before);
+      const after = cleanSnapshot(change.after);
+      if (!before || !after) {
+        continue;
+      }
+      changes.push({
+        sheet_name: sheetName,
+        row_index: rowIndex,
+        row_type: String(change.row_type || 'checkbox'),
+        before,
+        after,
+      });
+    }
+    if (!changes.length) {
+      return null;
+    }
+    return {
+      kind: String(raw.kind || 'row-change'),
+      action: String(raw.action || 'Update rows'),
+      created_at: String(raw.created_at || new Date().toISOString()),
+      import_run_id: raw.import_run_id ? String(raw.import_run_id) : undefined,
+      changes,
+    };
+  };
+
+  const saveState = () => {
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify({
+        past: state.past,
+        future: state.future,
+      }));
+    } catch (_err) {
+      // Ignore persistence failures.
+    }
+  };
+
+  const loadState = () => {
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (!raw) {
+        return;
+      }
+      const decoded = JSON.parse(raw);
+      const past = Array.isArray(decoded?.past) ? decoded.past : [];
+      const future = Array.isArray(decoded?.future) ? decoded.future : [];
+      state.past = past.map(cleanStep).filter(Boolean);
+      state.future = future.map(cleanStep).filter(Boolean);
+    } catch (_err) {
+      state.past = [];
+      state.future = [];
+    }
+  };
+
+  const hasImportRun = (runId) => {
+    const id = String(runId || '').trim();
+    if (!id) {
+      return false;
+    }
+    const existsIn = (arr) => arr.some((step) => String(step?.import_run_id || '') === id);
+    return existsIn(state.past) || existsIn(state.future);
+  };
+
+  const updateButtons = () => {
+    const pending = state.pending;
+    const canUndo = !pending && state.past.length > 0;
+    const canRedo = !pending && state.future.length > 0;
+
+    undoBtn.disabled = !canUndo;
+    redoBtn.disabled = !canRedo;
+
+    const undoStep = state.past[state.past.length - 1];
+    const redoStep = state.future[state.future.length - 1];
+    undoBtn.title = undoStep ? `Undo: ${undoStep.action}` : 'Nothing to undo';
+    redoBtn.title = redoStep ? `Redo: ${redoStep.action}` : 'Nothing to redo';
+  };
+
+  const applyOobHtml = (htmlText) => {
+    if (!htmlText) {
+      return;
+    }
+    const template = document.createElement('template');
+    template.innerHTML = htmlText;
+    const oobNodes = Array.from(template.content.querySelectorAll('[hx-swap-oob]'));
+    for (const node of oobNodes) {
+      const id = node.getAttribute('id');
+      if (!id) {
+        continue;
+      }
+      const live = document.getElementById(id);
+      if (!live) {
+        continue;
+      }
+      const replacement = node.cloneNode(true);
+      replacement.removeAttribute('hx-swap-oob');
+      live.replaceWith(replacement);
+      if (window.htmx && typeof window.htmx.process === 'function') {
+        window.htmx.process(replacement);
+      }
+    }
+  };
+
+  const dispatchHxTriggers = (raw) => {
+    if (!raw) {
+      body.dispatchEvent(new CustomEvent('progress-changed', { bubbles: true, detail: true }));
+      return;
+    }
+
+    const rawText = String(raw).trim();
+    if (!rawText) {
+      return;
+    }
+
+    if (rawText.startsWith('{')) {
+      try {
+        const payload = JSON.parse(rawText);
+        for (const [eventName, detail] of Object.entries(payload)) {
+          body.dispatchEvent(new CustomEvent(eventName, { bubbles: true, detail }));
+        }
+        return;
+      } catch (_err) {
+        // Fall through to simple event list parsing.
+      }
+    }
+
+    const names = rawText.split(',').map((name) => name.trim()).filter(Boolean);
+    for (const eventName of names) {
+      body.dispatchEvent(new CustomEvent(eventName, { bubbles: true, detail: true }));
+    }
+  };
+
+  const pushStep = (rawStep, opts = {}) => {
+    const step = cleanStep(rawStep);
+    if (!step) {
+      return false;
+    }
+    if (step.import_run_id && hasImportRun(step.import_run_id)) {
+      return false;
+    }
+
+    state.past.push(step);
+    if (state.past.length > MAX_STEPS) {
+      state.past = state.past.slice(state.past.length - MAX_STEPS);
+    }
+    if (!opts.keepFuture) {
+      state.future = [];
+    }
+    saveState();
+    updateButtons();
+    return true;
+  };
+
+  const applyStep = async (direction, step) => {
+    const form = new FormData();
+    form.set('direction', direction);
+    form.set('step_json', JSON.stringify(step));
+    form.set('current_sheet', activeSheet);
+
+    const response = await fetch('/api/history/apply', {
+      method: 'POST',
+      body: form,
+      headers: { 'Accept': 'text/html' },
+      cache: 'no-store',
+      credentials: 'same-origin',
+    });
+    if (!response.ok) {
+      throw new Error(`History apply failed (${response.status})`);
+    }
+
+    const html = await response.text();
+    applyOobHtml(html);
+    dispatchHxTriggers(response.headers.get('HX-Trigger'));
+  };
+
+  const runMove = async (direction) => {
+    if (state.pending) {
+      return;
+    }
+
+    const from = direction === 'undo' ? state.past : state.future;
+    const to = direction === 'undo' ? state.future : state.past;
+    const step = from[from.length - 1];
+    if (!step) {
+      return;
+    }
+
+    state.pending = true;
+    updateButtons();
+    try {
+      await applyStep(direction, step);
+      from.pop();
+      to.push(step);
+      if (to.length > MAX_STEPS) {
+        to.splice(0, to.length - MAX_STEPS);
+      }
+      saveState();
+    } catch (err) {
+      // Keep stack as-is if apply fails so the user can retry.
+      console.error(err);
+    } finally {
+      state.pending = false;
+      updateButtons();
+    }
+  };
+
+  undoBtn.addEventListener('click', () => {
+    void runMove('undo');
+  });
+  redoBtn.addEventListener('click', () => {
+    void runMove('redo');
+  });
+
+  body.addEventListener('history-step', (event) => {
+    pushStep(event.detail);
+  });
+
+  loadState();
+  updateButtons();
+
+  window.FFXIVHistory = {
+    pushExternalStep: (step) => pushStep(step),
+    hasImportRun,
+    undo: () => runMove('undo'),
+    redo: () => runMove('redo'),
+    applyOobHtml,
+    dispatchHxTriggers,
+  };
+})();
+</script>
 </body>
 </html>

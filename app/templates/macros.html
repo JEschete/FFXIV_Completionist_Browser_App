@@ -14,7 +14,8 @@
 {% macro tree_node(node, active_sheet, depth=0) %}
 {% set is_active = node.sheet_name == active_sheet %}
 {% set has_children = node.children|length > 0 %}
-<li class="tree-item" x-data="{ open: {{ 'true' if (depth < 1 or node.has_active) else 'false' }} }">
+{% set is_open = (depth < 1 or node.has_active) %}
+<li class="tree-item" x-data="{ open: {{ 'true' if is_open else 'false' }} }">
   <div class="tree-row depth-{{ depth }} {{ 'active' if is_active }}">
     {% if has_children %}
       <button class="tree-caret" type="button" @click="open = !open"
@@ -32,7 +33,7 @@
     </a>
   </div>
   {% if has_children %}
-  <ul class="tree-children" x-show="open" x-collapse>
+  <ul class="tree-children" x-show="open" x-collapse {% if not is_open %}style="display:none"{% endif %}>
     {% for child in node.children %}
       {{ tree_node(child, active_sheet, depth + 1) }}
     {% endfor %}

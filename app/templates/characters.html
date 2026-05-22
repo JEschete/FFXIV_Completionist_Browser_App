@@ -354,6 +354,70 @@
   const logEl = document.getElementById('import-run-log');
   const stopStates = new Set(['completed', 'failed']);
   let timer = null;
+  let importHistoryQueued = false;
+
+  const importSeenKey = `ffxiv:import-history-seen:${runId}`;
+  const hasSeenImportHistory = () => {
+    try {
+      return window.localStorage.getItem(importSeenKey) === '1';
+    } catch (_err) {
+      return false;
+    }
+  };
+  const markImportHistorySeen = () => {
+    try {
+      window.localStorage.setItem(importSeenKey, '1');
+    } catch (_err) {
+      // Ignore storage failures.
+    }
+  };
+
+  const maybeQueueImportHistoryStep = async (summary) => {
+    if (importHistoryQueued || hasSeenImportHistory()) {
+      return;
+    }
+    if (!summary || typeof summary !== 'object') {
+      return;
+    }
+    const historySummary = summary.history_step;
+    if (!historySummary || typeof historySummary !== 'object') {
+      return;
+    }
+
+    const historyRunId = String(historySummary.import_run_id || runId || '').trim();
+    if (!historyRunId) {
+      return;
+    }
+    if (!window.FFXIVHistory || typeof window.FFXIVHistory.pushExternalStep !== 'function') {
+      return;
+    }
+    if (typeof window.FFXIVHistory.hasImportRun === 'function' && window.FFXIVHistory.hasImportRun(historyRunId)) {
+      markImportHistorySeen();
+      importHistoryQueued = true;
+      return;
+    }
+
+    importHistoryQueued = true;
+    try {
+      const response = await fetch(`/characters/import-history-step?run_id=${encodeURIComponent(historyRunId)}`, {
+        headers: { 'Accept': 'application/json' },
+        cache: 'no-store'
+      });
+      if (!response.ok) {
+        importHistoryQueued = false;
+        return;
+      }
+      const step = await response.json();
+      const inserted = window.FFXIVHistory.pushExternalStep(step);
+      if (inserted !== false) {
+        markImportHistorySeen();
+      } else {
+        importHistoryQueued = false;
+      }
+    } catch (_err) {
+      importHistoryQueued = false;
+    }
+  };
 
   const poll = async () => {
     try {
@@ -395,6 +459,7 @@
         if (!logEl.textContent.includes('[done]')) {
           logEl.textContent += line;
         }
+        void maybeQueueImportHistoryStep(s);
       }
       if (data.error && data.status === 'failed') {
         if (!logEl.textContent.includes('[error]')) {
