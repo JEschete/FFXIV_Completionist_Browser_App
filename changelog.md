@@ -17,6 +17,18 @@
 [done] applied=30813, matched=29073/29214, unmatched=126
 ```
 
+### Themes, Settings, and UI Polish
+- Added a dedicated Settings page with persistent theme controls.
+- Added theme and scheme selection (`default`, `dark`, `light`) sourced from `app/themes/*.json`.
+- Added server-side theme catalog loading and validation with graceful fallback behavior.
+- Added first-paint theme-aware background/text injection to reduce wrong-theme flashes on navigation.
+- Added shared chrome tokens (`sidebar-top`, `sidebar-bottom`, `chrome-top`, `chrome-bottom`) and applied them to the sidebar plus top-right controls so those regions now follow active theme values.
+- Updated theme ordering in the Settings dropdown to: FF by numeric order, then Pokemon by generation acronym order (RBY, GSC, RSE, DPPL), then non-FF themes.
+- Added Vagrant Story palette tuning for both light and dark schemes based on visual references.
+- Updated topbar quick-link order: `Characters` now appears before `Chains`, and `Credits` now appears to the right of `Settings`.
+- Fixed submenu parenting during ingest using menu hyperlink targets so `Companion Rank` and `Companion Skills` stay under `Char. Menu - Companion` (and future ingests keep this structure).
+- Added a Lodestone language reminder in the probe workflow and docs to switch Lodestone to English before scraping/importing.
+
 ### Issue Updates
 - #17 When downloading and launching a new installer from the GUI, the running GUI now closes before the installer starts to avoid locked-file and update-flow conflicts. Status: fixed. Test status: needs test.
 - #19 JSON import from file picker could fail while dropdown selection incorrectly took precedence in some flows. Import source precedence is now explicit and file-picker handling is corrected. Status: fixed. Test status: tested.
