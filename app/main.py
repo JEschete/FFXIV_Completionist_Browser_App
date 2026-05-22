@@ -30,7 +30,7 @@ if __package__ in {None, ""}:
 
 from contextlib import asynccontextmanager
 
-from app import db, lodestone_import, progress_io
+from app import db, desktop_import, lodestone_import, progress_io
 
 
 def reconcile_progress_sidecars() -> None:
@@ -371,35 +371,7 @@ def _run_character_import_job(
             clear_existing=clear_existing,
             progress=lambda msg: _append_character_import_run_log(run_id, msg),
         )
-        unmatched_report_path: Path | None = None
-        if summary.unmatched_items:
-            try:
-                CHAR_IMPORT_UNMATCHED_DIR.mkdir(parents=True, exist_ok=True)
-                unmatched_report_path = CHAR_IMPORT_UNMATCHED_DIR / f"{run_id}.json"
-                unmatched_payload = {
-                    "run_id": run_id,
-                    "character_id": summary.character_id,
-                    "character_name": summary.character_name,
-                    "source_path": summary.source_path,
-                    "created_at": dt.datetime.now().isoformat(),
-                    "total_candidates": summary.total_candidates,
-                    "matched_candidates": summary.matched_candidates,
-                    "unmatched_candidates": summary.unmatched_candidates,
-                    "items": summary.unmatched_items,
-                }
-                unmatched_report_path.write_text(
-                    json.dumps(unmatched_payload, ensure_ascii=False, indent=2),
-                    encoding="utf-8",
-                )
-                _append_character_import_run_log(
-                    run_id,
-                    f"Saved unmatched report to {unmatched_report_path}",
-                )
-            except Exception as exc:
-                _append_character_import_run_log(
-                    run_id,
-                    f"Could not save unmatched report: {exc}",
-                )
+        unmatched_report_path = _write_unmatched_report(run_id, summary)
         _update_character_import_run(
             run_id,
             status="completed",
@@ -427,6 +399,98 @@ def _run_character_import_job(
             finished_at=dt.datetime.now().isoformat(),
         )
         _append_character_import_run_log(run_id, f"Import job failed: {exc}")
+        _append_character_import_run_log(run_id, lodestone_import.format_exception(exc))
+    finally:
+        conn.close()
+
+
+def _write_unmatched_report(
+    run_id: str,
+    summary: lodestone_import.ImportSummary,
+) -> Path | None:
+    unmatched_report_path: Path | None = None
+    if not summary.unmatched_items:
+        return None
+    try:
+        CHAR_IMPORT_UNMATCHED_DIR.mkdir(parents=True, exist_ok=True)
+        unmatched_report_path = CHAR_IMPORT_UNMATCHED_DIR / f"{run_id}.json"
+        unmatched_payload = {
+            "run_id": run_id,
+            "character_id": summary.character_id,
+            "character_name": summary.character_name,
+            "source_path": summary.source_path,
+            "created_at": dt.datetime.now().isoformat(),
+            "total_candidates": summary.total_candidates,
+            "matched_candidates": summary.matched_candidates,
+            "unmatched_candidates": summary.unmatched_candidates,
+            "items": summary.unmatched_items,
+        }
+        unmatched_report_path.write_text(
+            json.dumps(unmatched_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        _append_character_import_run_log(
+            run_id,
+            f"Saved unmatched report to {unmatched_report_path}",
+        )
+    except Exception as exc:
+        _append_character_import_run_log(
+            run_id,
+            f"Could not save unmatched report: {exc}",
+        )
+    return unmatched_report_path
+
+
+def _run_desktop_import_job(
+    run_id: str,
+    *,
+    character_id: int,
+    completion_path: Path,
+    clear_existing: bool,
+) -> None:
+    _update_character_import_run(
+        run_id,
+        status="running",
+        started_at=dt.datetime.now().isoformat(),
+    )
+    _append_character_import_run_log(run_id, "Desktop import job started")
+    conn = db.get_connection()
+    try:
+        summary = desktop_import.import_desktop_completion(
+            conn,
+            character_id=character_id,
+            completion_path=completion_path,
+            clear_existing=clear_existing,
+            progress=lambda msg: _append_character_import_run_log(run_id, msg),
+        )
+        unmatched_report_path = _write_unmatched_report(run_id, summary)
+        _update_character_import_run(
+            run_id,
+            status="completed",
+            finished_at=dt.datetime.now().isoformat(),
+            unmatched_report_path=(str(unmatched_report_path) if unmatched_report_path else None),
+            summary={
+                "character_id": summary.character_id,
+                "character_name": summary.character_name,
+                "source_path": summary.source_path,
+                "run_id": summary.run_id,
+                "total_candidates": summary.total_candidates,
+                "matched_candidates": summary.matched_candidates,
+                "unmatched_candidates": summary.unmatched_candidates,
+                "rows_applied": summary.rows_applied,
+                "rows_skipped_already_done": summary.rows_skipped_already_done,
+                "unmatched_sample": summary.unmatched_items[:20],
+            },
+        )
+        _append_character_import_run_log(run_id, "Desktop import job completed")
+    except Exception as exc:
+        _update_character_import_run(
+            run_id,
+            status="failed",
+            error=str(exc).strip() or exc.__class__.__name__,
+            finished_at=dt.datetime.now().isoformat(),
+        )
+        _append_character_import_run_log(run_id, f"Desktop import job failed: {exc}")
         _append_character_import_run_log(run_id, lodestone_import.format_exception(exc))
     finally:
         conn.close()
@@ -650,6 +714,7 @@ def characters_page(
     error: str = "",
     run_id: str = "",
     payload_path: str = "",
+    desktop_path: str = "",
 ):
     ctx = Ctx(request)
     try:
@@ -668,6 +733,11 @@ def characters_page(
         if not suggested_payload and payload_options:
             suggested_payload = payload_options[0]
 
+        desktop_options = [str(p) for p in desktop_import.list_detected_completion_files(limit=30)]
+        suggested_desktop_path = desktop_path.strip()
+        if not suggested_desktop_path and desktop_options:
+            suggested_desktop_path = desktop_options[0]
+
         return ctx.render("characters.html", {
             "error": error,
             "starting_classes": db.STARTING_CLASSES,
@@ -675,6 +745,8 @@ def characters_page(
             "import_run": run,
             "suggested_payload": suggested_payload,
             "payload_options": payload_options,
+            "suggested_desktop_path": suggested_desktop_path,
+            "desktop_completion_options": desktop_options,
             "active_sheet": None,
         })
     finally:
@@ -736,6 +808,7 @@ def character_import_lodestone(
     with CHAR_IMPORT_RUNS_LOCK:
         CHAR_IMPORT_RUNS[run_id] = {
             "id": run_id,
+            "import_type": "lodestone-json",
             "status": "queued",
             "character_id": character_id,
             "character_name": char["name"],
@@ -763,6 +836,92 @@ def character_import_lodestone(
     )
 
 
+@app.post("/characters/import-desktop-app")
+def character_import_desktop_app(
+    character_id: int = Form(...),
+    completion_path: str = Form(""),
+    completion_file: UploadFile | str | None = File(None),
+    clear_existing: str = Form("0"),
+):
+    resolved_path: Path | None = None
+
+    if isinstance(completion_file, UploadFile) and completion_file.filename:
+        try:
+            resolved_path = save_uploaded_payload(completion_file)
+        except OSError as exc:
+            return RedirectResponse(
+                f"/characters?error={quote(f'Could not save uploaded desktop completion file: {exc}')}",
+                status_code=303,
+            )
+    elif isinstance(completion_file, str) and completion_file.strip():
+        resolved_path = resolve_payload_path(completion_file)
+    else:
+        resolved_path = resolve_payload_path(completion_path)
+        if resolved_path is None:
+            detected = desktop_import.list_detected_completion_files(limit=1)
+            if detected:
+                resolved_path = detected[0]
+
+    if resolved_path is None:
+        return RedirectResponse(
+            f"/characters?error={quote('Choose a desktop completion JSON file or pick a detected completion path.')}",
+            status_code=303,
+        )
+    if not resolved_path.exists() or not resolved_path.is_file():
+        return RedirectResponse(
+            f"/characters?error={quote(f'Desktop completion file not found: {resolved_path}')}",
+            status_code=303,
+        )
+
+    conn = db.get_connection()
+    try:
+        char = db.get_character(conn, character_id)
+    finally:
+        conn.close()
+    if char is None:
+        return RedirectResponse(
+            f"/characters?error={quote(f'Character id {character_id} was not found')}",
+            status_code=303,
+        )
+
+    run_id = uuid.uuid4().hex
+    log_path = CHAR_IMPORT_LOG_DIR / f"{run_id}.log"
+    clear_existing_flag = clear_existing == "1"
+    _append_lodestone_log_file(
+        log_path,
+        f"[{dt.datetime.now().strftime('%H:%M:%S')}] Desktop import created for character_id={character_id} completion={resolved_path}",
+    )
+    with CHAR_IMPORT_RUNS_LOCK:
+        CHAR_IMPORT_RUNS[run_id] = {
+            "id": run_id,
+            "import_type": "desktop-app",
+            "status": "queued",
+            "character_id": character_id,
+            "character_name": char["name"],
+            "payload_path": str(resolved_path),
+            "clear_existing": clear_existing_flag,
+            "log_path": str(log_path),
+            "logs": [f"[{dt.datetime.now().strftime('%H:%M:%S')}] Desktop import queued"],
+        }
+
+    worker = threading.Thread(
+        target=_run_desktop_import_job,
+        kwargs={
+            "run_id": run_id,
+            "character_id": character_id,
+            "completion_path": resolved_path,
+            "clear_existing": clear_existing_flag,
+        },
+        daemon=True,
+    )
+    worker.start()
+
+    return RedirectResponse(
+        f"/characters?run_id={quote(run_id)}&desktop_path={quote(str(resolved_path))}",
+        status_code=303,
+    )
+
+
 @app.get("/characters/import-status")
 def character_import_status(run_id: str):
     with CHAR_IMPORT_RUNS_LOCK:
@@ -773,6 +932,7 @@ def character_import_status(run_id: str):
         summary = run.get("summary") or {}
         payload = {
             "id": run.get("id"),
+            "import_type": run.get("import_type"),
             "status": run.get("status"),
             "error": run.get("error"),
             "character_id": run.get("character_id"),

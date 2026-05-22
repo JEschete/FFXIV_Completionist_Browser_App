@@ -740,6 +740,23 @@ img.brand-mark { object-fit: cover; }
   padding: 16px;
   max-width: 860px;
 }
+.char-import-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(320px, 1fr));
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.char-import-grid .probe-card {
+  max-width: none;
+}
+.char-import-monitor-card {
+  max-width: none;
+}
+.char-import-monitor-card .probe-monitor {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 0;
+}
 .probe-form {
   display: flex;
   flex-direction: column;
@@ -883,6 +900,17 @@ img.brand-mark { object-fit: cover; }
 }
 
 @media (max-width: 880px) {
+  .char-import-grid {
+    grid-template-columns: 1fr;
+  }
+  .char-create {
+    flex-wrap: wrap;
+  }
+  .char-create input {
+    min-width: 220px;
+    flex: 1;
+  }
+
   .layout,
   .layout.sidebar-collapsed { grid-template-columns: 1fr; }
 

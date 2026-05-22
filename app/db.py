@@ -568,6 +568,46 @@ def fetch_all_sheets(conn: sqlite3.Connection, run_id: int) -> list[sqlite3.Row]
     )
 
 
+def _sheet_rollups_live(
+    conn: sqlite3.Connection,
+    run_id: int,
+    character_id: int,
+    starting_class: str | None = None,
+) -> dict[str, dict[str, int]]:
+    """Read rollups directly from nodes+character_progress without touching
+    the cached progress_rollup table. Used as a lock-safe fallback while a
+    long-running writer holds the DB write lock."""
+    eff, join, jparams = _state_clauses(starting_class)
+    rows = conn.execute(
+        f"""
+        SELECT sheet_name,
+               SUM(CASE WHEN eff = 'done' THEN 1 ELSE 0 END) AS done,
+               SUM(CASE WHEN eff = 'excluded' THEN 1 ELSE 0 END) AS excluded,
+               COUNT(*) AS total
+        FROM (
+            SELECT n.sheet_name, {eff} AS eff
+            FROM nodes n
+            LEFT JOIN character_progress p
+              ON p.character_id = ? AND p.run_id = n.run_id
+             AND p.sheet_name = n.sheet_name AND p.row_index = n.row_index
+            {join}
+            WHERE n.run_id = ? AND n.row_type IN ('checkbox', 'value')
+        )
+        GROUP BY sheet_name
+        """,
+        (character_id, *jparams, run_id),
+    ).fetchall()
+    return {
+        r["sheet_name"]: {
+            "done": r["done"],
+            "excluded": r["excluded"],
+            "total": r["total"],
+            "countable": r["total"] - r["excluded"],
+        }
+        for r in rows
+    }
+
+
 def sheet_rollups(
     conn: sqlite3.Connection,
     run_id: int,
@@ -580,11 +620,23 @@ def sheet_rollups(
     by set_row_state's delta updates, so this is one indexed scan over ~229
     rows instead of an aggregation over the full nodes set.
     """
-    _ensure_rollup_seeded(conn, character_id, run_id, starting_class)
-    # Seeding inside _ensure_rollup_seeded opens a transaction on first INSERT.
-    # Commit unconditionally so a read-only caller (e.g. a browse render) still
-    # persists the seed when the connection closes. No-op if nothing changed.
-    conn.commit()
+    try:
+        _ensure_rollup_seeded(conn, character_id, run_id, starting_class)
+        # Seeding inside _ensure_rollup_seeded opens a transaction on first INSERT.
+        # Commit unconditionally so a read-only caller (e.g. a browse render) still
+        # persists the seed when the connection closes. No-op if nothing changed.
+        conn.commit()
+    except sqlite3.OperationalError as exc:
+        # During large imports another connection can hold a write transaction.
+        # Fall back to a read-only rollup query so page renders keep working.
+        if "locked" not in str(exc).lower():
+            raise
+        try:
+            conn.rollback()
+        except sqlite3.Error:
+            pass
+        return _sheet_rollups_live(conn, run_id, character_id, starting_class)
+
     rows = conn.execute(
         """
         SELECT sheet_name, done, excluded, total

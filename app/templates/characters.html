@@ -14,59 +14,105 @@
 
 {% if error %}<div class="error-banner">{{ error }}</div>{% endif %}
 
-<section class="probe-card char-import-card">
-  <form class="probe-form" method="post" action="/characters/import-lodestone" enctype="multipart/form-data">
-    <h2>Import from Lodestone JSON</h2>
-    <p class="page-sub">
-      Choose a character and payload file to apply imported progress.
-      This marks matched rows as done and writes detailed logs for troubleshooting.
-    </p>
+<div class="char-import-grid">
+  <section class="probe-card char-import-card">
+    <form class="probe-form" method="post" action="/characters/import-lodestone" enctype="multipart/form-data">
+      <h2>Import from Lodestone JSON</h2>
+      <p class="page-sub">
+        Choose a character and payload file to apply imported progress.
+        This marks matched rows as done and writes detailed logs for troubleshooting.
+      </p>
 
-    <label for="import-character-id">Character</label>
-    <select id="import-character-id" name="character_id" required>
-      {% for c in characters %}
-      <option value="{{ c.id }}" {{ 'selected' if c.id == character.id }}>{{ c.name }}</option>
-      {% endfor %}
-    </select>
+      <label for="import-character-id">Character</label>
+      <select id="import-character-id" name="character_id" required>
+        {% for c in characters %}
+        <option value="{{ c.id }}" {{ 'selected' if c.id == character.id }}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
 
-    <label for="import-payload-file">Payload JSON file</label>
-    <input
-      id="import-payload-file"
-      type="file"
-      name="payload_file"
-      accept=".json,application/json"
-    />
+      <label for="import-payload-file">Payload JSON file</label>
+      <input
+        id="import-payload-file"
+        type="file"
+        name="payload_file"
+        accept=".json,application/json"
+      />
 
-    <label for="import-payload-path">Or choose server payload</label>
-    <select id="import-payload-path" name="payload_path">
-      <option value="">-- select a payload from data/lodestone_probe --</option>
-      {% for p in payload_options %}
-      <option value="{{ p }}" {{ 'selected' if p == suggested_payload }}>{{ p }}</option>
-      {% endfor %}
-    </select>
+      <label for="import-payload-path">Or choose server payload</label>
+      <select id="import-payload-path" name="payload_path">
+        <option value="">-- select a payload from data/lodestone_probe --</option>
+        {% for p in payload_options %}
+        <option value="{{ p }}" {{ 'selected' if p == suggested_payload }}>{{ p }}</option>
+        {% endfor %}
+      </select>
 
-    <label class="probe-check">
-      <input type="checkbox" name="clear_existing" value="1" />
-      Clear existing character progress before import
-    </label>
+      <label class="probe-check">
+        <input type="checkbox" name="clear_existing" value="1" />
+        Clear existing character progress before import
+      </label>
 
-    <button type="submit" class="btn-primary">Start import</button>
-  </form>
+      <button type="submit" class="btn-primary">Start import</button>
+    </form>
+  </section>
 
-  {% if import_run and import_run.status == 'completed' and import_run.summary %}
-  <div class="ok-banner" style="margin-top: 12px;">
-    Imported {{ import_run.summary.rows_applied }} rows for {{ import_run.summary.character_name }}
-    (matched {{ import_run.summary.matched_candidates }}/{{ import_run.summary.total_candidates }} candidates).
-  </div>
-  {% endif %}
+  <section class="probe-card char-import-card">
+    <form class="probe-form" method="post" action="/characters/import-desktop-app" enctype="multipart/form-data">
+      <h2>Import from desktop app</h2>
+      <p class="page-sub">
+        Pull completion from the desktop app save format.
+        Browse to a JSON file or choose one detected from AppData.
+      </p>
 
-  {% if import_run_id %}
+      <label for="desktop-import-character-id">Character</label>
+      <select id="desktop-import-character-id" name="character_id" required>
+        {% for c in characters %}
+        <option value="{{ c.id }}" {{ 'selected' if c.id == character.id }}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="desktop-completion-file">Desktop completion JSON file</label>
+      <input
+        id="desktop-completion-file"
+        type="file"
+        name="completion_file"
+        accept=".json,application/json"
+      />
+
+      <label for="desktop-completion-path">Or choose detected completion file</label>
+      <select id="desktop-completion-path" name="completion_path">
+        <option value="">-- select detected file from %APPDATA%/ffxiv-completionist --</option>
+        {% for p in desktop_completion_options %}
+        <option value="{{ p }}" {{ 'selected' if p == suggested_desktop_path }}>{{ p }}</option>
+        {% endfor %}
+      </select>
+
+      <label class="probe-check">
+        <input type="checkbox" name="clear_existing" value="1" />
+        Clear existing character progress before import
+      </label>
+
+      <button type="submit" class="btn-primary">Start import</button>
+    </form>
+  </section>
+</div>
+
+{% if import_run and import_run.status == 'completed' and import_run.summary %}
+<div class="ok-banner">
+  Imported {{ import_run.summary.rows_applied }} rows for {{ import_run.summary.character_name }}
+  (matched {{ import_run.summary.matched_candidates }}/{{ import_run.summary.total_candidates }} candidates).
+</div>
+{% endif %}
+
+{% if import_run_id %}
+<section class="probe-card char-import-monitor-card">
   <div class="probe-monitor" data-import-run-id="{{ import_run_id }}">
     <h2>Import monitor</h2>
     <p class="page-sub">Track progress, errors, and log output while import runs.</p>
     <div class="probe-monitor-meta">
       <span>Status:</span>
       <strong id="import-run-status">{{ import_run.status if import_run else 'unknown' }}</strong>
+      <span>Type:</span>
+      <strong id="import-run-type">{{ import_run.import_type if import_run and import_run.import_type else 'unknown' }}</strong>
       <span>Character:</span>
       <strong id="import-run-character">{{ import_run.character_name if import_run else 'unknown' }}</strong>
     </div>
@@ -87,8 +133,8 @@
     </div>
     <pre id="import-run-log" class="probe-log">{% if import_run and import_run.logs %}{{ '\n'.join(import_run.logs[-160:]) }}{% else %}Waiting for import output...{% endif %}</pre>
   </div>
-  {% endif %}
 </section>
+{% endif %}
 
 <form class="char-create" method="post" action="/characters/create">
   <input type="text" name="name" placeholder="New character name…" required />
@@ -156,6 +202,7 @@
 
   const runId = monitor.getAttribute('data-import-run-id');
   const statusEl = document.getElementById('import-run-status');
+  const typeEl = document.getElementById('import-run-type');
   const characterEl = document.getElementById('import-run-character');
   const logPathEl = document.getElementById('import-run-log-path');
   const unmatchedWrap = document.getElementById('unmatched-link-wrap');
@@ -179,6 +226,9 @@
 
       const data = await response.json();
       statusEl.textContent = data.status || 'unknown';
+      if (typeEl) {
+        typeEl.textContent = data.import_type || 'unknown';
+      }
       characterEl.textContent = data.character_name || 'unknown';
       if (logPathEl) {
         logPathEl.textContent = data.log_path || 'n/a';
