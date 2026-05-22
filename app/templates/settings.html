@@ -5,6 +5,71 @@
 <div class="page-head">
   <div>
     <h1>Settings</h1>
+    <p class="page-sub">
+      Pick a UI theme loaded from app/themes. Only themes that pass format validation appear here.
+    </p>
   </div>
 </div>
+
+{% if error %}<div class="error-banner">{{ error }}</div>{% endif %}
+{% if saved %}<div class="ok-banner">{{ saved }}</div>{% endif %}
+
+<section class="probe-card">
+  <form method="post" action="/settings/theme" class="probe-form">
+    <label for="theme-id">Theme</label>
+    <select id="theme-id" name="theme_id" required>
+      {% for theme in themes %}
+      <option value="{{ theme.id }}" {{ 'selected' if theme.id == selected_theme_id else '' }}>
+        {{ theme.name }} ({{ theme.id }})
+      </option>
+      {% endfor %}
+    </select>
+
+    <label for="theme-scheme">Scheme</label>
+    <select id="theme-scheme" name="theme_scheme" required>
+      <option value="default" {{ 'selected' if selected_scheme_setting == 'default' else '' }}>
+        Theme default ({{ selected_theme.default_scheme or 'dark' }})
+      </option>
+      <option value="dark" {{ 'selected' if selected_scheme_setting == 'dark' else '' }}>Dark</option>
+      <option value="light" {{ 'selected' if selected_scheme_setting == 'light' else '' }}>Light</option>
+    </select>
+
+    <p class="probe-hint">
+      Active now: <strong>{{ theme_name }}</strong> · effective scheme <strong>{{ effective_scheme }}</strong>
+    </p>
+
+    <button type="submit" class="btn-primary">Save theme</button>
+  </form>
+
+  {% if selected_theme.warnings %}
+  <div class="probe-note">
+    <h2>Quality warnings for selected theme</h2>
+    <ul>
+      {% for warning in selected_theme.warnings %}
+      <li>{{ warning }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</section>
+
+{% if invalid_themes %}
+<section class="probe-card" style="margin-top: 16px;">
+  <h2>Skipped invalid theme files</h2>
+  <p class="page-sub">These files are ignored until they match the required format.</p>
+  <ul>
+    {% for theme in invalid_themes %}
+    <li>
+      <strong>{{ theme.file_name }}</strong>
+      {% if theme.errors %}
+      <div>{{ theme.errors[0] }}</div>
+      {% endif %}
+      {% if theme.errors|length > 1 %}
+      <div class="probe-hint">+ {{ (theme.errors|length) - 1 }} more error(s)</div>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
 {% endblock %}

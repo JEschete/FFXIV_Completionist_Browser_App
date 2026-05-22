@@ -12,101 +12,117 @@
   "colors": {
     "surfaces": {
       "bg": {
-        "value": "#0f0b0a",
-        "desc": "Lea Monde abyss in soot-black stone"
+        "value": "#04070d",
+        "desc": "Deep catacomb black with cold blue undertone"
       },
       "bg-soft": {
-        "value": "#1a1311",
-        "desc": "Header in dim torchlit masonry"
+        "value": "#0a1220",
+        "desc": "Header in moonlit crypt stone"
       },
       "panel": {
-        "value": "#261b17",
-        "desc": "Primary panel in weathered cathedral bronze"
+        "value": "#0f1a2c",
+        "desc": "Primary panel in dark cobalt masonry"
       },
       "panel-2": {
-        "value": "#33241d",
-        "desc": "Raised panel with crypt-metal depth"
+        "value": "#162742",
+        "desc": "Raised panel with sigil-lit blue depth"
       },
       "panel-3": {
-        "value": "#433026",
-        "desc": "Highest elevation in ember-touched iron"
+        "value": "#22365a",
+        "desc": "Highest elevation in aether-charged slate"
+      },
+      "sidebar-top": {
+        "value": "#101a2d",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#060b14",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#1c2f4f",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#111d33",
+        "desc": "Top-right controls gradient end"
       }
     },
     "lines": {
       "line": {
-        "value": "#c4a278",
-        "desc": "Aged relic-brass frame line"
+        "value": "#6f86ac",
+        "desc": "Stone-edge line in worn steel blue"
       },
       "line-soft": {
-        "value": "#6f5442",
-        "desc": "Soft divider in carved stone umber"
+        "value": "#344a67",
+        "desc": "Soft divider in dim cobalt shadow"
       }
     },
     "text": {
       "text": {
-        "value": "#f4e7d2",
-        "desc": "Primary text in warm scriptural ivory"
+        "value": "#d8e5f7",
+        "desc": "Primary text in pale moonlit parchment"
       },
       "muted": {
-        "value": "#c7b59b",
+        "value": "#9ab0cd",
         "desc": "Secondary labels"
       },
       "faint": {
-        "value": "#96806a",
+        "value": "#6984a5",
         "desc": "Tertiary metadata"
       }
     },
     "accents": {
       "accent": {
-        "value": "#b1412f",
-        "desc": "Blood sigil crimson for primary interaction"
+        "value": "#3a8fe0",
+        "desc": "Aether glyph blue for primary interaction"
       },
       "accent-dk": {
-        "value": "#7d271a",
+        "value": "#275fa6",
         "desc": "Pressed/active sigil depth"
       },
       "gold": {
-        "value": "#d3b06b",
-        "desc": "Relic-gold heading highlight"
+        "value": "#b48745",
+        "desc": "Torchlit bronze highlight"
       }
     },
     "crystals": {
       "crystal-earth": {
-        "value": "#8ba56a",
+        "value": "#6f8f63",
         "desc": "Earth analog"
       },
       "crystal-fire": {
-        "value": "#d65a3c",
+        "value": "#c65d3f",
         "desc": "Fire analog"
       },
       "crystal-water": {
-        "value": "#6aa1b8",
+        "value": "#54b7e4",
         "desc": "Water analog"
       },
       "crystal-wind": {
-        "value": "#d8c48d",
+        "value": "#c8ab65",
         "desc": "Wind analog"
       }
     },
     "states": {
       "done": {
-        "value": "#6f9a6f",
+        "value": "#5d8b6a",
         "desc": "Completed state"
       },
       "done-dk": {
-        "value": "#3f6b46",
+        "value": "#3b6147",
         "desc": "Darker completion shade"
       },
       "todo": {
-        "value": "#8a7764",
-        "desc": "Pending state in old-stone brown"
+        "value": "#6d7f97",
+        "desc": "Pending state in steel-blue fog"
       },
       "excluded": {
-        "value": "#75645b",
+        "value": "#535f73",
         "desc": "Set-aside state"
       },
       "danger": {
-        "value": "#cc4438",
+        "value": "#d05a5f",
         "desc": "Critical/destructive actions"
       }
     }
@@ -114,101 +130,117 @@
   "colorsLight": {
     "surfaces": {
       "bg": {
-        "value": "#f7f0e4",
-        "desc": "Grimoire parchment backdrop"
+        "value": "#e8ece6",
+        "desc": "Fog-washed manuscript background"
       },
       "bg-soft": {
-        "value": "#efe4d3",
-        "desc": "Header in aged vellum"
+        "value": "#d7dfd4",
+        "desc": "Soft header in oxidized vellum haze"
       },
       "panel": {
-        "value": "#fffaf1",
-        "desc": "Primary panel for bright readability"
+        "value": "#f4f1e7",
+        "desc": "Primary panel in pale parchment"
       },
       "panel-2": {
-        "value": "#f8eedf",
-        "desc": "Raised panel in warm manuscript tone"
+        "value": "#e8e2d3",
+        "desc": "Raised panel in weathered page tan"
       },
       "panel-3": {
-        "value": "#efe0c9",
-        "desc": "Highest elevation with antique page depth"
+        "value": "#d9cfbd",
+        "desc": "Highest elevation in antique relic paper"
+      },
+      "sidebar-top": {
+        "value": "#c9d4cc",
+        "desc": "Sidebar gradient start with misted stone-green"
+      },
+      "sidebar-bottom": {
+        "value": "#e2e8de",
+        "desc": "Sidebar gradient end in pale parchment"
+      },
+      "chrome-top": {
+        "value": "#d8d6c8",
+        "desc": "Top-right controls gradient start in brushed relic stone"
+      },
+      "chrome-bottom": {
+        "value": "#ebe8dc",
+        "desc": "Top-right controls gradient end in faded parchment"
       }
     },
     "lines": {
       "line": {
-        "value": "#7f6548",
-        "desc": "Primary structural line"
+        "value": "#6b6654",
+        "desc": "Primary structural line in old bronze"
       },
       "line-soft": {
-        "value": "#baa182",
-        "desc": "Soft divider"
+        "value": "#9b937e",
+        "desc": "Soft divider in aged ink wash"
       }
     },
     "text": {
       "text": {
-        "value": "#33281f",
-        "desc": "Primary text"
+        "value": "#2b2b24",
+        "desc": "Primary text in charcoal manuscript ink"
       },
       "muted": {
-        "value": "#5d4a38",
+        "value": "#4d4f46",
         "desc": "Secondary text"
       },
       "faint": {
-        "value": "#8a7259",
+        "value": "#6e7065",
         "desc": "Tertiary text"
       }
     },
     "accents": {
       "accent": {
-        "value": "#8f2d20",
-        "desc": "Sigil crimson accent"
+        "value": "#3f5966",
+        "desc": "Ink-steel blue accent pulled from logo and misted metal"
       },
       "accent-dk": {
-        "value": "#692015",
+        "value": "#2b3f4a",
         "desc": "Pressed accent"
       },
       "gold": {
-        "value": "#a17933",
+        "value": "#9b8758",
         "desc": "Relic-gold highlight"
       }
     },
     "crystals": {
       "crystal-earth": {
-        "value": "#6d8e57",
+        "value": "#708861",
         "desc": "Earth analog"
       },
       "crystal-fire": {
-        "value": "#bf4b31",
+        "value": "#b45a3d",
         "desc": "Fire analog"
       },
       "crystal-water": {
-        "value": "#4e7f97",
+        "value": "#5c8194",
         "desc": "Water analog"
       },
       "crystal-wind": {
-        "value": "#ad9251",
+        "value": "#b7a16e",
         "desc": "Wind analog"
       }
     },
     "states": {
       "done": {
-        "value": "#4f8050",
+        "value": "#5c7e61",
         "desc": "Completed state"
       },
       "done-dk": {
-        "value": "#33573a",
+        "value": "#3d5f45",
         "desc": "Dark completion shade"
       },
       "todo": {
-        "value": "#7c6a56",
+        "value": "#7a7668",
         "desc": "Pending state"
       },
       "excluded": {
-        "value": "#9a8878",
+        "value": "#9b9586",
         "desc": "Set-aside state"
       },
       "danger": {
-        "value": "#b6382d",
+        "value": "#a7473a",
         "desc": "Critical state"
       }
     }

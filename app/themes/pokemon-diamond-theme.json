@@ -11,74 +11,238 @@
   },
   "colors": {
     "surfaces": {
-      "bg": { "value": "#0b1320", "desc": "Dark faceted sky" },
-      "bg-soft": { "value": "#111d30", "desc": "Header layer" },
-      "panel": { "value": "#182a43", "desc": "Primary card surface" },
-      "panel-2": { "value": "#21385a", "desc": "Raised panel" },
-      "panel-3": { "value": "#2c4a75", "desc": "Highest elevation" }
+      "bg": {
+        "value": "#0b1320",
+        "desc": "Dark faceted sky"
+      },
+      "bg-soft": {
+        "value": "#111d30",
+        "desc": "Header layer"
+      },
+      "panel": {
+        "value": "#182a43",
+        "desc": "Primary card surface"
+      },
+      "panel-2": {
+        "value": "#21385a",
+        "desc": "Raised panel"
+      },
+      "panel-3": {
+        "value": "#2c4a75",
+        "desc": "Highest elevation"
+      },
+      "sidebar-top": {
+        "value": "#111d30",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#0b1320",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#21385a",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#182a43",
+        "desc": "Top-right controls gradient end"
+      }
     },
     "lines": {
-      "line": { "value": "#b4dcff", "desc": "Strong frame line" },
-      "line-soft": { "value": "#5f85b0", "desc": "Subtle divider" }
+      "line": {
+        "value": "#b4dcff",
+        "desc": "Strong frame line"
+      },
+      "line-soft": {
+        "value": "#5f85b0",
+        "desc": "Subtle divider"
+      }
     },
     "text": {
-      "text": { "value": "#f3f9ff", "desc": "Primary text" },
-      "muted": { "value": "#c8dcf2", "desc": "Secondary labels" },
-      "faint": { "value": "#94acc7", "desc": "Tertiary metadata" }
+      "text": {
+        "value": "#f3f9ff",
+        "desc": "Primary text"
+      },
+      "muted": {
+        "value": "#c8dcf2",
+        "desc": "Secondary labels"
+      },
+      "faint": {
+        "value": "#94acc7",
+        "desc": "Tertiary metadata"
+      }
     },
     "accents": {
-      "accent": { "value": "#7bc9ff", "desc": "Core Diamond accent" },
-      "accent-dk": { "value": "#3d87b8", "desc": "Pressed state" },
-      "gold": { "value": "#d6c8ff", "desc": "Cool highlight token" }
+      "accent": {
+        "value": "#7bc9ff",
+        "desc": "Core Diamond accent"
+      },
+      "accent-dk": {
+        "value": "#3d87b8",
+        "desc": "Pressed state"
+      },
+      "gold": {
+        "value": "#d6c8ff",
+        "desc": "Cool highlight token"
+      }
     },
     "crystals": {
-      "crystal-earth": { "value": "#8dc879", "desc": "Earth analog" },
-      "crystal-fire": { "value": "#ff8a6f", "desc": "Fire analog" },
-      "crystal-water": { "value": "#66c8ff", "desc": "Water analog" },
-      "crystal-wind": { "value": "#dff28b", "desc": "Wind analog" }
+      "crystal-earth": {
+        "value": "#8dc879",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#ff8a6f",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#66c8ff",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#dff28b",
+        "desc": "Wind analog"
+      }
     },
     "states": {
-      "done": { "value": "#72c58a", "desc": "Completed" },
-      "done-dk": { "value": "#417a58", "desc": "Completed dark" },
-      "todo": { "value": "#6f88a8", "desc": "Pending" },
-      "excluded": { "value": "#5f6f84", "desc": "Excluded" },
-      "danger": { "value": "#ea6464", "desc": "Danger" }
+      "done": {
+        "value": "#72c58a",
+        "desc": "Completed"
+      },
+      "done-dk": {
+        "value": "#417a58",
+        "desc": "Completed dark"
+      },
+      "todo": {
+        "value": "#6f88a8",
+        "desc": "Pending"
+      },
+      "excluded": {
+        "value": "#5f6f84",
+        "desc": "Excluded"
+      },
+      "danger": {
+        "value": "#ea6464",
+        "desc": "Danger"
+      }
     }
   },
   "colorsLight": {
     "surfaces": {
-      "bg": { "value": "#eef6ff", "desc": "Light diamond sky" },
-      "bg-soft": { "value": "#e0eeff", "desc": "Header" },
-      "panel": { "value": "#ffffff", "desc": "Primary card" },
-      "panel-2": { "value": "#f4f9ff", "desc": "Raised panel" },
-      "panel-3": { "value": "#e8f1ff", "desc": "Highest elevation" }
+      "bg": {
+        "value": "#eef6ff",
+        "desc": "Light diamond sky"
+      },
+      "bg-soft": {
+        "value": "#e0eeff",
+        "desc": "Header"
+      },
+      "panel": {
+        "value": "#ffffff",
+        "desc": "Primary card"
+      },
+      "panel-2": {
+        "value": "#f4f9ff",
+        "desc": "Raised panel"
+      },
+      "panel-3": {
+        "value": "#e8f1ff",
+        "desc": "Highest elevation"
+      },
+      "sidebar-top": {
+        "value": "#e0eeff",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#eef6ff",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#f4f9ff",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#ffffff",
+        "desc": "Top-right controls gradient end"
+      }
     },
     "lines": {
-      "line": { "value": "#4f78a3", "desc": "Frame line" },
-      "line-soft": { "value": "#9cb8d6", "desc": "Subtle divider" }
+      "line": {
+        "value": "#4f78a3",
+        "desc": "Frame line"
+      },
+      "line-soft": {
+        "value": "#9cb8d6",
+        "desc": "Subtle divider"
+      }
     },
     "text": {
-      "text": { "value": "#203d63", "desc": "Primary text" },
-      "muted": { "value": "#476991", "desc": "Secondary labels" },
-      "faint": { "value": "#7193b7", "desc": "Tertiary metadata" }
+      "text": {
+        "value": "#203d63",
+        "desc": "Primary text"
+      },
+      "muted": {
+        "value": "#476991",
+        "desc": "Secondary labels"
+      },
+      "faint": {
+        "value": "#7193b7",
+        "desc": "Tertiary metadata"
+      }
     },
     "accents": {
-      "accent": { "value": "#4e9fce", "desc": "Core Diamond accent" },
-      "accent-dk": { "value": "#387096", "desc": "Pressed state" },
-      "gold": { "value": "#8468b6", "desc": "Cool highlight token" }
+      "accent": {
+        "value": "#4e9fce",
+        "desc": "Core Diamond accent"
+      },
+      "accent-dk": {
+        "value": "#387096",
+        "desc": "Pressed state"
+      },
+      "gold": {
+        "value": "#8468b6",
+        "desc": "Cool highlight token"
+      }
     },
     "crystals": {
-      "crystal-earth": { "value": "#679d55", "desc": "Earth analog" },
-      "crystal-fire": { "value": "#d66e58", "desc": "Fire analog" },
-      "crystal-water": { "value": "#4197c8", "desc": "Water analog" },
-      "crystal-wind": { "value": "#a5bb4b", "desc": "Wind analog" }
+      "crystal-earth": {
+        "value": "#679d55",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#d66e58",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#4197c8",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#a5bb4b",
+        "desc": "Wind analog"
+      }
     },
     "states": {
-      "done": { "value": "#509d6a", "desc": "Completed" },
-      "done-dk": { "value": "#366d49", "desc": "Completed dark" },
-      "todo": { "value": "#5e7898", "desc": "Pending" },
-      "excluded": { "value": "#9cadbf", "desc": "Excluded" },
-      "danger": { "value": "#c44f4f", "desc": "Danger" }
+      "done": {
+        "value": "#509d6a",
+        "desc": "Completed"
+      },
+      "done-dk": {
+        "value": "#366d49",
+        "desc": "Completed dark"
+      },
+      "todo": {
+        "value": "#5e7898",
+        "desc": "Pending"
+      },
+      "excluded": {
+        "value": "#9cadbf",
+        "desc": "Excluded"
+      },
+      "danger": {
+        "value": "#c44f4f",
+        "desc": "Danger"
+      }
     }
   }
 }

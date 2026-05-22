@@ -30,6 +30,22 @@
       "panel-3": {
         "value": "#1b68a9",
         "desc": "Highest elevation surface with brighter sky tint"
+      },
+      "sidebar-top": {
+        "value": "#03243c",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#001322",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#0f4d7d",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#08365d",
+        "desc": "Top-right controls gradient end"
       }
     },
     "lines": {
@@ -132,6 +148,22 @@
       "panel-3": {
         "value": "#edeff1",
         "desc": "Highest elevation surface with brighter sky tint"
+      },
+      "sidebar-top": {
+        "value": "#e6eaed",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#f2f4f5",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#f6f7f8",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#fefefe",
+        "desc": "Top-right controls gradient end"
       }
     },
     "lines": {

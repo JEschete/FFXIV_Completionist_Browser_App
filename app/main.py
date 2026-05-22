@@ -79,6 +79,502 @@ CHAR_IMPORT_LOG_DIR = LODESTONE_OUTPUT_DIR / "import_logs"
 CHAR_IMPORT_UPLOAD_DIR = LODESTONE_OUTPUT_DIR / "import_uploads"
 CHAR_IMPORT_UNMATCHED_DIR = LODESTONE_OUTPUT_DIR / "unmatched"
 CHAR_IMPORT_HISTORY_DIR = LODESTONE_OUTPUT_DIR / "import_history"
+THEME_COOKIE = "ffxiv_theme"
+THEME_SCHEME_COOKIE = "ffxiv_theme_scheme"
+THEME_ALLOWED_SCHEME_SETTINGS = {"default", "dark", "light"}
+THEME_TOKEN_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+THEME_HEX_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+THEME_REQUIRED_TOKENS = (
+    "bg",
+    "bg-soft",
+    "panel",
+    "panel-2",
+    "panel-3",
+    "line",
+    "line-soft",
+    "text",
+    "muted",
+    "faint",
+    "accent",
+    "accent-dk",
+    "gold",
+    "crystal-earth",
+    "crystal-fire",
+    "crystal-water",
+    "crystal-wind",
+    "done",
+    "done-dk",
+    "todo",
+    "excluded",
+    "danger",
+)
+THEME_REQUIRED_TOKEN_SET = set(THEME_REQUIRED_TOKENS)
+THEMES_DIR = BASE / "themes"
+THEME_CACHE_LOCK = threading.Lock()
+THEME_CACHE: dict[str, Any] = {"signature": None, "catalog": None}
+FF_THEME_NUMBER_RE = re.compile(
+    r"(?:^|[^a-z0-9])ff\s*0*(\d{1,2})(?:[^0-9]|$)",
+    re.IGNORECASE,
+)
+POKEMON_THEME_NAME_RE = re.compile(
+    r"pokemon[-_\s]*(red|blue|yellow|gold|silver|crystal|ruby|sapphire|emerald|diamond|pearl|platinum)",
+    re.IGNORECASE,
+)
+POKEMON_THEME_ORDER: dict[str, tuple[int, int]] = {
+    "red": (1, 1),
+    "blue": (1, 2),
+    "yellow": (1, 3),
+    "gold": (2, 1),
+    "silver": (2, 2),
+    "crystal": (2, 3),
+    "ruby": (3, 1),
+    "sapphire": (3, 2),
+    "emerald": (3, 3),
+    "diamond": (4, 1),
+    "pearl": (4, 2),
+    "platinum": (4, 3),
+}
+
+BUILTIN_THEME_DARK = {
+    "bg": "#0b0e15",
+    "bg-soft": "#10151f",
+    "panel": "#161c28",
+    "panel-2": "#1b2230",
+    "panel-3": "#212a3b",
+    "line": "#2a3445",
+    "line-soft": "#222b3a",
+    "text": "#e7ecf5",
+    "muted": "#8995a8",
+    "faint": "#5d6a7e",
+    "accent": "#6ba4e8",
+    "accent-dk": "#3f6fae",
+    "gold": "#e2bd72",
+    "crystal-earth": "#45c78a",
+    "crystal-fire": "#d96b6b",
+    "crystal-water": "#6ba4e8",
+    "crystal-wind": "#e2bd72",
+    "done": "#45c78a",
+    "done-dk": "#2f8c61",
+    "todo": "#586374",
+    "excluded": "#4a4f5c",
+    "danger": "#d96b6b",
+}
+
+BUILTIN_THEME_LIGHT = {
+    "bg": "#f2f3f5",
+    "bg-soft": "#e6e8ed",
+    "panel": "#fefefe",
+    "panel-2": "#f6f7f8",
+    "panel-3": "#edeff1",
+    "line": "#3d5b8f",
+    "line-soft": "#9faec6",
+    "text": "#1c2c3f",
+    "muted": "#425a76",
+    "faint": "#6c829d",
+    "accent": "#1f6bc7",
+    "accent-dk": "#275591",
+    "gold": "#b8851e",
+    "crystal-earth": "#36ba7c",
+    "crystal-fire": "#bf3131",
+    "crystal-water": "#2070cf",
+    "crystal-wind": "#c79329",
+    "done": "#2e9e69",
+    "done-dk": "#277c55",
+    "todo": "#657285",
+    "excluded": "#969cab",
+    "danger": "#ba2c2c",
+}
+
+
+def cookie_theme_id(request: Request) -> str:
+    return (request.cookies.get(THEME_COOKIE) or "").strip()
+
+
+def set_theme_cookie(response, theme_id: str) -> None:
+    response.set_cookie(
+        THEME_COOKIE,
+        theme_id.strip(),
+        max_age=60 * 60 * 24 * 365,
+        samesite="lax",
+    )
+
+
+def cookie_theme_scheme(request: Request) -> str:
+    raw = (request.cookies.get(THEME_SCHEME_COOKIE) or "default").strip().lower()
+    return raw if raw in THEME_ALLOWED_SCHEME_SETTINGS else "default"
+
+
+def set_theme_scheme_cookie(response, scheme: str) -> None:
+    value = normalize_theme_scheme_setting(scheme)
+    response.set_cookie(
+        THEME_SCHEME_COOKIE,
+        value,
+        max_age=60 * 60 * 24 * 365,
+        samesite="lax",
+    )
+
+
+def normalize_theme_scheme_setting(raw: str) -> str:
+    value = (raw or "").strip().lower()
+    return value if value in THEME_ALLOWED_SCHEME_SETTINGS else "default"
+
+
+def _extract_theme_color(raw: object) -> str | None:
+    if isinstance(raw, str):
+        return raw.strip()
+    if isinstance(raw, dict):
+        value = raw.get("value")
+        if isinstance(value, str):
+            return value.strip()
+    return None
+
+
+def _flatten_theme_tokens(raw_colors: object) -> dict[str, str]:
+    tokens: dict[str, str] = {}
+    if not isinstance(raw_colors, dict):
+        return tokens
+
+    for key, value in raw_colors.items():
+        direct = _extract_theme_color(value)
+        if direct is not None:
+            tokens[str(key)] = direct
+            continue
+
+        if not isinstance(value, dict):
+            continue
+        for token, entry in value.items():
+            color = _extract_theme_color(entry)
+            if color is not None:
+                tokens[str(token)] = color
+
+    return tokens
+
+
+def _looks_like_scheme_map(raw_colors: dict[str, Any]) -> bool:
+    if not raw_colors:
+        return False
+    keys = {str(key).lower() for key in raw_colors}
+    if not keys.issubset({"dark", "light"}):
+        return False
+    return all(isinstance(value, dict) for value in raw_colors.values())
+
+
+def _extract_theme_schemes(raw_doc: dict[str, Any]) -> dict[str, dict[str, str]]:
+    schemes: dict[str, dict[str, str]] = {}
+
+    raw_colors = raw_doc.get("colors")
+    if isinstance(raw_colors, dict):
+        if _looks_like_scheme_map(raw_colors):
+            for scheme_name, block in raw_colors.items():
+                tokens = _flatten_theme_tokens(block)
+                if tokens:
+                    schemes[str(scheme_name).lower()] = tokens
+        else:
+            tokens = _flatten_theme_tokens(raw_colors)
+            if tokens:
+                schemes["dark"] = tokens
+
+    raw_colors_light = raw_doc.get("colorsLight")
+    if isinstance(raw_colors_light, dict):
+        tokens = _flatten_theme_tokens(raw_colors_light)
+        if tokens:
+            schemes["light"] = tokens
+
+    raw_schemes = raw_doc.get("schemes")
+    if isinstance(raw_schemes, dict):
+        for scheme_name, scheme_block in raw_schemes.items():
+            if not isinstance(scheme_block, dict):
+                continue
+            color_block = scheme_block.get("colors", scheme_block)
+            tokens = _flatten_theme_tokens(color_block)
+            if tokens:
+                schemes[str(scheme_name).lower()] = tokens
+
+    return schemes
+
+
+def _validate_theme(path: Path, raw_doc: dict[str, Any]) -> dict[str, Any]:
+    meta = raw_doc.get("meta")
+    if not isinstance(meta, dict):
+        meta = {}
+
+    theme_id = str(meta.get("id") or path.stem).strip() or path.stem
+    name = str(meta.get("name") or theme_id).strip() or theme_id
+    schemes = _extract_theme_schemes(raw_doc)
+    default_scheme = str(meta.get("defaultScheme") or "dark").strip().lower()
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    for required_scheme in ("dark", "light"):
+        if required_scheme not in schemes:
+            errors.append(f"Missing required {required_scheme} scheme.")
+
+    for scheme_name, tokens in schemes.items():
+        missing = sorted(THEME_REQUIRED_TOKEN_SET.difference(tokens.keys()))
+        if missing:
+            errors.append(
+                f"{scheme_name}: missing required tokens: {', '.join(missing)}"
+            )
+
+        for token, value in tokens.items():
+            if not THEME_TOKEN_NAME_RE.fullmatch(token):
+                errors.append(f"{scheme_name}: invalid token name '{token}'")
+                continue
+            if token in THEME_REQUIRED_TOKEN_SET and not THEME_HEX_RE.fullmatch(value):
+                errors.append(f"{scheme_name}: token '{token}' has invalid hex value '{value}'")
+
+    light_tokens = schemes.get("light")
+    if isinstance(light_tokens, dict):
+        light_surfaces = [
+            light_tokens.get("bg"),
+            light_tokens.get("bg-soft"),
+            light_tokens.get("panel"),
+            light_tokens.get("panel-2"),
+            light_tokens.get("panel-3"),
+        ]
+        unique_surfaces = {value for value in light_surfaces if value}
+        if len(unique_surfaces) <= 2:
+            warnings.append(
+                "light scheme surfaces are nearly flat (bg/bg-soft/panel/panel-2/panel-3)."
+            )
+        if light_tokens.get("muted") == light_tokens.get("faint"):
+            warnings.append("light scheme text ramp collapsed: muted equals faint.")
+        if light_tokens.get("todo") == light_tokens.get("excluded"):
+            warnings.append("light scheme state ramp collapsed: todo equals excluded.")
+
+    if default_scheme not in schemes:
+        warnings.append(
+            f"defaultScheme '{default_scheme}' is unavailable; falling back to dark/first available scheme."
+        )
+        if "dark" in schemes:
+            default_scheme = "dark"
+        elif schemes:
+            default_scheme = next(iter(schemes))
+        else:
+            default_scheme = "dark"
+
+    return {
+        "id": theme_id,
+        "name": name,
+        "file_name": path.name,
+        "path": str(path),
+        "default_scheme": default_scheme,
+        "schemes": schemes,
+        "errors": errors,
+        "warnings": warnings,
+        "valid": not errors,
+    }
+
+
+def _theme_signature(theme_paths: list[Path]) -> tuple[tuple[str, int, int], ...]:
+    signature: list[tuple[str, int, int]] = []
+    for path in theme_paths:
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        signature.append((path.name, int(stat.st_mtime_ns), int(stat.st_size)))
+    return tuple(signature)
+
+
+def _builtin_theme_entry() -> dict[str, Any]:
+    return {
+        "id": "builtin-aetherial",
+        "name": "Builtin Aetherial",
+        "file_name": "<builtin>",
+        "path": "<builtin>",
+        "default_scheme": "dark",
+        "schemes": {
+            "dark": dict(BUILTIN_THEME_DARK),
+            "light": dict(BUILTIN_THEME_LIGHT),
+        },
+        "errors": [],
+        "warnings": ["Using builtin fallback theme because no valid theme files were found."],
+        "valid": True,
+    }
+
+
+def _extract_ff_theme_number(*values: object) -> int | None:
+    for value in values:
+        if value is None:
+            continue
+        match = FF_THEME_NUMBER_RE.search(str(value))
+        if match is None:
+            continue
+        try:
+            return int(match.group(1))
+        except ValueError:
+            continue
+    return None
+
+
+def _extract_pokemon_theme_order(*values: object) -> tuple[int, int, str] | None:
+    for value in values:
+        if value is None:
+            continue
+        match = POKEMON_THEME_NAME_RE.search(str(value))
+        if match is None:
+            continue
+        token = match.group(1).lower()
+        order = POKEMON_THEME_ORDER.get(token)
+        if order is not None:
+            return order[0], order[1], token
+    return None
+
+
+def _theme_sort_key(theme: dict[str, Any]) -> tuple[int, int, str, str]:
+    theme_id = str(theme.get("id") or "")
+    file_name = str(theme.get("file_name") or "")
+    file_stem = Path(file_name).stem if file_name and file_name != "<builtin>" else ""
+    name = str(theme.get("name") or file_stem or theme_id)
+
+    ff_number = _extract_ff_theme_number(theme_id, file_stem, name)
+    if ff_number is not None:
+        variant = (theme_id or file_stem or name).lower()
+        return (0, ff_number, variant, name.lower())
+
+    pokemon_order = _extract_pokemon_theme_order(theme_id, file_stem, name)
+    if pokemon_order is not None:
+        generation, position, token = pokemon_order
+        return (1, generation * 10 + position, token, name.lower())
+
+    if file_stem.lower() == "template":
+        return (3, 9999, file_stem.lower(), name.lower())
+
+    label = (theme_id or file_stem or name).lower()
+    return (2, 9999, label, name.lower())
+
+
+def get_theme_catalog() -> dict[str, Any]:
+    theme_paths = sorted(path for path in THEMES_DIR.glob("*.json") if path.is_file())
+    signature = _theme_signature(theme_paths)
+    with THEME_CACHE_LOCK:
+        cached_signature = THEME_CACHE.get("signature")
+        cached_catalog = THEME_CACHE.get("catalog")
+    if signature == cached_signature and isinstance(cached_catalog, dict):
+        return cached_catalog
+
+    themes: list[dict[str, Any]] = []
+    invalid: list[dict[str, Any]] = []
+
+    for path in theme_paths:
+        try:
+            raw_doc = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            invalid.append({
+                "id": path.stem,
+                "name": path.stem,
+                "file_name": path.name,
+                "path": str(path),
+                "default_scheme": "dark",
+                "schemes": {},
+                "errors": [f"Could not parse JSON: {exc}"],
+                "warnings": [],
+                "valid": False,
+            })
+            continue
+
+        if not isinstance(raw_doc, dict):
+            invalid.append({
+                "id": path.stem,
+                "name": path.stem,
+                "file_name": path.name,
+                "path": str(path),
+                "default_scheme": "dark",
+                "schemes": {},
+                "errors": ["Theme root must be a JSON object."],
+                "warnings": [],
+                "valid": False,
+            })
+            continue
+
+        entry = _validate_theme(path, raw_doc)
+        if entry["valid"]:
+            themes.append(entry)
+        else:
+            invalid.append(entry)
+
+    themes.sort(key=_theme_sort_key)
+    if not themes:
+        themes.append(_builtin_theme_entry())
+
+    preferred_default = next(
+        (
+            theme
+            for theme in themes
+            if str(theme.get("file_name") or "").lower() == "aetherial-dark.json"
+        ),
+        None,
+    )
+    if preferred_default is None:
+        preferred_default = next(
+            (theme for theme in themes if str(theme.get("id")) == "aetherial-dark"),
+            themes[0],
+        )
+    catalog = {
+        "themes": themes,
+        "invalid": invalid,
+        "default_theme_id": str(preferred_default.get("id") or themes[0]["id"]),
+    }
+    with THEME_CACHE_LOCK:
+        THEME_CACHE["signature"] = signature
+        THEME_CACHE["catalog"] = catalog
+    return catalog
+
+
+def _render_theme_css(tokens: dict[str, str]) -> str:
+    ordered_tokens = [token for token in THEME_REQUIRED_TOKENS if token in tokens]
+    extra_tokens = sorted(
+        token
+        for token in tokens.keys()
+        if token not in THEME_REQUIRED_TOKEN_SET and THEME_TOKEN_NAME_RE.fullmatch(token)
+    )
+    lines = [":root {"]
+    for token in ordered_tokens + extra_tokens:
+        lines.append(f"  --{token}: {tokens[token]};")
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def resolve_theme_state(request: Request) -> dict[str, Any]:
+    catalog = get_theme_catalog()
+    themes = catalog["themes"]
+    by_id = {str(theme.get("id")): theme for theme in themes}
+
+    requested_theme_id = cookie_theme_id(request)
+    theme = by_id.get(requested_theme_id)
+    if theme is None:
+        default_theme_id = str(catalog.get("default_theme_id") or "")
+        theme = by_id.get(default_theme_id) or themes[0]
+
+    scheme_setting = normalize_theme_scheme_setting(cookie_theme_scheme(request))
+    if scheme_setting == "default":
+        effective_scheme = str(theme.get("default_scheme") or "dark")
+    else:
+        effective_scheme = scheme_setting
+
+    schemes = theme.get("schemes") if isinstance(theme.get("schemes"), dict) else {}
+    if effective_scheme not in schemes:
+        effective_scheme = "dark" if "dark" in schemes else next(iter(schemes), "dark")
+
+    active_tokens = schemes.get(effective_scheme)
+    if not isinstance(active_tokens, dict):
+        active_tokens = dict(BUILTIN_THEME_DARK)
+
+    return {
+        "catalog": catalog,
+        "theme": theme,
+        "theme_id": str(theme.get("id") or ""),
+        "scheme_setting": scheme_setting,
+        "effective_scheme": effective_scheme,
+        "theme_css": _render_theme_css(active_tokens),
+        "first_paint_bg": active_tokens.get("bg", BUILTIN_THEME_DARK["bg"]),
+        "first_paint_text": active_tokens.get("text", BUILTIN_THEME_DARK["text"]),
+        "color_scheme_meta": effective_scheme,
+    }
+
+
+# --- request context --------------------------------------------------------
 
 
 # --- request context --------------------------------------------------------
@@ -827,6 +1323,7 @@ class Ctx:
         if run_id is None:
             raise HTTPException(503, "No ingest run found. Run the prep script first.")
         self.run_id: int = run_id
+        self.theme_state = resolve_theme_state(request)
         self.character = db.resolve_active_character(
             self.conn, cookie_character_id(request)
         )
@@ -864,6 +1361,8 @@ class Ctx:
 
     def base_context(self) -> dict:
         avatar_path = BASE / "static" / "avatars" / f"{self.character_id}.jpg"
+        theme = self.theme_state
+        active_theme = theme["theme"] if isinstance(theme.get("theme"), dict) else {}
         return {
             "request": self.request,
             "characters": self.characters,
@@ -872,6 +1371,14 @@ class Ctx:
             "overall": self.overall,
             "overall_pct": db.pct(self.overall),
             "avatar_url": f"/static/avatars/{self.character_id}.jpg" if avatar_path.exists() else None,
+            "theme_id": theme["theme_id"],
+            "theme_name": str(active_theme.get("name") or theme["theme_id"]),
+            "theme_css": theme["theme_css"],
+            "theme_scheme_setting": theme["scheme_setting"],
+            "theme_effective_scheme": theme["effective_scheme"],
+            "theme_first_paint_bg": theme["first_paint_bg"],
+            "theme_first_paint_text": theme["first_paint_text"],
+            "theme_color_scheme_meta": theme["color_scheme_meta"],
         }
 
     def header_context(self, sheet_name: str | None) -> dict:
@@ -892,6 +1399,8 @@ class Ctx:
         ctx = {**self.base_context(), **self.header_context(active), **extra}
         resp = templates.TemplateResponse(self.request, template, ctx)
         set_char_cookie(resp, self.character_id)
+        set_theme_cookie(resp, self.theme_state["theme_id"])
+        set_theme_scheme_cookie(resp, self.theme_state["scheme_setting"])
         return resp
 
 
@@ -1475,12 +1984,54 @@ def credits_page(request: Request):
 
 
 @app.get("/settings", response_class=HTMLResponse)
-def settings_page(request: Request):
+def settings_page(request: Request, saved: str = "", error: str = ""):
     ctx = Ctx(request)
     try:
-        return ctx.render("settings.html", {"active_sheet": None})
+        theme_state = ctx.theme_state
+        catalog = theme_state["catalog"] if isinstance(theme_state.get("catalog"), dict) else {}
+        themes = catalog.get("themes") if isinstance(catalog.get("themes"), list) else []
+        invalid_themes = catalog.get("invalid") if isinstance(catalog.get("invalid"), list) else []
+        return ctx.render("settings.html", {
+            "active_sheet": None,
+            "saved": saved,
+            "error": error,
+            "themes": themes,
+            "invalid_themes": invalid_themes,
+            "selected_theme": theme_state.get("theme") or {},
+            "selected_theme_id": theme_state["theme_id"],
+            "selected_scheme_setting": theme_state["scheme_setting"],
+            "effective_scheme": theme_state["effective_scheme"],
+        })
     finally:
         ctx.close()
+
+
+@app.post("/settings/theme")
+def settings_theme_save(
+    theme_id: str = Form(""),
+    theme_scheme: str = Form("default"),
+):
+    catalog = get_theme_catalog()
+    themes = catalog.get("themes") if isinstance(catalog.get("themes"), list) else []
+    by_id = {str(theme.get("id")): theme for theme in themes}
+
+    normalized_theme_id = (theme_id or "").strip()
+    selected_theme = by_id.get(normalized_theme_id)
+    if selected_theme is None:
+        return RedirectResponse(
+            f"/settings?error={quote('Choose a valid theme.')}",
+            status_code=303,
+        )
+
+    normalized_scheme = normalize_theme_scheme_setting(theme_scheme)
+    selected_schemes = selected_theme.get("schemes") if isinstance(selected_theme.get("schemes"), dict) else {}
+    if normalized_scheme in {"dark", "light"} and normalized_scheme not in selected_schemes:
+        normalized_scheme = "default"
+
+    response = RedirectResponse("/settings?saved=Theme%20updated", status_code=303)
+    set_theme_cookie(response, normalized_theme_id)
+    set_theme_scheme_cookie(response, normalized_scheme)
+    return response
 
 
 @app.get("/lodestone-probe", response_class=HTMLResponse)

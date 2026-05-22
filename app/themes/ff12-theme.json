@@ -30,6 +30,22 @@
       "panel-3": {
         "value": "#4d4228",
         "desc": "Highest elevation in gilded desert shadow"
+      },
+      "sidebar-top": {
+        "value": "#1e1a12",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#120f0a",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#3a311f",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#2b2417",
+        "desc": "Top-right controls gradient end"
       }
     },
     "lines": {
@@ -132,6 +148,22 @@
       "panel-3": {
         "value": "#f8e6c2",
         "desc": "Highest elevation in sun-gold tint"
+      },
+      "sidebar-top": {
+        "value": "#f8ecd2",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#fff7e6",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#fff3df",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#fffdf7",
+        "desc": "Top-right controls gradient end"
       }
     },
     "lines": {

@@ -30,6 +30,22 @@
       "panel-3": {
         "value": "#1b3a80",
         "desc": "Highest-elevation panel surface"
+      },
+      "sidebar-top": {
+        "value": "#02091f",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#000000",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#102252",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#050d2a",
+        "desc": "Top-right controls gradient end"
       }
     },
     "lines": {
@@ -132,6 +148,22 @@
       "panel-3": {
         "value": "#edeef1",
         "desc": "Highest-elevation panel surface"
+      },
+      "sidebar-top": {
+        "value": "#e6e8ed",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#f4f4f4",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#f6f7f8",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#fefefe",
+        "desc": "Top-right controls gradient end"
       }
     },
     "lines": {

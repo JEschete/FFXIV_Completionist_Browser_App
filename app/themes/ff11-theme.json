@@ -30,6 +30,22 @@
       "panel-3": {
         "value": "#2a447d",
         "desc": "Highest elevation with moonlit steel contrast"
+      },
+      "sidebar-top": {
+        "value": "#0d1a35",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#071022",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#1d3360",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#14264a",
+        "desc": "Top-right controls gradient end"
       }
     },
     "lines": {
@@ -132,6 +148,22 @@
       "panel-3": {
         "value": "#f0e5ca",
         "desc": "Highest elevation in warm parchment light"
+      },
+      "sidebar-top": {
+        "value": "#efe7d3",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#f7f3e7",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#f8f1df",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#fffdf8",
+        "desc": "Top-right controls gradient end"
       }
     },
     "lines": {

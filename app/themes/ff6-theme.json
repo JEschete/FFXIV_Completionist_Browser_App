@@ -30,6 +30,22 @@
       "panel-3": {
         "value": "#4a2539",
         "desc": "Highest elevation with dramatic theater contrast"
+      },
+      "sidebar-top": {
+        "value": "#1e121d",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#120d12",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#3a1c2d",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#2c1623",
+        "desc": "Top-right controls gradient end"
       }
     },
     "lines": {
@@ -132,6 +148,22 @@
       "panel-3": {
         "value": "#f1edef",
         "desc": "Highest elevation with dramatic theater contrast"
+      },
+      "sidebar-top": {
+        "value": "#ede6ec",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#f5f2f5",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#f8f6f7",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#fefefe",
+        "desc": "Top-right controls gradient end"
       }
     },
     "lines": {

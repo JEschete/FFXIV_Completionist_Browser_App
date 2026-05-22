@@ -11,74 +11,238 @@
   },
   "colors": {
     "surfaces": {
-      "bg": { "value": "#06130d", "desc": "Dark forest backdrop" },
-      "bg-soft": { "value": "#0b2116", "desc": "Header layer" },
-      "panel": { "value": "#113020", "desc": "Primary card surface" },
-      "panel-2": { "value": "#18412c", "desc": "Raised panel" },
-      "panel-3": { "value": "#21563b", "desc": "Highest elevation" }
+      "bg": {
+        "value": "#06130d",
+        "desc": "Dark forest backdrop"
+      },
+      "bg-soft": {
+        "value": "#0b2116",
+        "desc": "Header layer"
+      },
+      "panel": {
+        "value": "#113020",
+        "desc": "Primary card surface"
+      },
+      "panel-2": {
+        "value": "#18412c",
+        "desc": "Raised panel"
+      },
+      "panel-3": {
+        "value": "#21563b",
+        "desc": "Highest elevation"
+      },
+      "sidebar-top": {
+        "value": "#0b2116",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#06130d",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#18412c",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#113020",
+        "desc": "Top-right controls gradient end"
+      }
     },
     "lines": {
-      "line": { "value": "#8ee7ba", "desc": "Strong frame line" },
-      "line-soft": { "value": "#3e7d60", "desc": "Subtle divider" }
+      "line": {
+        "value": "#8ee7ba",
+        "desc": "Strong frame line"
+      },
+      "line-soft": {
+        "value": "#3e7d60",
+        "desc": "Subtle divider"
+      }
     },
     "text": {
-      "text": { "value": "#edfff5", "desc": "Primary text" },
-      "muted": { "value": "#b5e4cc", "desc": "Secondary labels" },
-      "faint": { "value": "#79b095", "desc": "Tertiary metadata" }
+      "text": {
+        "value": "#edfff5",
+        "desc": "Primary text"
+      },
+      "muted": {
+        "value": "#b5e4cc",
+        "desc": "Secondary labels"
+      },
+      "faint": {
+        "value": "#79b095",
+        "desc": "Tertiary metadata"
+      }
     },
     "accents": {
-      "accent": { "value": "#00b86b", "desc": "Core Emerald accent" },
-      "accent-dk": { "value": "#007f4a", "desc": "Pressed state" },
-      "gold": { "value": "#f4d46d", "desc": "Highlight token" }
+      "accent": {
+        "value": "#00b86b",
+        "desc": "Core Emerald accent"
+      },
+      "accent-dk": {
+        "value": "#007f4a",
+        "desc": "Pressed state"
+      },
+      "gold": {
+        "value": "#f4d46d",
+        "desc": "Highlight token"
+      }
     },
     "crystals": {
-      "crystal-earth": { "value": "#7ecf68", "desc": "Earth analog" },
-      "crystal-fire": { "value": "#ff8558", "desc": "Fire analog" },
-      "crystal-water": { "value": "#59bbff", "desc": "Water analog" },
-      "crystal-wind": { "value": "#e1eb73", "desc": "Wind analog" }
+      "crystal-earth": {
+        "value": "#7ecf68",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#ff8558",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#59bbff",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#e1eb73",
+        "desc": "Wind analog"
+      }
     },
     "states": {
-      "done": { "value": "#63c27f", "desc": "Completed" },
-      "done-dk": { "value": "#377a4f", "desc": "Completed dark" },
-      "todo": { "value": "#5f8d72", "desc": "Pending" },
-      "excluded": { "value": "#597263", "desc": "Excluded" },
-      "danger": { "value": "#ea5b4f", "desc": "Danger" }
+      "done": {
+        "value": "#63c27f",
+        "desc": "Completed"
+      },
+      "done-dk": {
+        "value": "#377a4f",
+        "desc": "Completed dark"
+      },
+      "todo": {
+        "value": "#5f8d72",
+        "desc": "Pending"
+      },
+      "excluded": {
+        "value": "#597263",
+        "desc": "Excluded"
+      },
+      "danger": {
+        "value": "#ea5b4f",
+        "desc": "Danger"
+      }
     }
   },
   "colorsLight": {
     "surfaces": {
-      "bg": { "value": "#edfff5", "desc": "Light rainforest sky" },
-      "bg-soft": { "value": "#dcf8e8", "desc": "Header" },
-      "panel": { "value": "#ffffff", "desc": "Primary card" },
-      "panel-2": { "value": "#f2fff8", "desc": "Raised panel" },
-      "panel-3": { "value": "#e3f8ec", "desc": "Highest elevation" }
+      "bg": {
+        "value": "#edfff5",
+        "desc": "Light rainforest sky"
+      },
+      "bg-soft": {
+        "value": "#dcf8e8",
+        "desc": "Header"
+      },
+      "panel": {
+        "value": "#ffffff",
+        "desc": "Primary card"
+      },
+      "panel-2": {
+        "value": "#f2fff8",
+        "desc": "Raised panel"
+      },
+      "panel-3": {
+        "value": "#e3f8ec",
+        "desc": "Highest elevation"
+      },
+      "sidebar-top": {
+        "value": "#dcf8e8",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#edfff5",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#f2fff8",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#ffffff",
+        "desc": "Top-right controls gradient end"
+      }
     },
     "lines": {
-      "line": { "value": "#2f7f5a", "desc": "Frame line" },
-      "line-soft": { "value": "#93c7ae", "desc": "Subtle divider" }
+      "line": {
+        "value": "#2f7f5a",
+        "desc": "Frame line"
+      },
+      "line-soft": {
+        "value": "#93c7ae",
+        "desc": "Subtle divider"
+      }
     },
     "text": {
-      "text": { "value": "#174a33", "desc": "Primary text" },
-      "muted": { "value": "#35755a", "desc": "Secondary labels" },
-      "faint": { "value": "#63a389", "desc": "Tertiary metadata" }
+      "text": {
+        "value": "#174a33",
+        "desc": "Primary text"
+      },
+      "muted": {
+        "value": "#35755a",
+        "desc": "Secondary labels"
+      },
+      "faint": {
+        "value": "#63a389",
+        "desc": "Tertiary metadata"
+      }
     },
     "accents": {
-      "accent": { "value": "#0b8f57", "desc": "Core Emerald accent" },
-      "accent-dk": { "value": "#0a6a41", "desc": "Pressed state" },
-      "gold": { "value": "#b48621", "desc": "Highlight token" }
+      "accent": {
+        "value": "#0b8f57",
+        "desc": "Core Emerald accent"
+      },
+      "accent-dk": {
+        "value": "#0a6a41",
+        "desc": "Pressed state"
+      },
+      "gold": {
+        "value": "#b48621",
+        "desc": "Highlight token"
+      }
     },
     "crystals": {
-      "crystal-earth": { "value": "#589d44", "desc": "Earth analog" },
-      "crystal-fire": { "value": "#d66c47", "desc": "Fire analog" },
-      "crystal-water": { "value": "#3f91c9", "desc": "Water analog" },
-      "crystal-wind": { "value": "#a8b63f", "desc": "Wind analog" }
+      "crystal-earth": {
+        "value": "#589d44",
+        "desc": "Earth analog"
+      },
+      "crystal-fire": {
+        "value": "#d66c47",
+        "desc": "Fire analog"
+      },
+      "crystal-water": {
+        "value": "#3f91c9",
+        "desc": "Water analog"
+      },
+      "crystal-wind": {
+        "value": "#a8b63f",
+        "desc": "Wind analog"
+      }
     },
     "states": {
-      "done": { "value": "#4d9f69", "desc": "Completed" },
-      "done-dk": { "value": "#356d49", "desc": "Completed dark" },
-      "todo": { "value": "#4f7c65", "desc": "Pending" },
-      "excluded": { "value": "#98b3a4", "desc": "Excluded" },
-      "danger": { "value": "#c84a40", "desc": "Danger" }
+      "done": {
+        "value": "#4d9f69",
+        "desc": "Completed"
+      },
+      "done-dk": {
+        "value": "#356d49",
+        "desc": "Completed dark"
+      },
+      "todo": {
+        "value": "#4f7c65",
+        "desc": "Pending"
+      },
+      "excluded": {
+        "value": "#98b3a4",
+        "desc": "Excluded"
+      },
+      "danger": {
+        "value": "#c84a40",
+        "desc": "Danger"
+      }
     }
   }
 }

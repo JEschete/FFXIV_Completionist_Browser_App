@@ -30,6 +30,22 @@
       "panel-3": {
         "value": "#753a24",
         "desc": "Highest elevation with fiery crystal-lit warmth"
+      },
+      "sidebar-top": {
+        "value": "#2a130f",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#1a0c09",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#552b1c",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#3a1d14",
+        "desc": "Top-right controls gradient end"
       }
     },
     "lines": {
@@ -132,6 +148,22 @@
       "panel-3": {
         "value": "#f1eeed",
         "desc": "Highest elevation with fiery crystal-lit warmth"
+      },
+      "sidebar-top": {
+        "value": "#ede7e6",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#f5f2f2",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#f8f6f6",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#fefefe",
+        "desc": "Top-right controls gradient end"
       }
     },
     "lines": {

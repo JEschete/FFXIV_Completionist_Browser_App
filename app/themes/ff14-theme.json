@@ -30,6 +30,22 @@
       "panel-3": {
         "value": "#2f4888",
         "desc": "Highest elevation in star-lit cobalt"
+      },
+      "sidebar-top": {
+        "value": "#101d3d",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#0a1229",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#22366a",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#182952",
+        "desc": "Top-right controls gradient end"
       }
     },
     "lines": {
@@ -132,6 +148,22 @@
       "panel-3": {
         "value": "#e7f0ff",
         "desc": "Highest elevation"
+      },
+      "sidebar-top": {
+        "value": "#dfecff",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#edf5ff",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#f3f8ff",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#ffffff",
+        "desc": "Top-right controls gradient end"
       }
     },
     "lines": {

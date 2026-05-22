@@ -30,6 +30,22 @@
       "panel-3": {
         "value": "#322a84",
         "desc": "Highest elevation in energized cocoon-blue violet"
+      },
+      "sidebar-top": {
+        "value": "#121031",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#09081a",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#251f63",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#1b1748",
+        "desc": "Top-right controls gradient end"
       }
     },
     "lines": {
@@ -132,6 +148,22 @@
       "panel-3": {
         "value": "#e6eaff",
         "desc": "Highest light elevation"
+      },
+      "sidebar-top": {
+        "value": "#e9ecff",
+        "desc": "Sidebar gradient start"
+      },
+      "sidebar-bottom": {
+        "value": "#f5f7ff",
+        "desc": "Sidebar gradient end"
+      },
+      "chrome-top": {
+        "value": "#f2f4ff",
+        "desc": "Top-right controls gradient start"
+      },
+      "chrome-bottom": {
+        "value": "#ffffff",
+        "desc": "Top-right controls gradient end"
       }
     },
     "lines": {
