@@ -34,11 +34,21 @@
       <option value="light" {{ 'selected' if selected_scheme_setting == 'light' else '' }}>Light</option>
     </select>
 
+    <label for="section-sort-mode">Crafting/Gathering section order</label>
+    <select id="section-sort-mode" name="section_sort_mode" required>
+      {% for opt in section_sort_options %}
+      <option value="{{ opt.value }}" {{ 'selected' if opt.value == selected_section_sort_mode else '' }}>
+        {{ opt.label }}
+      </option>
+      {% endfor %}
+    </select>
+
     <p class="probe-hint">
-      Active now: <strong>{{ theme_name }}</strong> · effective scheme <strong>{{ effective_scheme }}</strong>
+      Active now: <strong>{{ theme_name }}</strong> · effective scheme <strong>{{ effective_scheme }}</strong> ·
+      section sort <strong>{{ section_sort_mode_label }}</strong>
     </p>
 
-    <button type="submit" class="btn-primary">Save theme</button>
+    <button type="submit" class="btn-primary">Save settings</button>
   </form>
 
   {% if selected_theme.warnings %}
@@ -51,6 +61,32 @@
     </ul>
   </div>
   {% endif %}
+</section>
+
+<section class="probe-card" style="margin-top: 16px;">
+  <h2>Max Level Caps (Jobs / Professions)</h2>
+  <p class="page-sub">Set per-row caps used by Classes-Jobs value tracking. Useful when game caps change.</p>
+
+  <form method="post" action="/settings/value-caps" class="probe-form">
+    <div class="cap-grid" role="group" aria-label="Classes-Jobs max level caps">
+      {% for row in value_cap_rows %}
+      <div class="cap-row">
+        <label for="cap-{{ loop.index }}">{{ row.display_name }}</label>
+        <input id="cap-{{ loop.index }}"
+               type="number"
+               name="cap_value"
+               min="1"
+               step="1"
+               value="{{ row.current_cap }}" />
+        <input type="hidden" name="cap_key" value="{{ row.cap_key }}" />
+        <input type="hidden" name="default_cap" value="{{ row.default_cap }}" />
+        <span class="cap-default">Default: {{ row.default_cap }}</span>
+      </div>
+      {% endfor %}
+    </div>
+
+    <button type="submit" class="btn-primary">Save max levels</button>
+  </form>
 </section>
 
 {% if invalid_themes %}

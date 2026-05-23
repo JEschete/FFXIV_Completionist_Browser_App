@@ -15,11 +15,17 @@ import datetime as dt
 import json
 import re
 import sqlite3
+import sys
 from pathlib import Path
 
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 import hashlib
+
+if __package__ in {None, ""}:
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
+
+from app import section_sort
 
 
 def _row_hash(row_dict: dict) -> str:
@@ -897,6 +903,10 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
         prev_track_row: int | None = None
         section_banner_count = 0
         first_section_banner_title: str | None = None
+        section_sort_state = section_sort.SectionSortState(
+            track=section_sort.default_track(sheet_name),
+            scope=None,
+        )
         sub_chain_col = SUB_CHAIN_BOUNDARY_COLUMN.get(sheet_name)
         prev_sub_chain_value: str | None = None
 
@@ -927,6 +937,14 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
                 seq_in_section = 0
                 prev_track_row = None
                 prev_sub_chain_value = None
+                section_payload = dict(data)
+                if section_sort.supports_sheet(sheet_name):
+                    section_payload["section_sort"] = section_sort.classify_section(
+                        sheet_name,
+                        a_val or "",
+                        r_idx,
+                        section_sort_state,
+                    )
                 node_rows.append(
                     (
                         run_id,
@@ -937,8 +955,8 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
                         "section",
                         current_section,
                         0,
-                        json.dumps(data),
-                        _row_hash(data) if data else None,
+                        json.dumps(section_payload),
+                        None,
                     )
                 )
                 continue

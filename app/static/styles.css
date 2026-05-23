@@ -1051,6 +1051,53 @@ img.brand-mark { object-fit: cover; }
   padding-left: 18px;
   color: #b9c4d3;
 }
+
+.cap-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cap-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-s);
+  background: color-mix(in srgb, var(--panel-2) 78%, transparent);
+}
+.cap-row label {
+  flex: 1 1 auto;
+  min-width: 120px;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cap-row input[type="number"] {
+  width: 120px;
+  flex: 0 0 120px;
+  margin-left: auto;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 13px;
+  text-align: right;
+}
+.cap-row input[type="number"]:focus {
+  outline: none;
+  border-color: var(--accent-dk);
+  box-shadow: 0 0 0 3px rgba(107,164,232,.13);
+}
+.cap-default {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .empty {
   padding: 40px; text-align: center;
   color: var(--muted);
@@ -1062,6 +1109,13 @@ img.brand-mark { object-fit: cover; }
 @media (max-width: 880px) {
   .char-import-grid {
     grid-template-columns: 1fr;
+  }
+  .cap-row input[type="number"] {
+    width: 104px;
+    flex-basis: 104px;
+  }
+  .cap-default {
+    display: none;
   }
   .char-create {
     flex-wrap: wrap;

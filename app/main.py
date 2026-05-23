@@ -30,7 +30,7 @@ if __package__ in {None, ""}:
 
 from contextlib import asynccontextmanager
 
-from app import db, lodestone_import, progress_io
+from app import db, lodestone_import, progress_io, section_sort
 
 
 def reconcile_progress_sidecars() -> None:
@@ -82,6 +82,21 @@ CHAR_IMPORT_HISTORY_DIR = LODESTONE_OUTPUT_DIR / "import_history"
 THEME_COOKIE = "ffxiv_theme"
 THEME_SCHEME_COOKIE = "ffxiv_theme_scheme"
 THEME_ALLOWED_SCHEME_SETTINGS = {"default", "dark", "light"}
+SECTION_SORT_COOKIE = "ffxiv_sheet_section_sort"
+SECTION_SORT_OPTIONS = (
+    {
+        "value": section_sort.SORT_MODE_WORKBOOK,
+        "label": section_sort.SORT_MODE_LABELS[section_sort.SORT_MODE_WORKBOOK],
+    },
+    {
+        "value": section_sort.SORT_MODE_PROGRESSION,
+        "label": section_sort.SORT_MODE_LABELS[section_sort.SORT_MODE_PROGRESSION],
+    },
+    {
+        "value": section_sort.SORT_MODE_ENDGAME,
+        "label": section_sort.SORT_MODE_LABELS[section_sort.SORT_MODE_ENDGAME],
+    },
+)
 THEME_TOKEN_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 THEME_HEX_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 THEME_REQUIRED_TOKENS = (
@@ -217,6 +232,21 @@ def set_theme_scheme_cookie(response, scheme: str) -> None:
 def normalize_theme_scheme_setting(raw: str) -> str:
     value = (raw or "").strip().lower()
     return value if value in THEME_ALLOWED_SCHEME_SETTINGS else "default"
+
+
+def cookie_section_sort_mode(request: Request) -> str:
+    raw = request.cookies.get(SECTION_SORT_COOKIE)
+    return section_sort.normalize_sort_mode(raw)
+
+
+def set_section_sort_cookie(response, mode: str) -> None:
+    value = section_sort.normalize_sort_mode(mode)
+    response.set_cookie(
+        SECTION_SORT_COOKIE,
+        value,
+        max_age=60 * 60 * 24 * 365,
+        samesite="lax",
+    )
 
 
 def _extract_theme_color(raw: object) -> str | None:
@@ -1328,6 +1358,7 @@ class Ctx:
             self.conn, cookie_character_id(request)
         )
         self.character_id = int(self.character["id"])
+        self.section_sort_mode = cookie_section_sort_mode(request)
         self.starting_class: str | None = (
             self.character["starting_class"]
             if "starting_class" in self.character.keys() else None
@@ -1342,6 +1373,14 @@ class Ctx:
             self.tree, self.overall, self.sheets_by_name = db.build_nav_tree(
                 self.sheets, self.rollups
             )
+            db.attach_content_virtual_nodes(
+                self.conn,
+                self.tree,
+                self.sheets_by_name,
+                self.run_id,
+                self.character_id,
+                self.starting_class,
+            )
 
     def close(self) -> None:
         self.conn.close()
@@ -1352,6 +1391,9 @@ class Ctx:
             sheet = self.sheets_by_name.get(sheet_name)
         else:
             row = db.fetch_sheet(self.conn, self.run_id, sheet_name)
+            if row is None and db.VIRTUAL_SEP in sheet_name:
+                source_sheet = sheet_name.split(db.VIRTUAL_SEP, 1)[0]
+                row = db.fetch_sheet(self.conn, self.run_id, source_sheet)
             sheet = dict(row) if row is not None else None
         if sheet is None:
             raise HTTPException(404, f"Unknown sheet: {sheet_name}")
@@ -1376,6 +1418,10 @@ class Ctx:
             "theme_css": theme["theme_css"],
             "theme_scheme_setting": theme["scheme_setting"],
             "theme_effective_scheme": theme["effective_scheme"],
+            "section_sort_mode": self.section_sort_mode,
+            "section_sort_mode_label": section_sort.sort_mode_label(
+                self.section_sort_mode
+            ),
             "theme_first_paint_bg": theme["first_paint_bg"],
             "theme_first_paint_text": theme["first_paint_text"],
             "theme_color_scheme_meta": theme["color_scheme_meta"],
@@ -1384,6 +1430,10 @@ class Ctx:
     def header_context(self, sheet_name: str | None) -> dict:
         node = db.find_node(self.tree, sheet_name) if sheet_name else None
         roll = self.rollups.get(sheet_name) if sheet_name else None
+        if roll is None and node is not None:
+            node_roll = node.get("roll")
+            if isinstance(node_roll, dict):
+                roll = node_roll
         return {
             "overall": self.overall,
             "overall_pct": db.pct(self.overall),
@@ -1401,6 +1451,7 @@ class Ctx:
         set_char_cookie(resp, self.character_id)
         set_theme_cookie(resp, self.theme_state["theme_id"])
         set_theme_scheme_cookie(resp, self.theme_state["scheme_setting"])
+        set_section_sort_cookie(resp, self.section_sort_mode)
         return resp
 
 
@@ -1491,29 +1542,109 @@ def browse(request: Request, sheet_name: str, q: str = "", state: str = "all"):
                 "active_sheet": sheet_name,
             })
 
+        # content sheet with synthesized subpages: render a link-only index.
+        # This keeps parent pages like Grand Company Ranks focused on routing
+        # into their child tracks instead of mixing all rows in one long table.
+        if node and node.get("children"):
+            section_order: list[str | None] = []
+            section_cards: dict[str | None, list[dict]] = {}
+            for child in node["children"]:
+                card = {
+                    "sheet_name": child["sheet_name"],
+                    "title": child["title"],
+                    "is_menu": child["is_menu"],
+                    "roll": child["roll"],
+                    "pct": child["pct"],
+                    "children": len(child["children"]),
+                }
+                section = child.get("parent_menu_section")
+                if section not in section_cards:
+                    section_cards[section] = []
+                    section_order.append(section)
+                section_cards[section].append(card)
+
+            sections = [
+                {"label": s, "cards": section_cards[s]}
+                for s in section_order if s is not None
+            ]
+            if None in section_cards:
+                sections.append({"label": None, "cards": section_cards[None]})
+            children_flat = [c for s in sections for c in s["cards"]]
+            return ctx.render("menu.html", {
+                "sheet": sheet,
+                "crumbs": crumbs,
+                "sections": sections,
+                "children": children_flat,
+                "node": node,
+                "active_sheet": sheet_name,
+            })
+
         # content sheet: data-table view grouped by section
+        source_sheet_name = str(sheet.get("source_sheet") or sheet_name)
+        source_sheet = ctx.sheets_by_name.get(source_sheet_name)
+        if source_sheet is None:
+            raise HTTPException(404, f"Unknown source sheet: {source_sheet_name}")
+
         rows = db.fetch_rows(
-            ctx.conn, ctx.run_id, ctx.character_id, sheet_name,
+            ctx.conn, ctx.run_id, ctx.character_id, source_sheet_name,
             q=q, state=state, starting_class=ctx.starting_class,
         )
         flags = db.sheet_chain_flags(
-            ctx.conn, ctx.run_id, ctx.character_id, sheet_name, ctx.starting_class
+            ctx.conn, ctx.run_id, ctx.character_id, source_sheet_name,
+            ctx.starting_class,
         )
         for row in rows:
             row["chain_info"] = flags.get(row["row_index"])
-        groups = db.group_rows_by_section(rows)
-        roll = ctx.rollups.get(sheet_name, db._empty_roll())
+        groups = db.group_rows_by_section(
+            rows,
+            sheet_name=source_sheet_name,
+            section_sort_mode=ctx.section_sort_mode,
+        )
+
+        if sheet.get("is_virtual") and sheet.get("virtual_kind") == "content_group":
+            allowed_section_rows = {
+                int(i)
+                for i in (sheet.get("section_row_indexes") or [])
+                if isinstance(i, int) or (isinstance(i, str) and i.isdigit())
+            }
+            groups = [
+                g for g in groups
+                if int(g.get("row_index") or -1) in allowed_section_rows
+            ]
+
+        shown = sum(len(g["rows"]) for g in groups)
+        view_sheet = dict(source_sheet)
+        view_sheet["sheet_name"] = source_sheet_name
+        if sheet.get("is_virtual") and sheet.get("virtual_kind") == "content_group":
+            view_sheet["title"] = sheet["title"]
+            view_sheet["total_rows"] = shown
+
+        roll = (
+            node.get("roll")
+            if node is not None and sheet.get("is_virtual")
+            else ctx.rollups.get(source_sheet_name)
+        )
+        if not isinstance(roll, dict):
+            roll = db._empty_roll()
+
         import json as _json
         return ctx.render("sheet.html", {
-            "sheet": sheet,
-            "columns": _json.loads(sheet["data_columns_json"]),
+            "sheet": view_sheet,
+            "columns": _json.loads(source_sheet["data_columns_json"]),
             "crumbs": crumbs,
             "groups": groups,
             "roll": roll,
             "pct": db.pct(roll),
             "q": q,
             "state": state,
-            "shown": sum(len(g["rows"]) for g in groups),
+            "shown": shown,
+            "sheet_total_rows": int(view_sheet.get("total_rows") or shown),
+            "browse_sheet_name": sheet_name,
+            "section_sort_supported": db.sheet_supports_section_sort(source_sheet_name),
+            "section_sort_mode": ctx.section_sort_mode,
+            "section_sort_mode_label": section_sort.sort_mode_label(
+                ctx.section_sort_mode
+            ),
             "active_sheet": sheet_name,
         })
     finally:
@@ -1991,6 +2122,7 @@ def settings_page(request: Request, saved: str = "", error: str = ""):
         catalog = theme_state["catalog"] if isinstance(theme_state.get("catalog"), dict) else {}
         themes = catalog.get("themes") if isinstance(catalog.get("themes"), list) else []
         invalid_themes = catalog.get("invalid") if isinstance(catalog.get("invalid"), list) else []
+        value_cap_rows = db.classes_jobs_cap_rows(ctx.conn, ctx.run_id)
         return ctx.render("settings.html", {
             "active_sheet": None,
             "saved": saved,
@@ -2000,7 +2132,10 @@ def settings_page(request: Request, saved: str = "", error: str = ""):
             "selected_theme": theme_state.get("theme") or {},
             "selected_theme_id": theme_state["theme_id"],
             "selected_scheme_setting": theme_state["scheme_setting"],
+            "selected_section_sort_mode": ctx.section_sort_mode,
+            "section_sort_options": SECTION_SORT_OPTIONS,
             "effective_scheme": theme_state["effective_scheme"],
+            "value_cap_rows": value_cap_rows,
         })
     finally:
         ctx.close()
@@ -2010,6 +2145,7 @@ def settings_page(request: Request, saved: str = "", error: str = ""):
 def settings_theme_save(
     theme_id: str = Form(""),
     theme_scheme: str = Form("default"),
+    section_sort_mode: str = Form(section_sort.DEFAULT_SORT_MODE),
 ):
     catalog = get_theme_catalog()
     themes = catalog.get("themes") if isinstance(catalog.get("themes"), list) else []
@@ -2024,14 +2160,55 @@ def settings_theme_save(
         )
 
     normalized_scheme = normalize_theme_scheme_setting(theme_scheme)
+    normalized_section_sort_mode = section_sort.normalize_sort_mode(section_sort_mode)
     selected_schemes = selected_theme.get("schemes") if isinstance(selected_theme.get("schemes"), dict) else {}
     if normalized_scheme in {"dark", "light"} and normalized_scheme not in selected_schemes:
         normalized_scheme = "default"
 
-    response = RedirectResponse("/settings?saved=Theme%20updated", status_code=303)
+    response = RedirectResponse("/settings?saved=Settings%20updated", status_code=303)
     set_theme_cookie(response, normalized_theme_id)
     set_theme_scheme_cookie(response, normalized_scheme)
+    set_section_sort_cookie(response, normalized_section_sort_mode)
     return response
+
+
+@app.post("/settings/value-caps")
+async def settings_value_caps_save(request: Request):
+    form = await request.form()
+    keys = [str(v).strip() for v in form.getlist("cap_key")]
+    values = [str(v).strip() for v in form.getlist("cap_value")]
+    defaults = [str(v).strip() for v in form.getlist("default_cap")]
+
+    if not keys or len(keys) != len(values) or len(keys) != len(defaults):
+        return RedirectResponse(
+            f"/settings?error={quote('Could not parse cap settings form.')}",
+            status_code=303,
+        )
+
+    overrides = db.load_value_cap_overrides()
+    for key, raw_value, raw_default in zip(keys, values, defaults):
+        if not key:
+            continue
+        try:
+            cap = float(raw_value)
+            default_cap = float(raw_default)
+        except ValueError:
+            return RedirectResponse(
+                f"/settings?error={quote('Caps must be numeric values.')}",
+                status_code=303,
+            )
+        if cap <= 0:
+            return RedirectResponse(
+                f"/settings?error={quote('Caps must be greater than 0.')}",
+                status_code=303,
+            )
+        if abs(cap - default_cap) <= 1e-9:
+            overrides.pop(key, None)
+        else:
+            overrides[key] = cap
+
+    db.save_value_cap_overrides(overrides)
+    return RedirectResponse("/settings?saved=Max%20level%20caps%20updated", status_code=303)
 
 
 @app.get("/lodestone-probe", response_class=HTMLResponse)
@@ -2273,7 +2450,7 @@ def api_set_value(
     row_index: int = Form(...),
     percent: float = Form(...),
 ):
-    """Set a value-row's numeric level (0-100); state is derived."""
+    """Set a value-row's numeric level (0..row cap); state is derived."""
     ctx = Ctx(request, full=False)
     try:
         _ensure_character_import_idle(ctx.character_id)
