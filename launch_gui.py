@@ -24,6 +24,7 @@ import sys
 import tempfile
 import webbrowser
 from pathlib import Path
+from typing import TextIO
 
 # Embedded Python (Inno Setup installer) uses a python313._pth file that does
 # NOT add the script's directory to sys.path, so `from launch import ...`
@@ -44,6 +45,7 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import QCloseEvent, QColor, QFont, QIcon, QPaintEvent, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -509,6 +511,10 @@ class MainWindow(QMainWindow):
         if ICON_PATH.exists():
             self.setWindowIcon(QIcon(str(ICON_PATH)))
 
+        # Launcher settings shared with launch.py (.launch.json).
+        self._cfg = load_config()
+        self._ingest_mem_log_enabled = bool(self._cfg.get("ingest_mem_log", False))
+
         self._server: QProcess | None = None
         self._server_error = False  # sticky error flag until next start
         self._user_stopping = False  # set while a user-initiated stop is in flight
@@ -682,6 +688,14 @@ class MainWindow(QMainWindow):
         box = QGroupBox("Settings")
         layout = QVBoxLayout(box)
 
+        self.mem_log_chk = QCheckBox("Enable ingest memory logging")
+        self.mem_log_chk.setChecked(self._ingest_mem_log_enabled)
+        self.mem_log_chk.setToolTip(
+            "Pass --mem-log to workbook ingest for per-phase RAM checkpoints."
+        )
+        self.mem_log_chk.toggled.connect(self.set_ingest_mem_log)
+        layout.addWidget(self.mem_log_chk)
+
         bind_btn = QPushButton("Set bind IP for LAN access…")
         bind_btn.clicked.connect(self.set_bind_ip)
         layout.addWidget(bind_btn)
@@ -736,12 +750,18 @@ class MainWindow(QMainWindow):
         proc.setProcessEnvironment(env)
         return proc
 
-    def _drain_to_log(self, proc: QProcess) -> None:
+    def _drain_to_log(self, proc: QProcess, *, sink=None) -> None:
         out = proc.readAllStandardOutput().data().decode("utf-8", errors="replace")
         err = proc.readAllStandardError().data().decode("utf-8", errors="replace")
         for line in (out + err).splitlines():
             if line.strip():
                 self.log.appendPlainText(line)
+                if sink is not None:
+                    try:
+                        sink(line)
+                    except Exception:
+                        # Don't let file logging issues break the live UI log.
+                        pass
 
     def _is_server_listening(self) -> bool:
         """Probe the actual bind host, not just loopback. A LAN-only bind
@@ -1020,28 +1040,77 @@ class MainWindow(QMainWindow):
         if not path:
             return
 
+        log_dir = DATA_DIR / "logs"
+        log_path: Path | None = None
+        ingest_log_fh: TextIO | None = None
+        try:
+            log_dir.mkdir(parents=True, exist_ok=True)
+            stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            log_path = log_dir / f"ingest_{stamp}.log"
+            ingest_log_fh = log_path.open("w", encoding="utf-8")
+        except OSError as e:
+            self._log(f"Could not open ingest log file under {log_dir}: {e}")
+
+        def _write_ingest_line(line: str) -> None:
+            if ingest_log_fh is None:
+                return
+            ingest_log_fh.write(line + "\n")
+            ingest_log_fh.flush()
+
+        def _close_ingest_log() -> None:
+            nonlocal ingest_log_fh
+            if ingest_log_fh is None:
+                return
+            try:
+                ingest_log_fh.flush()
+                ingest_log_fh.close()
+            finally:
+                ingest_log_fh = None
+
         self._log(f"Ingesting {path} …")
+        _write_ingest_line(f"[gui] Ingesting {path}")
+        if log_path is not None:
+            self._log(f"Saving ingest log: {log_path}")
+            _write_ingest_line(f"[gui] Saving ingest log: {log_path}")
+
         script = ROOT / "scripts" / "prep_xlsx_to_sqlite.py"
         proc = self._new_unbuffered_process()
         proc.setProgram(str(VENV_PY))
-        proc.setArguments(["-u", str(script), "--xlsx", path])
+        args = ["-u", str(script), "--xlsx", path]
+        if self._ingest_mem_log_enabled:
+            args.append("--mem-log")
+            self._log("Ingest memory logging is enabled (--mem-log).")
+            _write_ingest_line("[gui] Ingest memory logging enabled (--mem-log)")
+        _write_ingest_line("[gui] Command: " + " ".join([str(VENV_PY), *args]))
+        proc.setArguments(args)
         proc.setWorkingDirectory(str(ROOT))
 
         def on_done(code, status):
             self._log(f"Ingest finished (code={code}, status={status.name})")
+            _write_ingest_line(f"[gui] Ingest finished (code={code}, status={status.name})")
+            _close_ingest_log()
             self._refresh_db_status()
             self._refresh_characters()
+            details = f"Ingest exited with code {code}.\n\nSee the log pane for details."
+            if log_path is not None:
+                details += f"\n\nSaved log:\n{log_path}"
             QMessageBox.information(
                 self, "Ingest finished",
-                f"Ingest exited with code {code}.\n\nSee the log pane for details.",
+                details,
             )
 
-        proc.readyReadStandardOutput.connect(lambda: self._drain_to_log(proc))
-        proc.readyReadStandardError.connect(lambda: self._drain_to_log(proc))
+        proc.readyReadStandardOutput.connect(
+            lambda: self._drain_to_log(proc, sink=_write_ingest_line)
+        )
+        proc.readyReadStandardError.connect(
+            lambda: self._drain_to_log(proc, sink=_write_ingest_line)
+        )
         proc.finished.connect(on_done)
         proc.start()
         if not proc.waitForStarted(3000):
             self._log(f"Could not start ingest: {proc.errorString()}")
+            _write_ingest_line(f"[gui] Could not start ingest: {proc.errorString()}")
+            _close_ingest_log()
             QMessageBox.warning(self, "Ingest failed to start", proc.errorString())
 
     def show_status(self) -> None:
@@ -1255,9 +1324,8 @@ class MainWindow(QMainWindow):
         if not new_host:
             QMessageBox.warning(self, "Invalid IP", "That doesn't look like a valid IPv4 address.")
             return
-        cfg = load_config()
-        cfg["host"] = new_host
-        save_config(cfg)
+        self._cfg["host"] = new_host
+        save_config(self._cfg)
         self._log(f"Bind host set to {new_host}")
         self._refresh_status()
         if port_in_use("127.0.0.1", PORT):
@@ -1265,6 +1333,13 @@ class MainWindow(QMainWindow):
                 self, "Restart needed",
                 "The server is running. Stop and restart it for the new bind to take effect.",
             )
+
+    def set_ingest_mem_log(self, enabled: bool) -> None:
+        self._ingest_mem_log_enabled = bool(enabled)
+        self._cfg["ingest_mem_log"] = self._ingest_mem_log_enabled
+        save_config(self._cfg)
+        state = "enabled" if self._ingest_mem_log_enabled else "disabled"
+        self._log(f"Ingest memory logging {state}.")
 
     def reinstall_deps(self) -> None:
         if IS_EMBEDDED:

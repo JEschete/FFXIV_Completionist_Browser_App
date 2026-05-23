@@ -12,10 +12,14 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import gc
 import json
+import os
 import re
 import sqlite3
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -244,6 +248,160 @@ def split_candidates(value: str | None) -> list[str]:
     return out
 
 
+_TASKLIST_CACHE_TS: float = 0.0
+_TASKLIST_CACHE_MB: float | None = None
+
+
+def _tasklist_working_set_mb() -> float | None:
+    """Fallback RSS from tasklist (Windows only), cached briefly.
+
+    Spawning tasklist on every checkpoint would be expensive, so cache for a
+    short interval to keep mem-log overhead low.
+    """
+    global _TASKLIST_CACHE_TS, _TASKLIST_CACHE_MB
+    now = time.monotonic()
+    if now - _TASKLIST_CACHE_TS < 0.7:
+        return _TASKLIST_CACHE_MB
+
+    _TASKLIST_CACHE_TS = now
+    _TASKLIST_CACHE_MB = None
+    if not sys.platform.startswith("win"):
+        return None
+
+    try:
+        proc = subprocess.run(
+            [
+                "tasklist",
+                "/FI",
+                f"PID eq {os.getpid()}",
+                "/FO",
+                "CSV",
+                "/NH",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+        line = (proc.stdout or "").strip().splitlines()
+        if not line:
+            return None
+        row = line[0]
+        # CSV looks like: "python.exe","1234","Console","1","21,384 K"
+        parts = [p.strip().strip('"') for p in row.split(",")]
+        if len(parts) < 5:
+            return None
+        mem_raw = parts[-1].upper().replace(" K", "").replace(",", "").strip()
+        kb = float(mem_raw)
+        _TASKLIST_CACHE_MB = kb / 1024.0
+    except Exception:
+        _TASKLIST_CACHE_MB = None
+    return _TASKLIST_CACHE_MB
+
+
+def _process_memory_snapshot_mb() -> dict[str, float | None]:
+    """Best-effort current-process memory snapshot in MB.
+
+    On Windows this reports current working set + private bytes + peak working
+    set. On other platforms, only peak RSS may be available.
+    """
+    out: dict[str, float | None] = {
+        "rss": None,
+        "private": None,
+        "peak": None,
+    }
+
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class PROCESS_MEMORY_COUNTERS_EX(ctypes.Structure):
+                _fields_ = [
+                    ("cb", wintypes.DWORD),
+                    ("PageFaultCount", wintypes.DWORD),
+                    ("PeakWorkingSetSize", ctypes.c_size_t),
+                    ("WorkingSetSize", ctypes.c_size_t),
+                    ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                    ("PagefileUsage", ctypes.c_size_t),
+                    ("PeakPagefileUsage", ctypes.c_size_t),
+                    ("PrivateUsage", ctypes.c_size_t),
+                ]
+
+            psapi = ctypes.WinDLL("psapi")
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+            # Explicit signatures make the call reliable across Python builds.
+            kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+            psapi.GetProcessMemoryInfo.argtypes = [
+                wintypes.HANDLE,
+                ctypes.c_void_p,
+                wintypes.DWORD,
+            ]
+            psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+
+            h_process = kernel32.GetCurrentProcess()
+            counters = PROCESS_MEMORY_COUNTERS_EX()
+            counters.cb = ctypes.sizeof(counters)
+            ok = psapi.GetProcessMemoryInfo(
+                h_process,
+                ctypes.byref(counters),
+                counters.cb,
+            )
+            if ok:
+                mb = 1024.0 * 1024.0
+                out["rss"] = float(counters.WorkingSetSize) / mb
+                out["private"] = float(counters.PrivateUsage) / mb
+                out["peak"] = float(counters.PeakWorkingSetSize) / mb
+                return out
+        except Exception:
+            pass
+
+        # Last-resort Windows fallback: tasklist working set only.
+        rss_mb = _tasklist_working_set_mb()
+        if rss_mb is not None:
+            out["rss"] = rss_mb
+            return out
+
+    # Non-Windows fallback: peak RSS only (platform dependent units).
+    try:
+        import resource
+
+        getrusage = getattr(resource, "getrusage", None)
+        rusage_self = getattr(resource, "RUSAGE_SELF", None)
+        if callable(getrusage) and rusage_self is not None:
+            usage = getrusage(rusage_self)
+            rss = float(getattr(usage, "ru_maxrss", 0.0))
+            # macOS reports bytes; Linux reports KB.
+            if sys.platform == "darwin":
+                out["peak"] = rss / (1024.0 * 1024.0)
+            else:
+                out["peak"] = rss / 1024.0
+    except Exception:
+        pass
+    return out
+
+
+def log_memory_checkpoint(enabled: bool, stage: str) -> None:
+    if not enabled:
+        return
+    snap = _process_memory_snapshot_mb()
+    ts = dt.datetime.now().strftime("%H:%M:%S")
+
+    def _fmt(value: float | None) -> str:
+        return "n/a" if value is None else f"{value:,.1f}MB"
+
+    print(
+        f"[mem {ts}] {stage} | "
+        f"rss={_fmt(snap.get('rss'))} "
+        f"private={_fmt(snap.get('private'))} "
+        f"peak={_fmt(snap.get('peak'))}"
+    )
+
+
 # --- structural analysis ----------------------------------------------------
 
 def is_menu_sheet(name: str) -> bool:
@@ -259,7 +417,10 @@ def menu_parent(name: str) -> str | None:
 
 def find_parent_link(ws) -> str | None:
     """Content sheets carry a 'Main Page' hyperlink back to their parent menu."""
-    for row in ws.iter_rows(min_row=1, max_row=3):
+    max_col = min(ws.max_column or 0, 80)
+    if max_col < 1:
+        return None
+    for row in ws.iter_rows(min_row=1, max_row=3, min_col=1, max_col=max_col):
         for cell in row:
             if cell.hyperlink is None:
                 continue
@@ -325,6 +486,9 @@ def extract_menu_groups(
     (callers leave parent_menu_section NULL — UI renders ungrouped)."""
     if ws.max_row is None or ws.max_row < 8:
         return {}
+    max_scan_col = min(ws.max_column or 0, 80)
+    if max_scan_col < 1:
+        return {}
 
     # 1) find the header row: scan rows 5-20, pick the row with the most
     # "text cell with a percent cell within ~2 columns to its left" pairs
@@ -334,14 +498,15 @@ def extract_menu_groups(
     header_pairs: list[tuple[int, str]] = []
     for r_idx in range(5, min(ws.max_row, 25) + 1):
         pairs: list[tuple[int, str]] = []
-        for cell in ws[r_idx]:
+        for col_idx in range(1, max_scan_col + 1):
+            cell = ws.cell(row=r_idx, column=col_idx)
             if not isinstance(cell.value, str):
                 continue
             text = cell.value.strip()
-            if not text or cell.column < 2:
+            if not text or col_idx < 2:
                 continue
-            if _has_percent_left(ws, r_idx, cell.column):
-                pairs.append((cell.column, text))
+            if _has_percent_left(ws, r_idx, col_idx):
+                pairs.append((col_idx, text))
         if len(pairs) >= 2 and len(pairs) > len(header_pairs):
             header_row_idx = r_idx
             header_pairs = pairs
@@ -388,7 +553,10 @@ def extract_menu_link_targets(ws) -> set[str]:
     content sheet's own "Main Page" link points to a top menu instead of the
     submenu that actually contains it."""
     targets: set[str] = set()
-    for row in ws.iter_rows(min_row=1, max_row=(ws.max_row or 0)):
+    max_col = min(ws.max_column or 0, 80)
+    if max_col < 1:
+        return targets
+    for row in ws.iter_rows(min_row=1, max_row=(ws.max_row or 0), min_col=1, max_col=max_col):
         for cell in row:
             target = link_target_sheet(cell)
             if target:
@@ -711,52 +879,78 @@ def _flatten_refs(wb, sheet_name: str, coord: str, depth: int) -> str:
 
 
 def collect_class_overrides(
-    xlsx_path: Path, run_id: int
+    xlsx_path: Path, run_id: int, *, mem_log: bool = False
 ) -> list[tuple[int, str, str, int, str]]:
     """Evaluate class-dependent formula cells and emit per-class state overrides."""
+    log_memory_checkpoint(mem_log, "formula-pass: load workbook data_only=False")
     wb = load_workbook(filename=xlsx_path, data_only=False)
+    try:
+        log_memory_checkpoint(mem_log, "formula-pass: workbook loaded")
+        formula_cells: list[tuple[str, int]] = []
+        total_sheets = len(wb.sheetnames)
+        for idx, name in enumerate(wb.sheetnames, start=1):
+            if is_menu_sheet(name) or name in READONLY_SHEETS:
+                continue
+            ws = wb[name]
+            if ws.sheet_state != "visible":
+                continue
+            for row_idx in range(2, min(ws.max_row or 0, 2000) + 1):
+                a = ws.cell(row=row_idx, column=1)
+                v = a.value
+                if not (isinstance(v, str) and v.startswith("=")):
+                    continue
+                if "L2" not in _flatten_refs(wb, name, a.coordinate, depth=3):
+                    continue
+                formula_cells.append((name, row_idx))
+            if mem_log and (idx == 1 or idx % 20 == 0 or idx == total_sheets):
+                log_memory_checkpoint(
+                    mem_log,
+                    f"formula-pass: scanned sheet {idx}/{total_sheets} ({name})",
+                )
 
-    formula_cells: list[tuple[str, int]] = []
-    for name in wb.sheetnames:
-        if is_menu_sheet(name) or name in READONLY_SHEETS:
-            continue
-        ws = wb[name]
-        if ws.sheet_state != "visible":
-            continue
-        for row in ws.iter_rows(min_row=2, max_row=min(ws.max_row or 0, 2000)):
-            if not row:
-                continue
-            a = row[0]
-            v = a.value
-            if not (isinstance(v, str) and v.startswith("=")):
-                continue
-            if "L2" not in _flatten_refs(wb, name, a.coordinate, depth=3):
-                continue
-            formula_cells.append((name, int(a.row or 0)))
+        log_memory_checkpoint(
+            mem_log,
+            f"formula-pass: candidate formula cells={len(formula_cells)}",
+        )
 
-    per_class: dict[str, dict[tuple[str, int], str]] = {}
-    for cls in STARTING_CLASSES:
-        ev = FormulaEvaluator(wb, cls)
-        per_class[cls] = {}
-        for sheet_name, row_idx in formula_cells:
-            coord = f"A{row_idx}"
-            val = ev.cell_value(sheet_name, coord)
-            if val in ("X", "N", "Y"):
-                state = {"X": "excluded", "N": "todo", "Y": "done"}[val]
-                per_class[cls][(sheet_name, row_idx)] = state
+        per_class: dict[str, dict[tuple[str, int], str]] = {}
+        for class_idx, cls in enumerate(STARTING_CLASSES, start=1):
+            ev = FormulaEvaluator(wb, cls)
+            per_class[cls] = {}
+            for sheet_name, row_idx in formula_cells:
+                coord = f"A{row_idx}"
+                val = ev.cell_value(sheet_name, coord)
+                if val in ("X", "N", "Y"):
+                    state = {"X": "excluded", "N": "todo", "Y": "done"}[val]
+                    per_class[cls][(sheet_name, row_idx)] = state
+            log_memory_checkpoint(
+                mem_log,
+                f"formula-pass: evaluated class {class_idx}/{len(STARTING_CLASSES)} ({cls})",
+            )
 
-    rows: list[tuple[int, str, str, int, str]] = []
-    all_cells = {k for d in per_class.values() for k in d}
-    for key in all_cells:
-        results = {cls: per_class[cls].get(key) for cls in STARTING_CLASSES}
-        if len(set(results.values())) <= 1:
-            continue
-        sheet_name, row_idx = key
-        for cls, state in results.items():
-            if state is None:
+        rows: list[tuple[int, str, str, int, str]] = []
+        all_cells = {k for d in per_class.values() for k in d}
+        for key in all_cells:
+            results = {cls: per_class[cls].get(key) for cls in STARTING_CLASSES}
+            if len(set(results.values())) <= 1:
                 continue
-            rows.append((run_id, cls, sheet_name, row_idx, state))
-    return rows
+            sheet_name, row_idx = key
+            for cls, state in results.items():
+                if state is None:
+                    continue
+                rows.append((run_id, cls, sheet_name, row_idx, state))
+        log_memory_checkpoint(
+            mem_log,
+            f"formula-pass: overrides built rows={len(rows)}",
+        )
+        return rows
+    finally:
+        log_memory_checkpoint(mem_log, "formula-pass: closing workbook")
+        try:
+            wb.close()
+        except Exception:
+            pass
+        log_memory_checkpoint(mem_log, "formula-pass: workbook closed")
 
 
 # --- schema rebuild ---------------------------------------------------------
@@ -816,11 +1010,13 @@ def rebuild_schema(conn: sqlite3.Connection) -> tuple[list[tuple], list[tuple]]:
 
 # --- ingest -----------------------------------------------------------------
 
-def ingest(xlsx_path: Path, db_path: Path) -> None:
+def ingest(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
+    log_memory_checkpoint(mem_log, "ingest: start")
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
 
     saved_chars, saved_progress = rebuild_schema(conn)
+    log_memory_checkpoint(mem_log, "ingest: schema rebuilt")
 
     started = dt.datetime.now().isoformat(timespec="seconds")
     raw_run_id = conn.execute(
@@ -832,8 +1028,11 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
     run_id = int(raw_run_id)
 
     print(f"Loading workbook {xlsx_path} ...")
+    log_memory_checkpoint(mem_log, "ingest: loading workbook data_only=True")
     wb = load_workbook(filename=xlsx_path, data_only=True)
+    log_memory_checkpoint(mem_log, "ingest: workbook loaded")
     sheet_names = set(wb.sheetnames)
+    sheet_count = len(wb.sheetnames)
 
     total_rows = 0
     for sheet_index, sheet_name in enumerate(wb.sheetnames, start=1):
@@ -844,6 +1043,10 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
         ws = wb[sheet_name]
         is_menu = is_menu_sheet(sheet_name)
         is_readonly = sheet_name in READONLY_SHEETS
+        log_memory_checkpoint(
+            mem_log,
+            f"sheet {sheet_index}/{sheet_count}: start {sheet_name}",
+        )
 
         if is_menu:
             parent = menu_parent(sheet_name)
@@ -864,11 +1067,9 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
 
         if is_menu or is_readonly:
             title = sheet_name
-            for row in ws.iter_rows(min_row=2, max_row=2):
-                banner = norm_value(row[0].value)
-                if banner:
-                    title = banner.title()
-                break
+            banner = norm_value(ws.cell(row=2, column=1).value)
+            if banner:
+                title = banner.title()
             conn.execute(
                 """
                 INSERT INTO sheets (
@@ -892,6 +1093,10 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
                 ),
             )
             print(f"  [{sheet_index:3}] {sheet_name:<52} menu/readonly")
+            log_memory_checkpoint(
+                mem_log,
+                f"sheet {sheet_index}/{sheet_count}: menu/readonly done {sheet_name}",
+            )
             continue
 
         node_rows: list[tuple] = []
@@ -910,13 +1115,10 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
         sub_chain_col = SUB_CHAIN_BOUNDARY_COLUMN.get(sheet_name)
         prev_sub_chain_value: str | None = None
 
-        for r_idx, row in enumerate(ws.iter_rows(), start=1):
-            if r_idx == 1:
-                continue
-
-            a_cell = row[0] if row else None
-            a_val = norm_value(a_cell.value) if a_cell else None
-            a_fill = cell_fill(a_cell) if a_cell else ""
+        for r_idx in range(2, (ws.max_row or 0) + 1):
+            a_cell = ws.cell(row=r_idx, column=1)
+            a_val = norm_value(a_cell.value)
+            a_fill = cell_fill(a_cell)
 
             data: dict[str, str] = {}
             for c in columns:
@@ -937,7 +1139,7 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
                 seq_in_section = 0
                 prev_track_row = None
                 prev_sub_chain_value = None
-                section_payload = dict(data)
+                section_payload: dict[str, object] = dict(data)
                 if section_sort.supports_sheet(sheet_name):
                     section_payload["section_sort"] = section_sort.classify_section(
                         sheet_name,
@@ -1083,6 +1285,10 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
             """,
             node_rows,
         )
+        log_memory_checkpoint(
+            mem_log,
+            f"sheet {sheet_index}/{sheet_count}: nodes inserted {sheet_name} count={len(node_rows)}",
+        )
 
         conn.executemany(
             """
@@ -1094,11 +1300,19 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
             """,
             seq_edges + resolved_unlocks,
         )
+        log_memory_checkpoint(
+            mem_log,
+            f"sheet {sheet_index}/{sheet_count}: edges inserted {sheet_name} count={len(seq_edges) + len(resolved_unlocks)}",
+        )
 
         total_rows += track_total
         print(
             f"  [{sheet_index:3}] {sheet_name:<52} rows={track_total:<5} "
             f"edges={len(seq_edges) + len(resolved_unlocks)} parent={parent}"
+        )
+        log_memory_checkpoint(
+            mem_log,
+            f"sheet {sheet_index}/{sheet_count}: done {sheet_name}",
         )
 
     if saved_chars:
@@ -1123,31 +1337,13 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
         )
         print(f"\nMigrated {len(saved_progress)} progress rows to run {run_id}")
 
-    print("\nScanning class-conditional formulas (second workbook pass)...")
-    overrides = collect_class_overrides(xlsx_path, run_id)
-    if overrides:
-        conn.executemany(
-            """
-            INSERT INTO class_overrides
-                (run_id, starting_class, sheet_name, row_index, state)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            overrides,
-        )
-        affected_cells = len({(s, r) for _, _, s, r, _ in overrides})
-        per_sheet: dict[str, int] = {}
-        for _, _, s, _, _ in overrides:
-            per_sheet[s] = per_sheet.get(s, 0) + 1
-        print(f"  class_overrides: {len(overrides)} rows across {affected_cells} cells")
-        for s, n in sorted(per_sheet.items(), key=lambda x: -x[1]):
-            print(f"    {s:<52} {n}")
-
     # --- Second pass: repair child parentage + capture menu sections ------
     # Some workbook tabs link "Main Page" back to a top menu even though they
     # are visually nested under a submenu. Use menu-sheet hyperlinks as the
     # structural source of truth so future ingests keep submenu children in the
     # correct branch.
     print("\nRepairing child parent links from menu hyperlinks...")
+    log_memory_checkpoint(mem_log, "ingest: repair pass start")
 
     menu_rows = list(conn.execute(
         "SELECT sheet_name, sheet_index FROM sheets "
@@ -1202,6 +1398,7 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
             print(f"  [{menu_name}]: re-parented {applied} child sheets")
 
     print(f"  total re-parented: {relinked_total}")
+    log_memory_checkpoint(mem_log, "ingest: repair pass complete")
 
     # --- Third pass: capture menu-sheet column groupings ------------------
     # Each menu sheet's children are physically arranged in side-by-side
@@ -1211,6 +1408,7 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
     # *column* under that menu it belongs to, by walking the menu sheet's
     # layout and matching child-sheet names to entries in each column.
     print("\nMatching child sheets to menu sections...")
+    log_memory_checkpoint(mem_log, "ingest: menu-section match pass start")
 
     # Hand-curated aliases for menu labels that intentionally differ from
     # their sheet name (display polish in the workbook).
@@ -1302,18 +1500,51 @@ def ingest(xlsx_path: Path, db_path: Path) -> None:
               "(likely group/sub-headers without a real sheet)")
         for sample in unmatched_samples:
             print(f"    {sample}")
+    log_memory_checkpoint(mem_log, "ingest: menu-section match pass complete")
+
+    # Release the data-only workbook before loading the formula workbook.
+    # Keeping both loaded at once can cause very high peak RAM on large files.
+    try:
+        wb.close()
+    except Exception:
+        pass
+    log_memory_checkpoint(mem_log, "ingest: data workbook closed")
+    del wb
+    gc.collect()
+    log_memory_checkpoint(mem_log, "ingest: gc after data workbook close")
+
+    print("\nScanning class-conditional formulas (second workbook pass)...")
+    overrides = collect_class_overrides(xlsx_path, run_id, mem_log=mem_log)
+    if overrides:
+        conn.executemany(
+            """
+            INSERT INTO class_overrides
+                (run_id, starting_class, sheet_name, row_index, state)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            overrides,
+        )
+        affected_cells = len({(s, r) for _, _, s, r, _ in overrides})
+        per_sheet: dict[str, int] = {}
+        for _, _, s, _, _ in overrides:
+            per_sheet[s] = per_sheet.get(s, 0) + 1
+        print(f"  class_overrides: {len(overrides)} rows across {affected_cells} cells")
+        for s, n in sorted(per_sheet.items(), key=lambda x: -x[1]):
+            print(f"    {s:<52} {n}")
 
     completed = dt.datetime.now().isoformat(timespec="seconds")
     conn.execute(
         "UPDATE ingest_runs SET completed_at = ?, sheet_count = ?, row_count = ? WHERE id = ?",
-        (completed, len(wb.sheetnames), total_rows, run_id),
+        (completed, sheet_count, total_rows, run_id),
     )
 
     conn.commit()
+    log_memory_checkpoint(mem_log, "ingest: final commit complete")
     conn.close()
+    log_memory_checkpoint(mem_log, "ingest: connection closed")
 
     print(f"\nIngest complete -> run {run_id}")
-    print(f"  sheets : {len(wb.sheetnames)}")
+    print(f"  sheets : {sheet_count}")
     print(f"  rows   : {total_rows}")
 
 
@@ -1349,9 +1580,14 @@ def main() -> None:
         help="source workbook override (default: newest .xlsx in Spreadsheet folder)",
     )
     parser.add_argument("--db", type=Path, default=Path("data/ffxiv_tracker.sqlite"))
+    parser.add_argument(
+        "--mem-log",
+        action="store_true",
+        help="print process memory checkpoints during ingest",
+    )
     args = parser.parse_args()
 
-    ingest(resolve_xlsx(args.xlsx), args.db)
+    ingest(resolve_xlsx(args.xlsx), args.db, mem_log=args.mem_log)
 
 
 if __name__ == "__main__":
