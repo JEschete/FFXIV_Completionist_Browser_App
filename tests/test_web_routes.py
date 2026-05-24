@@ -38,7 +38,7 @@ def test_content_sheet_browse(client):
 
 
 def test_static_pages_render(client):
-    for path in ("/settings", "/credits", "/chains", "/characters"):
+    for path in ("/settings", "/credits", "/chains", "/characters", "/progress-reports"):
         resp = client.get(path)
         assert resp.status_code == 200, f"{path} -> {resp.status_code}"
 
@@ -99,3 +99,56 @@ def test_chain_partial(client):
     assert resp.status_code == 200
     # Gamma's prerequisite path includes Beta/Alpha.
     assert "Quest" in resp.text
+
+
+def test_between_run_report_api(client):
+    # First call should have a baseline (initialized during startup reconcile
+    # when missing, or loaded from a previous snapshot).
+    initial = client.get(
+        "/api/progress/between-run-report",
+        params={"persist": "false"},
+    )
+    assert initial.status_code == 200
+    initial_doc = initial.json()
+    assert initial_doc["summary"]["baseline_available"] is True
+
+    # Change progression and verify the report detects a delta.
+    toggle = client.post(
+        "/api/toggle",
+        data={"sheet_name": "Side Stuff", "row_index": "5"},
+    )
+    assert toggle.status_code == 200
+
+    after = client.get(
+        "/api/progress/between-run-report",
+        params={"persist": "false"},
+    )
+    assert after.status_code == 200
+    after_doc = after.json()
+    assert int(after_doc["summary"]["characters_changed"]) >= 1
+
+
+def test_progress_report_resolution_route(client):
+    client.post("/api/toggle", data={"sheet_name": "Side Stuff", "row_index": "5"})
+    report_resp = client.get(
+        "/api/progress/between-run-report",
+        params={"persist": "true"},
+    )
+    assert report_resp.status_code == 200
+    report_doc = report_resp.json()
+
+    items = report_doc.get("review_items")
+    assert isinstance(items, list)
+    assert items, "expected at least one review item after a toggle"
+
+    item_id = items[0]["id"]
+    resolve_resp = client.post(
+        "/progress-reports/resolve",
+        data={
+            "item_id": item_id,
+            "resolution": "excluded",
+            "next_url": "/progress-reports",
+        },
+        follow_redirects=False,
+    )
+    assert resolve_resp.status_code == 303

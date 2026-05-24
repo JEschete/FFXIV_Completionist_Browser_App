@@ -65,6 +65,9 @@ class ImportSummary:
     unmatched_items: list[dict[str, Any]]
 
 
+LODESTONE_LEVEL_MERGE_MODES = {"keep-highest", "overwrite"}
+
+
 def load_payload(path: Path) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8")
     data = json.loads(text)
@@ -571,12 +574,144 @@ def reset_character_progress(
     progress_io.invalidate_cache(sidecar)
 
 
+def _collect_lodestone_class_job_levels(payload: dict[str, Any]) -> dict[str, float]:
+    """Return normalized Classes-Jobs label -> level values from Lodestone payload."""
+    out: dict[str, float] = {}
+    class_job = payload.get("class_job")
+    if not isinstance(class_job, dict):
+        return out
+
+    for rows in class_job.values():
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            job_name = str(row.get("job") or "").strip()
+            if not job_name:
+                continue
+            level_raw = row.get("level")
+            if not isinstance(level_raw, (int, float)):
+                continue
+            level = max(0.0, float(level_raw))
+            key = _norm_label(job_name)
+            if not key:
+                continue
+            prev = out.get(key)
+            if prev is None or level > prev:
+                out[key] = level
+    return out
+
+
+def _numeric_or_none(raw: Any) -> float | None:
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    if isinstance(raw, str):
+        text = raw.replace(",", "").strip()
+        if not text:
+            return None
+        try:
+            return float(text)
+        except ValueError:
+            return None
+    return None
+
+
+def _apply_lodestone_class_job_levels(
+    conn: sqlite3.Connection,
+    *,
+    character_id: int,
+    run_id: int,
+    starting_class: str | None,
+    levels_by_label: dict[str, float],
+    merge_mode: str,
+) -> tuple[int, int]:
+    """Apply Lodestone class/job levels onto Classes-Jobs value rows.
+
+    Returns (rows_applied, rows_skipped).
+    """
+    if not levels_by_label:
+        return 0, 0
+
+    rows = conn.execute(
+        """
+        SELECT n.row_index, n.label, n.row_json,
+               s.value_key,
+               p.progress_percent
+        FROM nodes n
+        JOIN sheets s ON s.run_id = n.run_id AND s.sheet_name = n.sheet_name
+        LEFT JOIN character_progress p
+          ON p.character_id = ? AND p.run_id = n.run_id
+         AND p.sheet_name = n.sheet_name AND p.row_index = n.row_index
+        WHERE n.run_id = ?
+          AND n.sheet_name = 'Classes-Jobs'
+          AND n.row_type = 'value'
+          AND n.label IS NOT NULL
+        ORDER BY n.row_index
+        """,
+        (character_id, run_id),
+    ).fetchall()
+
+    applied = 0
+    skipped = 0
+
+    for row in rows:
+        label = str(row["label"] or "").strip()
+        if not label:
+            continue
+        key = _norm_label(label)
+        if not key:
+            continue
+        incoming = levels_by_label.get(key)
+        if incoming is None:
+            continue
+
+        existing = _numeric_or_none(row["progress_percent"])
+        if existing is None:
+            row_json_obj: dict[str, Any] | None = None
+            row_json_raw = row["row_json"]
+            if isinstance(row_json_raw, str) and row_json_raw.strip():
+                try:
+                    decoded = json.loads(row_json_raw)
+                    if isinstance(decoded, dict):
+                        row_json_obj = decoded
+                except json.JSONDecodeError:
+                    row_json_obj = None
+            value_key = str(row["value_key"] or "")
+            if row_json_obj is not None and value_key:
+                existing = _numeric_or_none(row_json_obj.get(value_key))
+        if existing is None:
+            existing = 0.0
+
+        target = incoming if merge_mode == "overwrite" else max(existing, incoming)
+        if abs(target - existing) < 1e-9:
+            skipped += 1
+            continue
+
+        db.set_row_value(
+            conn,
+            character_id,
+            run_id,
+            "Classes-Jobs",
+            int(row["row_index"]),
+            target,
+            commit=False,
+            starting_class=starting_class,
+        )
+        applied += 1
+
+    return applied, skipped
+
+
 def import_lodestone_payload(
     conn: sqlite3.Connection,
     *,
     character_id: int,
     payload_path: Path,
     clear_existing: bool = False,
+    level_merge_mode: str = "keep-highest",
     progress: Callable[[str], None] | None = None,
 ) -> ImportSummary:
     def log(message: str) -> None:
@@ -594,6 +729,15 @@ def import_lodestone_payload(
     log(f"Loading payload: {payload_path}")
     payload = load_payload(payload_path)
     _save_avatar(payload, character_id, log)
+    level_mode = level_merge_mode if level_merge_mode in LODESTONE_LEVEL_MERGE_MODES else "keep-highest"
+    class_job_levels = _collect_lodestone_class_job_levels(payload)
+    if class_job_levels:
+        log(
+            "Collected Lodestone class/job levels: "
+            f"{len(class_job_levels)} rows (merge mode: {level_mode})"
+        )
+    else:
+        log("No class/job levels found in Lodestone payload")
     candidates = collect_candidates(payload)
     total_candidates = sum(len(v) for v in candidates.values())
     log(
@@ -714,6 +858,8 @@ def import_lodestone_payload(
 
     rows_applied = 0
     rows_skipped = 0
+    level_rows_applied = 0
+    level_rows_skipped = 0
     starting_class = character["starting_class"]
 
     with progress_io.batch(conn, character_id):
@@ -758,6 +904,18 @@ def import_lodestone_payload(
             if idx % 50 == 0:
                 log(f"Applied {idx}/{len(ordered_targets)} matched rows")
 
+        level_rows_applied, level_rows_skipped = _apply_lodestone_class_job_levels(
+            conn,
+            character_id=character_id,
+            run_id=run_id,
+            starting_class=starting_class,
+            levels_by_label=class_job_levels,
+            merge_mode=level_mode,
+        )
+
+    rows_applied += level_rows_applied
+    rows_skipped += level_rows_skipped
+
     conn.commit()
 
     log(
@@ -777,6 +935,11 @@ def import_lodestone_payload(
             for item in unmatched_items[:6]
         )
         log(f"Unmatched sample: {sample}")
+    if class_job_levels:
+        log(
+            "Classes-Jobs level sync: "
+            f"applied={level_rows_applied}, skipped={level_rows_skipped}"
+        )
 
     return ImportSummary(
         character_id=character_id,

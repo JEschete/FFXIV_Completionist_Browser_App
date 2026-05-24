@@ -875,6 +875,105 @@ img.brand-mark { object-fit: cover; }
   margin-bottom: 16px;
   font-size: 13px;
 }
+.report-alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 28px;
+  border-bottom: 1px solid rgba(226, 189, 114, .35);
+  background: color-mix(in srgb, var(--gold) 12%, var(--bg-soft));
+  color: var(--gold);
+  font-size: 12.5px;
+}
+.report-alert-banner a {
+  margin-left: 6px;
+  color: var(--text);
+  text-decoration: underline;
+}
+.report-card {
+  max-width: none;
+  margin-bottom: 14px;
+}
+.report-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.report-meta-grid > div {
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.report-meta-grid span {
+  color: var(--muted);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+.report-meta-grid strong {
+  color: var(--text);
+  font-size: 13px;
+}
+.report-filter-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.report-filter-form select {
+  min-width: 260px;
+  max-width: 360px;
+}
+.report-advanced-check {
+  margin-left: auto;
+  font-size: 12px;
+}
+.report-table-wrap {
+  margin-top: 10px;
+}
+.report-table .report-row-title {
+  font-weight: 650;
+  color: var(--text);
+}
+.report-table .report-row-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+.report-resolution-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.report-resolution-form select {
+  min-width: 180px;
+  width: auto;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.report-resolution-meta {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.report-orphan-block {
+  margin-bottom: 10px;
+}
+.report-orphan-block h3 {
+  font-size: 13px;
+  margin-bottom: 6px;
+  color: var(--muted);
+}
+.report-orphan-block ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
 .probe-card {
   background: var(--panel);
   border: 1px solid var(--line);

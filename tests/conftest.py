@@ -136,6 +136,8 @@ def ingested_db(template_db, tmp_path, monkeypatch):
         import app.main as main_mod
 
         monkeypatch.setattr(main_mod, "LAST_RECONCILED_RUN_TOKEN", None)
+        monkeypatch.setattr(main_mod, "SESSION_BASELINE_SNAPSHOT", None)
+        monkeypatch.setattr(main_mod, "LAST_BETWEEN_RUN_REPORT_PATH", None)
     except Exception:
         pass
 

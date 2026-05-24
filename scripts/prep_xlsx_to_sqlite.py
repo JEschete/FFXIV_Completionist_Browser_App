@@ -1056,12 +1056,36 @@ def rebuild_schema(conn: sqlite3.Connection) -> tuple[list[tuple], list[tuple]]:
     return saved_chars, saved_progress
 
 
+def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table_name,),
+    ).fetchone()
+    return bool(row)
+
+
+def _maybe_capture_pre_ingest_baseline(conn: sqlite3.Connection) -> None:
+    required_tables = ("characters", "nodes", "character_progress")
+    if not all(_table_exists(conn, name) for name in required_tables):
+        return
+    try:
+        from app import progress_report
+
+        snapshot = progress_report.build_snapshot(conn, source="ingest-script-pre-rebuild")
+        if snapshot.get("characters"):
+            progress_report.save_snapshot(snapshot, progress_report.BASELINE_PATH)
+    except Exception as exc:
+        print(f"[warn] Skipped pre-ingest baseline snapshot: {exc}")
+
+
 # --- ingest -----------------------------------------------------------------
 
 def ingest(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
     log_memory_checkpoint(mem_log, "ingest: start")
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
+
+    _maybe_capture_pre_ingest_baseline(conn)
 
     saved_chars, saved_progress = rebuild_schema(conn)
     log_memory_checkpoint(mem_log, "ingest: schema rebuilt")

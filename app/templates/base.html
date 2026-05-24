@@ -26,7 +26,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/static/styles.css?v=16" />
+  <link rel="stylesheet" href="/static/styles.css?v=17" />
   <style id="theme-vars">{{ theme_css|safe }}</style>
   <script src="/static/vendor/htmx.min.js" defer></script>
   <script src="/static/vendor/alpine-collapse.min.js" defer></script>
@@ -93,10 +93,10 @@
                   aria-controls="sidebar-nav"
                   :aria-label="sidebarCollapsed ? 'Show menu' : 'Hide menu'"
                   title="Toggle menu">
-            <span class="sidebar-toggle-icon" x-show="!sidebarCollapsed" x-cloak>◂</span>
-            <span class="sidebar-toggle-icon" x-show="sidebarCollapsed" x-cloak>▸</span>
-            <span class="sidebar-toggle-text" x-show="!sidebarCollapsed" x-cloak>Hide Menu</span>
-            <span class="sidebar-toggle-text" x-show="sidebarCollapsed" x-cloak>Show Menu</span>
+            <span class="sidebar-toggle-icon" x-show="!sidebarCollapsed" x-cloak data-sidebar-open>◂</span>
+            <span class="sidebar-toggle-icon" x-show="sidebarCollapsed" x-cloak data-sidebar-closed>▸</span>
+            <span class="sidebar-toggle-text" x-show="!sidebarCollapsed" x-cloak data-sidebar-open>Hide Menu</span>
+            <span class="sidebar-toggle-text" x-show="sidebarCollapsed" x-cloak data-sidebar-closed>Show Menu</span>
           </button>
 
           {% if crumbs %}
@@ -133,6 +133,7 @@
             <a href="/" class="quick-link {{ 'active' if request.url.path == '/' }}">Overview</a>
             <a href="/characters" class="quick-link {{ 'active' if request.url.path == '/characters' }}">Characters</a>
             <a href="/chains" class="quick-link {{ 'active' if request.url.path == '/chains' }}">Chains</a>
+            <a href="/progress-reports" class="quick-link {{ 'active' if request.url.path == '/progress-reports' }}">Progress Reports</a>
             <a href="/lodestone-probe" class="quick-link {{ 'active' if request.url.path == '/lodestone-probe' }}">Lodestone Probe</a>
             <a href="/settings" class="quick-link {{ 'active' if request.url.path == '/settings' }}">Settings</a>
             <a href="/credits" class="quick-link {{ 'active' if request.url.path == '/credits' }}">Credits</a>
@@ -140,6 +141,15 @@
           </nav>
         </div>
       </header>
+
+      {% if progress_report_alert %}
+      <div class="report-alert-banner">
+        <strong>{{ progress_report_alert.unresolved }}</strong>
+        unresolved detected change{{ '' if progress_report_alert.unresolved == 1 else 's' }}
+        for this character.
+        <a href="{{ progress_report_alert.path }}">Review now</a>
+      </div>
+      {% endif %}
 
       <div id="progress-header"
            hx-get="/api/progress-header?sheet_name={{ active_sheet|default('')|urlencode }}"
@@ -157,6 +167,76 @@
 
 <div id="chain-drawer" class="chain-drawer"></div>
 <div id="history-oob-sink" hidden></div>
+
+<script>
+(() => {
+  const setupSidebarFallback = () => {
+    const layout = document.querySelector('.layout');
+    const toggle = document.querySelector('.sidebar-toggle');
+    const backdrop = document.querySelector('.sidebar-backdrop');
+    if (!layout || !toggle || !backdrop) {
+      return;
+    }
+
+    // Alpine removes x-cloak once initialized; only apply fallback when that
+    // never happened so the toggle still functions.
+    const cloaked = toggle.querySelectorAll('[x-cloak]');
+    if (!cloaked.length) {
+      return;
+    }
+
+    const openBits = Array.from(toggle.querySelectorAll('[data-sidebar-open]'));
+    const closedBits = Array.from(toggle.querySelectorAll('[data-sidebar-closed]'));
+
+    const apply = (collapsed) => {
+      layout.classList.toggle('sidebar-collapsed', collapsed);
+
+      const expanded = !collapsed;
+      toggle.setAttribute('aria-expanded', String(expanded));
+      toggle.setAttribute('aria-label', expanded ? 'Hide menu' : 'Show menu');
+
+      for (const el of openBits) {
+        el.removeAttribute('x-cloak');
+        el.style.display = collapsed ? 'none' : '';
+      }
+      for (const el of closedBits) {
+        el.removeAttribute('x-cloak');
+        el.style.display = collapsed ? '' : 'none';
+      }
+
+      backdrop.removeAttribute('x-cloak');
+      const onMobile = window.matchMedia('(max-width: 880px)').matches;
+      backdrop.style.display = !collapsed && onMobile ? 'block' : 'none';
+      document.documentElement.classList.remove('mobile-sidebar-preload');
+    };
+
+    let collapsed = window.matchMedia('(max-width: 880px)').matches;
+    apply(collapsed);
+
+    toggle.addEventListener('click', (event) => {
+      event.preventDefault();
+      collapsed = !collapsed;
+      apply(collapsed);
+    });
+
+    backdrop.addEventListener('click', () => {
+      collapsed = true;
+      apply(collapsed);
+    });
+
+    window.addEventListener('resize', () => {
+      const onMobile = window.matchMedia('(max-width: 880px)').matches;
+      backdrop.style.display = !collapsed && onMobile ? 'block' : 'none';
+    });
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupSidebarFallback, { once: true });
+  } else {
+    setupSidebarFallback();
+  }
+})();
+</script>
 
 <script>
 (() => {

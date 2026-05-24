@@ -1790,8 +1790,9 @@ def group_rows_by_section(
                 raw_meta = payload.get("section_sort")
                 if isinstance(raw_meta, dict):
                     section_meta = raw_meta
+            section_name = r.get("section_label") or r.get("label")
             current = {
-                "section": r["label"],
+                "section": section_name,
                 "row_index": r["row_index"],
                 "rows": [],
                 "section_sort": section_meta,
@@ -2049,7 +2050,8 @@ def fetch_export_rows(
         conn.execute(
             f"""
             SELECT n.sheet_name, n.row_index, n.label, n.section_label,
-                   {eff} AS state,
+                     n.row_type,
+                     {eff} AS state,
                    p.progress_percent, n.row_json
             FROM nodes n
             LEFT JOIN character_progress p
