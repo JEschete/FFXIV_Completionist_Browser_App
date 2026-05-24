@@ -835,6 +835,11 @@ _IGNORED_UNTRACKED_BUCKETS = {
     "duty/squadron/stats",
 }
 
+_POSITIONAL_VALUE_BUCKETS = {
+    "classes-jobs",
+    "desynthesis",
+}
+
 _REFERENCE_ID_RE = re.compile(r"^([A-Za-z])\.(\d+)$")
 
 _REFERENCE_BUCKET_BY_PREFIX = {
@@ -1157,6 +1162,91 @@ def _lookup_source_labels(
     return None, None
 
 
+def _build_inline_completion_source_index(
+    payload: dict[str, Any],
+) -> dict[str, dict[str, tuple[str, ...]]]:
+    """Build id->label lookup from metadata embedded in completion.json.
+
+    Desktop payloads can include custom-entry metadata under top-level
+    ``custom`` (e.g. ``{"x804": {"name": "Turali Alumen"}}``). Those ids
+    are present in ``overall.custom`` progress leaves, but are not represented
+    in bundled resource JSON files. Without this fallback they become
+    ``id_not_in_source_index`` and never reach workbook matching.
+    """
+    index: dict[str, dict[str, set[str]]] = {}
+
+    custom = payload.get("custom")
+    if isinstance(custom, dict):
+        custom_idx = index.setdefault("custom", {})
+        for raw_id, raw_item in custom.items():
+            id_key = _normalize_numeric_id(raw_id)
+            if id_key is None:
+                continue
+
+            labels: set[str] = set()
+            if isinstance(raw_item, dict):
+                labels.update(_extract_labels(raw_item))
+
+                # Some desktop custom entries may use ad-hoc label fields.
+                for field in ("label", "display_name"):
+                    value = raw_item.get(field)
+                    if isinstance(value, str):
+                        text = value.strip()
+                        if text:
+                            labels.add(text)
+            elif isinstance(raw_item, str):
+                text = raw_item.strip()
+                if text:
+                    labels.add(text)
+
+            if not labels:
+                continue
+
+            custom_idx.setdefault(id_key, set()).update(labels)
+
+    frozen: dict[str, dict[str, tuple[str, ...]]] = {}
+    for bucket, mapping in index.items():
+        frozen[bucket] = {
+            id_key: tuple(sorted(labels))
+            for id_key, labels in mapping.items()
+            if labels
+        }
+    return frozen
+
+
+def _merge_source_indexes(
+    base: dict[str, dict[str, tuple[str, ...]]],
+    extra: dict[str, dict[str, tuple[str, ...]]],
+) -> dict[str, dict[str, tuple[str, ...]]]:
+    if not extra:
+        return base
+
+    merged_sets: dict[str, dict[str, set[str]]] = {}
+
+    for bucket, mapping in base.items():
+        bucket_map = merged_sets.setdefault(bucket, {})
+        for source_id, labels in mapping.items():
+            bucket_map.setdefault(source_id, set()).update(
+                label for label in labels if isinstance(label, str) and label.strip()
+            )
+
+    for bucket, mapping in extra.items():
+        bucket_map = merged_sets.setdefault(bucket, {})
+        for source_id, labels in mapping.items():
+            bucket_map.setdefault(source_id, set()).update(
+                label for label in labels if isinstance(label, str) and label.strip()
+            )
+
+    out: dict[str, dict[str, tuple[str, ...]]] = {}
+    for bucket, mapping in merged_sets.items():
+        out[bucket] = {
+            source_id: tuple(sorted(labels))
+            for source_id, labels in mapping.items()
+            if labels
+        }
+    return out
+
+
 def _completion_bucket_from_path(path_parts: tuple[str, ...]) -> str | None:
     joined = "/" + "/".join(str(part).casefold() for part in path_parts if part)
     if "/logs/orchestrion-list/" in joined:
@@ -1180,6 +1270,13 @@ def _completion_bucket_from_path(path_parts: tuple[str, ...]) -> str | None:
 
 def _norm_lookup_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", _norm_label(value))
+
+
+def _bucket_tail(bucket: str) -> str:
+    value = str(bucket or "").strip()
+    if not value:
+        return ""
+    return value.rsplit("/", 1)[-1]
 
 
 def _parse_place_rank(label: str) -> tuple[str, int] | None:
@@ -1414,16 +1511,12 @@ def _decode_completion_value(raw: Any) -> tuple[str, float | None] | None:
         if text == "X":
             return ("excluded", None)
         if re.fullmatch(r"[-+]?\d+(?:\.\d+)?", text):
-            pct = max(0.0, min(100.0, float(text)))
-            if pct >= 100.0:
-                return ("done", None)
+            pct = max(0.0, float(text))
             return ("value", pct)
         return None
 
     if isinstance(raw, (int, float)) and not isinstance(raw, bool):
-        pct = max(0.0, min(100.0, float(raw)))
-        if pct >= 100.0:
-            return ("done", None)
+        pct = max(0.0, float(raw))
         return ("value", pct)
 
     return None
@@ -1524,8 +1617,16 @@ def import_desktop_completion(
         )
 
     source_index = _build_source_label_index(str(resource_root))
+
+    inline_source_index = _build_inline_completion_source_index(payload)
+    if inline_source_index:
+        source_index = _merge_source_indexes(source_index, inline_source_index)
+
     indexed_count = sum(len(v) for v in source_index.values())
     log(f"Loaded desktop source index from {resource_root} ({indexed_count} ids)")
+    if inline_source_index:
+        inline_count = sum(len(v) for v in inline_source_index.values())
+        log(f"Merged {inline_count} inline source ids from completion payload metadata")
 
     if clear_existing:
         log("Clearing existing character progress before import")
@@ -1558,7 +1659,7 @@ def import_desktop_completion(
             bucket=bucket,
             source_id=leaf_id,
         )
-        if not labels:
+        if not labels and _bucket_tail(bucket) not in _POSITIONAL_VALUE_BUCKETS:
             missing_key = (bucket, leaf_id)
             existing_missing = missing_source_ids.get(missing_key)
             if existing_missing is None:
@@ -1594,7 +1695,7 @@ def import_desktop_completion(
                 "source_id": leaf_id,
                 "source_state": state,
                 "value": pct,
-                "labels": list(labels),
+                "labels": list(labels) if labels else [],
                 "source_path_parts": [str(part) for part in path_parts],
             }
             continue
@@ -1608,7 +1709,7 @@ def import_desktop_completion(
         existing["source_state"] = merged_state
         existing["value"] = merged_value
         label_pool = {str(label).strip() for label in existing.get("labels", []) if isinstance(label, str)}
-        label_pool.update(str(label).strip() for label in labels if isinstance(label, str))
+        label_pool.update(str(label).strip() for label in (labels or ()) if isinstance(label, str))
         existing["labels"] = sorted(label for label in label_pool if label)
         if not existing.get("source_bucket") and source_bucket:
             existing["source_bucket"] = source_bucket
@@ -1651,6 +1752,8 @@ def import_desktop_completion(
     shared_fate_idx: dict[tuple[str, int], list[tuple[str, int, str]]] = {}
     aether_current_idx: dict[tuple[str, int], list[tuple[str, int, str]]] = {}
     blue_mage_rows: list[tuple[str, int, str]] = []
+    classes_jobs_rows: list[tuple[str, int, str]] = []
+    desynthesis_rows: list[tuple[str, int, str]] = []
 
     for row in rows:
         sheet_name = row["sheet_name"]
@@ -1693,6 +1796,13 @@ def import_desktop_completion(
         if sheet_name == "Blue Mage Log":
             blue_mage_rows.append(entry)
 
+        if sheet_name == "Classes-Jobs" and row["row_type"] == "value":
+            section_norm = _norm_label(section_label)
+            if "desynthesis" in section_norm:
+                desynthesis_rows.append(entry)
+            else:
+                classes_jobs_rows.append(entry)
+
         for idx_label in _index_labels_for_global(
             node_label=label,
             row_json_obj=row_json_obj,
@@ -1718,7 +1828,15 @@ def import_desktop_completion(
         for bucket, bucket_norm in norm_idx.items()
     }
     blue_mage_rows.sort(key=lambda item: item[1])
+    classes_jobs_rows.sort(key=lambda item: item[1])
+    desynthesis_rows.sort(key=lambda item: item[1])
     blue_mage_idx = _build_blue_mage_log_position_index(resource_root, blue_mage_rows)
+    classes_jobs_idx: dict[str, list[tuple[str, int, str]]] = {
+        str(pos): [entry] for pos, entry in enumerate(classes_jobs_rows)
+    }
+    desynthesis_idx: dict[str, list[tuple[str, int, str]]] = {
+        str(pos): [entry] for pos, entry in enumerate(desynthesis_rows)
+    }
 
     row_actions: dict[tuple[str, int], dict[str, Any]] = {}
     matched_candidates = 0
@@ -1740,7 +1858,8 @@ def import_desktop_completion(
             for label in candidate.get("labels", [])
             if isinstance(label, str) and str(label).strip()
         ]
-        if not labels:
+        bucket_tail = _bucket_tail(bucket)
+        if not labels and bucket_tail not in _POSITIONAL_VALUE_BUCKETS:
             unmatched_items.append({
                 "bucket": bucket,
                 "label": f"id:{candidate.get('source_id')}",
@@ -1751,6 +1870,11 @@ def import_desktop_completion(
             continue
 
         hits: list[tuple[str, int, str]] | None = None
+
+        if bucket_tail == "classes-jobs":
+            hits = classes_jobs_idx.get(source_id)
+        elif bucket_tail == "desynthesis":
+            hits = desynthesis_idx.get(source_id)
 
         if bucket.startswith("character/blue-mage/log/"):
             hits = blue_mage_idx.get((bucket, source_id))
@@ -1875,7 +1999,8 @@ def import_desktop_completion(
         for idx, ((sheet_name, row_index), action) in enumerate(ordered_targets, start=1):
             row_type = str(action.get("row_type") or "checkbox")
             state = str(action.get("state") or "done")
-            value = float(action.get("value") or 0.0)
+            raw_value = action.get("value")
+            value = float(raw_value) if isinstance(raw_value, (int, float)) else None
 
             current = db.effective_state(
                 conn,
@@ -1891,13 +2016,16 @@ def import_desktop_completion(
                     rows_skipped += 1
                     continue
                 if row_type == "value":
+                    target_value = value
+                    if target_value is None:
+                        target_value = db.value_row_cap(conn, run_id, sheet_name, row_index)
                     db.set_row_value(
                         conn,
                         character_id,
                         run_id,
                         sheet_name,
                         row_index,
-                        100.0,
+                        target_value,
                         commit=False,
                         starting_class=starting_class,
                     )
@@ -1935,24 +2063,26 @@ def import_desktop_completion(
             # Numeric values map to value rows directly; checkbox rows only
             # become done when the source value reaches 100%.
             if row_type == "value":
-                desired_state = "done" if value >= 100.0 else "todo"
+                target_value = value if value is not None else 0.0
+                cap = db.value_row_cap(conn, run_id, sheet_name, row_index)
+                desired_state = "done" if target_value >= cap else "todo"
                 if desired_state == "done" and current == "done":
                     rows_skipped += 1
                     continue
-                db.set_row_state(
+                db.set_row_value(
                     conn,
                     character_id,
                     run_id,
                     sheet_name,
                     row_index,
-                    desired_state,
-                    progress_percent=value,
+                    target_value,
                     commit=False,
                     starting_class=starting_class,
                 )
                 rows_applied += 1
             else:
-                if value >= 100.0:
+                target_value = value if value is not None else 0.0
+                if target_value >= 100.0:
                     if current == "done":
                         rows_skipped += 1
                         continue

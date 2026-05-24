@@ -223,6 +223,27 @@ def parse_state(raw: str | None) -> str:
     return "todo"
 
 
+_INLINE_SECTION_RANGE_RE = re.compile(r"^\d+\s*-\s*\d+$")
+_INLINE_SECTION_NOTE_RE = re.compile(r"^\(\s*see\s+shared\s+craft\s+log\s*\)$", re.IGNORECASE)
+
+
+def is_inline_section_marker(a_val: str | None, data: dict[str, str]) -> bool:
+    """Rows with only a range/note marker in column A should be section headers.
+
+    Example markers seen in crafting logs: "91-100", "81-90",
+    "(See Shared Craft Log)".
+    """
+    if a_val is None or data:
+        return False
+    text = a_val.strip()
+    if not text:
+        return False
+    return bool(
+        _INLINE_SECTION_RANGE_RE.fullmatch(text)
+        or _INLINE_SECTION_NOTE_RE.fullmatch(text)
+    )
+
+
 def link_target_sheet(cell) -> str | None:
     """Return the sheet name a hyperlink points at, or None."""
     hl = cell.hyperlink
@@ -1158,6 +1179,27 @@ def ingest(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
                         current_section,
                         0,
                         json.dumps(section_payload),
+                        None,
+                    )
+                )
+                continue
+
+            if is_inline_section_marker(a_val, data):
+                current_section = a_val
+                seq_in_section = 0
+                prev_track_row = None
+                prev_sub_chain_value = None
+                node_rows.append(
+                    (
+                        run_id,
+                        sheet_name,
+                        r_idx,
+                        a_val,
+                        "todo",
+                        "section",
+                        current_section,
+                        0,
+                        json.dumps({}),
                         None,
                     )
                 )

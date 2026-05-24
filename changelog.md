@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.0.7 — 2026-05-23
+
+### Desktop App Import
+- Merged inline Desktop App custom metadata (`overall.custom` + top-level `custom`) into source indexing so custom entries no longer fail as `id_not_in_source_index` when metadata exists in `completion.json`.
+- Added positional mapping support for numeric buckets in `Classes-Jobs` and `Desynthesis`, including nested bucket paths such as `character/character/classes-jobs`.
+- Numeric completion values now preserve their real values instead of being clamped to 100 during decode.
+- Value-row imports now apply through cap-aware value writes, preserving row caps (for example desynthesis rows up to 770) instead of forcing 100.
+
+### Workbook Ingest and Diagnostics
+- Added optional ingest memory checkpoints (`--mem-log`) to report process RSS throughout workbook processing.
+- Added Server Manager GUI support for ingest memory logging with a persistent checkbox in Settings.
+- Ingest runs launched from the GUI now write per-run logs to `data/logs/ingest_*.log`.
+- Improved Windows memory reporting reliability with explicit process-memory probing and a `tasklist` fallback.
+- Reduced peak ingest memory on very wide sheets by replacing broad row scans with targeted row-index reads and bounded menu-column scans.
+- Improved workbook memory lifecycle handling with explicit close/finally cleanup to release resources sooner.
+
+### UI and Rendering
+- Fixed settings page cap-input alignment behavior and bumped stylesheet cache version so CSS updates apply immediately.
+- Fixed template rendering crash when non-value rows do not include `value_cap`.
+- Crafting divider rows such as `91-100`, `81-90`, and `(See Shared Craft Log)` now ingest as section rows (not empty checkbox rows), preventing blank dash rows in crafting logs.
+
 ## v1.0.6 — 2026-05-22
 
 ### Desktop App Import
