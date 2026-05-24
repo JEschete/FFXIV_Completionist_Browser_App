@@ -33,6 +33,77 @@ from contextlib import asynccontextmanager
 from app import db, lodestone_import, progress_io, section_sort
 
 
+RECONCILE_RUN_LOCK = threading.Lock()
+LAST_RECONCILED_RUN_TOKEN: tuple[Any, ...] | None = None
+
+
+def _latest_run_identity(
+    conn,
+) -> tuple[int | None, tuple[Any, ...] | None]:
+    row = conn.execute(
+        """
+        SELECT id, source_file, started_at, completed_at, sheet_count, row_count
+        FROM ingest_runs
+        ORDER BY id DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    if row is None:
+        return None, None
+
+    run_id = int(row["id"])
+    token: tuple[Any, ...] = (
+        run_id,
+        str(row["source_file"] or ""),
+        str(row["started_at"] or ""),
+        str(row["completed_at"] or ""),
+        int(row["sheet_count"] or 0),
+        int(row["row_count"] or 0),
+    )
+    return run_id, token
+
+
+def _ensure_progress_reconciled_for_run(
+    conn,
+    run_id: int,
+    run_token: tuple[Any, ...],
+) -> None:
+    """Reconcile sidecars for a run once per process lifetime.
+
+    Handles in-process workbook ingests: when the latest ingest run identity
+    changes, replay sidecars before request handlers read/write progress.
+    """
+    global LAST_RECONCILED_RUN_TOKEN
+
+    if LAST_RECONCILED_RUN_TOKEN == run_token:
+        return
+
+    with RECONCILE_RUN_LOCK:
+        if LAST_RECONCILED_RUN_TOKEN == run_token:
+            return
+        report = progress_io.reconcile_all(conn, run_id)
+        LAST_RECONCILED_RUN_TOKEN = run_token
+        if report.characters:
+            print(f"Progress reconcile (run {run_id}):")
+            print(report.summary())
+            if report.total_orphaned() > 0:
+                print(
+                    "Progress reconcile warning: "
+                    f"{report.total_orphaned()} orphaned sidecar entries "
+                    "were not replayed"
+                )
+            dropped_rows = sum(
+                max(0, c.preexisting_db_rows - c.replayed_rows)
+                for c in report.characters
+            )
+            if dropped_rows > 0:
+                print(
+                    "Progress reconcile warning: "
+                    f"{dropped_rows} preexisting DB row(s) were replaced "
+                    "by sidecar replay"
+                )
+
+
 def reconcile_progress_sidecars() -> None:
     """Make the DB match the per-character JSON sidecars (the source of truth
     for progress). One-time bootstraps any character that has DB progress but
@@ -40,15 +111,15 @@ def reconcile_progress_sidecars() -> None:
     run's character_progress table. Detail logic lives in progress_io."""
     conn = db.get_connection()
     try:
-        run_id = db.latest_run_id(conn)
+        global LAST_RECONCILED_RUN_TOKEN
+        run_id, run_token = _latest_run_identity(conn)
         if run_id is None:
+            LAST_RECONCILED_RUN_TOKEN = None
             print("Progress reconcile: skipped — no ingest run found "
                   "(run scripts/prep_xlsx_to_sqlite.py to populate the DB)")
             return
-        report = progress_io.reconcile_all(conn, run_id)
-        if report.characters:
-            print("Progress reconcile:")
-            print(report.summary())
+        assert run_token is not None
+        _ensure_progress_reconciled_for_run(conn, run_id, run_token)
     finally:
         conn.close()
 
@@ -1349,10 +1420,12 @@ class Ctx:
     def __init__(self, request: Request, *, full: bool = True):
         self.request = request
         self.conn = db.get_connection()
-        run_id = db.latest_run_id(self.conn)
+        run_id, run_token = _latest_run_identity(self.conn)
         if run_id is None:
             raise HTTPException(503, "No ingest run found. Run the prep script first.")
+        assert run_token is not None
         self.run_id: int = run_id
+        _ensure_progress_reconciled_for_run(self.conn, self.run_id, run_token)
         self.theme_state = resolve_theme_state(request)
         self.character = db.resolve_active_character(
             self.conn, cookie_character_id(request)
@@ -2148,7 +2221,8 @@ def settings_theme_save(
     section_sort_mode: str = Form(section_sort.DEFAULT_SORT_MODE),
 ):
     catalog = get_theme_catalog()
-    themes = catalog.get("themes") if isinstance(catalog.get("themes"), list) else []
+    themes_raw = catalog.get("themes")
+    themes = [t for t in themes_raw if isinstance(t, dict)] if isinstance(themes_raw, list) else []
     by_id = {str(theme.get("id")): theme for theme in themes}
 
     normalized_theme_id = (theme_id or "").strip()
@@ -2161,7 +2235,10 @@ def settings_theme_save(
 
     normalized_scheme = normalize_theme_scheme_setting(theme_scheme)
     normalized_section_sort_mode = section_sort.normalize_sort_mode(section_sort_mode)
-    selected_schemes = selected_theme.get("schemes") if isinstance(selected_theme.get("schemes"), dict) else {}
+    selected_schemes_raw = selected_theme.get("schemes")
+    selected_schemes: dict[str, Any] = (
+        selected_schemes_raw if isinstance(selected_schemes_raw, dict) else {}
+    )
     if normalized_scheme in {"dark", "light"} and normalized_scheme not in selected_schemes:
         normalized_scheme = "default"
 
@@ -2759,28 +2836,29 @@ def api_bulk_set_section(
                     )
                 )
         else:
-            for idx in checkbox_rows:
-                current_state = db.effective_state(
-                    ctx.conn,
-                    ctx.character_id,
-                    ctx.run_id,
-                    sheet_name,
-                    idx,
-                    ctx.starting_class,
-                )
-                if current_state == target_state:
-                    continue
-                db.set_row_state(
-                    ctx.conn,
-                    ctx.character_id,
-                    ctx.run_id,
-                    sheet_name,
-                    idx,
-                    target_state,
-                    commit=False,
-                    starting_class=ctx.starting_class,
-                )
-                changed.add(idx)
+            with progress_io.batch(ctx.conn, ctx.character_id):
+                for idx in checkbox_rows:
+                    current_state = db.effective_state(
+                        ctx.conn,
+                        ctx.character_id,
+                        ctx.run_id,
+                        sheet_name,
+                        idx,
+                        ctx.starting_class,
+                    )
+                    if current_state == target_state:
+                        continue
+                    db.set_row_state(
+                        ctx.conn,
+                        ctx.character_id,
+                        ctx.run_id,
+                        sheet_name,
+                        idx,
+                        target_state,
+                        commit=False,
+                        starting_class=ctx.starting_class,
+                    )
+                    changed.add(idx)
             if changed:
                 ctx.conn.commit()
 
@@ -2847,8 +2925,9 @@ def api_history_apply(
 
         step_character_id: int | None = None
         try:
-            if step.get("character_id") is not None:
-                step_character_id = int(step.get("character_id"))
+            step_character_id_raw = step.get("character_id")
+            if step_character_id_raw is not None:
+                step_character_id = int(step_character_id_raw)
         except (TypeError, ValueError):
             step_character_id = None
         if step_character_id is not None and step_character_id != ctx.character_id:
@@ -2867,8 +2946,9 @@ def api_history_apply(
 
         step_run_id: int | None = None
         try:
-            if step.get("run_id") is not None:
-                step_run_id = int(step.get("run_id"))
+            step_run_id_raw = step.get("run_id")
+            if step_run_id_raw is not None:
+                step_run_id = int(step_run_id_raw)
         except (TypeError, ValueError):
             step_run_id = None
         if step_run_id is not None and step_run_id != ctx.run_id:
@@ -2894,7 +2974,10 @@ def api_history_apply(
             if not sheet_name:
                 continue
             try:
-                row_index = int(change.get("row_index"))
+                row_index_raw = change.get("row_index")
+                if row_index_raw is None:
+                    continue
+                row_index = int(row_index_raw)
             except (TypeError, ValueError):
                 continue
 
@@ -2963,7 +3046,8 @@ def api_history_apply(
                 sheet_name = str(change.get("sheet_name") or "")
                 row_index = int(change.get("row_index") or 0)
                 row_type = str(change.get("row_type") or "checkbox")
-                target = change.get("target") if isinstance(change.get("target"), dict) else {}
+                target_raw = change.get("target")
+                target: dict[str, Any] = target_raw if isinstance(target_raw, dict) else {}
                 target_state = str(target.get("state") or "todo")
                 target_pct = target.get("progress_percent")
                 target_explicit = bool(target.get("explicit")) if "explicit" in target else True
@@ -3028,7 +3112,6 @@ def api_history_apply(
                     raise HTTPException(400, f"Invalid history change for row {sheet_name}:{row_index}: {exc}") from exc
 
                 touched_by_sheet.setdefault(sheet_name, set()).add(row_index)
-
         if touched_by_sheet:
             ctx.conn.commit()
 

@@ -758,7 +758,7 @@ def import_lodestone_payload(
             if idx % 50 == 0:
                 log(f"Applied {idx}/{len(ordered_targets)} matched rows")
 
-        conn.commit()
+    conn.commit()
 
     log(
         f"Import complete: applied={rows_applied}, already_done={rows_skipped}, "
@@ -2103,7 +2103,7 @@ def import_desktop_completion(
             if idx % 60 == 0:
                 log(f"Applied {idx}/{len(ordered_targets)} mapped rows")
 
-        conn.commit()
+    conn.commit()
 
     unmatched_candidates = len(unmatched_items)
     log(

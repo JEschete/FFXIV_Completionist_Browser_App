@@ -52,6 +52,13 @@ ALLOW_POSITION_FALLBACK_DEFAULT = _ALLOW_POSITION_FALLBACK_ENV in {
     "1", "true", "yes", "on"
 }
 
+_STRICT_WRITE_THROUGH_ENV = os.getenv(
+    "FFXIV_PROGRESS_STRICT_WRITE_THROUGH", ""
+).strip().lower()
+STRICT_WRITE_THROUGH_DEFAULT = _STRICT_WRITE_THROUGH_ENV not in {
+    "0", "false", "no", "off"
+}
+
 
 # --- identity computation --------------------------------------------------
 
@@ -100,14 +107,164 @@ def compute_stable_ids(
 # --- sidecar I/O -----------------------------------------------------------
 
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+_SIDECAR_DIGEST_LEN = 12
+_sidecar_resolution_lock = threading.Lock()
+_resolved_sidecar_paths: dict[str, Path] = {}
+
+
+def _normalize_character_name(character_name: str) -> str:
+    return character_name.strip()
+
+
+def _legacy_sidecar_filename(character_name: str) -> str:
+    safe = _SAFE_NAME_RE.sub("_", _normalize_character_name(character_name)) or "_unnamed"
+    return f"{safe}.json"
+
+
+def _canonical_sidecar_filename(character_name: str) -> str:
+    normalized = _normalize_character_name(character_name)
+    safe = _SAFE_NAME_RE.sub("_", normalized) or "_unnamed"
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:_SIDECAR_DIGEST_LEN]
+    return f"{safe}__{digest}.json"
+
+
+def _read_sidecar_owner_name(path: Path) -> str | None:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        doc = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(doc, dict):
+        return None
+    character = doc.get("character")
+    if not isinstance(character, dict):
+        return None
+    name = character.get("name")
+    if not isinstance(name, str):
+        return None
+    normalized = name.strip()
+    return normalized or None
+
+
+def _cache_sidecar_path(character_name: str, path: Path) -> None:
+    with _sidecar_resolution_lock:
+        _resolved_sidecar_paths[character_name] = path
+
+
+def _cached_sidecar_path(character_name: str) -> Path | None:
+    with _sidecar_resolution_lock:
+        cached = _resolved_sidecar_paths.get(character_name)
+    if cached is None:
+        return None
+    if cached.exists():
+        return cached
+    with _sidecar_resolution_lock:
+        if _resolved_sidecar_paths.get(character_name) == cached:
+            _resolved_sidecar_paths.pop(character_name, None)
+    return None
+
+
+def _promote_sidecar_to_canonical(path: Path, character_name: str) -> Path:
+    """Rename legacy sidecars to canonical hashed filenames when safe."""
+    normalized = _normalize_character_name(character_name)
+    canonical = PROGRESS_DIR / _canonical_sidecar_filename(normalized)
+    legacy = PROGRESS_DIR / _legacy_sidecar_filename(normalized)
+
+    if path == canonical:
+        _cache_sidecar_path(normalized, canonical)
+        return canonical
+    if path != legacy:
+        return path
+    if canonical.exists():
+        quarantine = path.with_name(path.name + ".superseded")
+        if quarantine.exists():
+            suffix_idx = 1
+            while True:
+                candidate = path.with_name(path.name + f".superseded.{suffix_idx}")
+                if not candidate.exists():
+                    quarantine = candidate
+                    break
+                suffix_idx += 1
+        try:
+            path.replace(quarantine)
+        except OSError:
+            pass
+        _cache_sidecar_path(normalized, canonical)
+        return canonical
+
+    try:
+        path.replace(canonical)
+    except OSError:
+        return path
+
+    _cache_sidecar_path(normalized, canonical)
+    return canonical
 
 
 def sidecar_path(character_name: str) -> Path:
-    """Return the JSON path for a character. Filename is the character name
-    with non-portable characters replaced; collisions across slightly-
-    differently-spelled names would be rare and surface immediately."""
-    safe = _SAFE_NAME_RE.sub("_", character_name.strip()) or "_unnamed"
-    return PROGRESS_DIR / f"{safe}.json"
+    """Return the sidecar path for a character.
+
+    Uses a canonical hashed filename to avoid collisions caused by filesystem-
+    safe sanitization, but still honors legacy filenames when they already
+    exist and appear to belong to this character.
+    """
+    normalized = _normalize_character_name(character_name)
+
+    cached = _cached_sidecar_path(normalized)
+    if cached is not None:
+        return cached
+
+    canonical = PROGRESS_DIR / _canonical_sidecar_filename(normalized)
+    if canonical.exists():
+        _cache_sidecar_path(normalized, canonical)
+        return canonical
+
+    legacy = PROGRESS_DIR / _legacy_sidecar_filename(normalized)
+    if legacy.exists():
+        owner = _read_sidecar_owner_name(legacy)
+        if owner is None or owner == normalized:
+            _cache_sidecar_path(normalized, legacy)
+            return legacy
+
+    _cache_sidecar_path(normalized, canonical)
+    return canonical
+
+
+def sidecar_path_for_delete(
+    character_name: str,
+    *,
+    other_character_names: list[str] | None = None,
+) -> Path | None:
+    """Return a sidecar path safe to unlink for a deleted character.
+
+    Legacy filenames can collide after sanitization. We only delete a legacy
+    file when it appears owned by this character and no remaining character
+    name maps to the same legacy filename.
+    """
+    normalized = _normalize_character_name(character_name)
+    canonical = PROGRESS_DIR / _canonical_sidecar_filename(normalized)
+    if canonical.exists():
+        return canonical
+
+    legacy = PROGRESS_DIR / _legacy_sidecar_filename(normalized)
+    if not legacy.exists():
+        return None
+
+    owner = _read_sidecar_owner_name(legacy)
+    if owner is not None and owner != normalized:
+        return None
+
+    for other in other_character_names or []:
+        other_normalized = _normalize_character_name(other)
+        if not other_normalized or other_normalized == normalized:
+            continue
+        if _legacy_sidecar_filename(other_normalized) == legacy.name:
+            return None
+
+    return legacy
 
 
 def _now_iso() -> str:
@@ -192,9 +349,11 @@ def list_sidecars() -> list[Path]:
 # endpoints run in a threadpool, so this can happen).
 
 _cache_lock = threading.Lock()
+_io_gate = threading.RLock()
 _doc_cache: dict[Path, dict] = {}
 _path_locks: dict[Path, threading.RLock] = {}
 _batch_depth: dict[Path, int] = {}
+_batch_failed: dict[Path, bool] = {}
 _dirty: set[Path] = set()
 
 
@@ -262,18 +421,63 @@ def batch(conn: sqlite3.Connection, character_id: int):
         return
     path = sidecar_path(char["name"])
     lock = _path_lock(path)
-    with lock:
-        _batch_depth[path] = _batch_depth.get(path, 0) + 1
-    try:
-        yield
-    finally:
+    with _io_gate:
         with lock:
-            depth = _batch_depth.get(path, 1) - 1
-            if depth <= 0:
-                _batch_depth.pop(path, None)
-                _flush(path)
-            else:
-                _batch_depth[path] = depth
+            _batch_depth[path] = _batch_depth.get(path, 0) + 1
+            _batch_failed.setdefault(path, False)
+        try:
+            yield
+        except Exception:
+            with lock:
+                _batch_failed[path] = True
+            raise
+        finally:
+            with lock:
+                depth = _batch_depth.get(path, 1) - 1
+                if depth <= 0:
+                    _batch_depth.pop(path, None)
+                    failed = _batch_failed.pop(path, False)
+                    if failed:
+                        _dirty.discard(path)
+                        with _cache_lock:
+                            _doc_cache.pop(path, None)
+                    else:
+                        _flush(path)
+                else:
+                    _batch_depth[path] = depth
+
+
+def _raise_or_warn_write_through(msg: str) -> None:
+    if STRICT_WRITE_THROUGH_DEFAULT:
+        raise ValueError(msg)
+    print(f"Progress sidecar warning: {msg}")
+
+
+def _in_active_batch(path: Path | None = None) -> bool:
+    if path is not None:
+        return _batch_depth.get(path, 0) > 0
+    return any(depth > 0 for depth in _batch_depth.values())
+
+
+def _handle_write_through_gap(
+    msg: str,
+    *,
+    path: Path | None = None,
+    soft_fail_in_batch: bool = False,
+) -> None:
+    if (
+        STRICT_WRITE_THROUGH_DEFAULT
+        and not (soft_fail_in_batch and _in_active_batch(path))
+    ):
+        raise ValueError(msg)
+    print(f"Progress sidecar warning: {msg}")
+
+
+@contextmanager
+def sidecar_io_gate():
+    """Serialize sidecar reconcile against live writes."""
+    with _io_gate:
+        yield
 
 
 # --- write-through from set_row_state --------------------------------------
@@ -292,6 +496,116 @@ def _node_for_row(
     ).fetchone()
 
 
+def _select_update_match(progress: list, target_ids: dict[str, str]) -> int | None:
+    """Pick an existing entry to update, or None when ambiguous.
+
+    Matching must be deterministic and row-compatible to avoid collapsing two
+    rows that share sheet/section/label keys.
+    """
+    hash_id = target_ids.get("hash")
+    section_id = target_ids.get("section_label")
+    label_id = target_ids.get("label")
+    pos_id = target_ids.get("position")
+
+    candidates: list[tuple[int, dict[str, str]]] = []
+    for i, entry in enumerate(progress):
+        if not isinstance(entry, dict):
+            continue
+        entry_ids = entry.get("ids")
+        if not isinstance(entry_ids, dict):
+            continue
+        candidates.append((i, entry_ids))
+
+    if not candidates:
+        return None
+
+    if hash_id:
+        by_hash = [
+            (i, ids)
+            for (i, ids) in candidates
+            if ids.get("hash") == hash_id
+        ]
+        if pos_id and by_hash:
+            by_hash_pos = [i for (i, ids) in by_hash if ids.get("position") == pos_id]
+            if len(by_hash_pos) == 1:
+                return by_hash_pos[0]
+        if len(by_hash) == 1:
+            only_idx, only_ids = by_hash[0]
+            only_pos = only_ids.get("position")
+            if not only_pos or (pos_id and only_pos == pos_id):
+                return only_idx
+
+    if section_id and pos_id:
+        by_section_pos = [
+            i
+            for (i, ids) in candidates
+            if ids.get("section_label") == section_id and ids.get("position") == pos_id
+        ]
+        if len(by_section_pos) == 1:
+            return by_section_pos[0]
+
+    if label_id and pos_id:
+        by_label_pos = [
+            i
+            for (i, ids) in candidates
+            if ids.get("label") == label_id and ids.get("position") == pos_id
+        ]
+        if len(by_label_pos) == 1:
+            return by_label_pos[0]
+
+    if pos_id:
+        by_pos = [i for (i, ids) in candidates if ids.get("position") == pos_id]
+        if len(by_pos) == 1:
+            return by_pos[0]
+
+    return None
+
+
+def _select_remove_indexes(progress: list, target_ids: dict[str, str]) -> list[int]:
+    """Return entry indexes that safely map to one row override to remove.
+
+    Remove matching mirrors update matching to avoid deleting entries that
+    wouldn't qualify as the same row during updates. When position is unique,
+    we still collapse duplicate entries at that same position.
+    """
+    hash_id = target_ids.get("hash")
+    section_id = target_ids.get("section_label")
+    label_id = target_ids.get("label")
+    pos_id = target_ids.get("position")
+
+    match_idx = _select_update_match(progress, target_ids)
+    if match_idx is None and not pos_id:
+        return []
+
+    if not pos_id and match_idx is not None:
+        return [match_idx]
+
+    candidates: list[tuple[int, dict[str, str]]] = []
+    for i, entry in enumerate(progress):
+        if not isinstance(entry, dict):
+            continue
+        entry_ids = entry.get("ids")
+        if not isinstance(entry_ids, dict):
+            continue
+        candidates.append((i, entry_ids))
+
+    remove_indexes: list[int] = []
+    for i, ids in candidates:
+        if ids.get("position") != pos_id:
+            continue
+        if hash_id and ids.get("hash") and ids.get("hash") != hash_id:
+            continue
+        if section_id and ids.get("section_label") and ids.get("section_label") != section_id:
+            continue
+        if label_id and ids.get("label") and ids.get("label") != label_id:
+            continue
+        remove_indexes.append(i)
+
+    if match_idx is not None and match_idx not in remove_indexes:
+        remove_indexes.append(match_idx)
+    return sorted(set(remove_indexes))
+
+
 def record_state_change(
     conn: sqlite3.Connection,
     character_id: int,
@@ -304,62 +618,64 @@ def record_state_change(
     """Write through a state change to the character's JSON sidecar.
 
     Looked up from the DB (cheap): the character name, and the node's label /
-    section / hash. If either lookup fails the call no-ops — the DB write
-    still succeeded, we just don't have enough metadata to checkpoint."""
-    char = conn.execute(
-        "SELECT name, starting_class, created_at FROM characters WHERE id = ?",
-        (character_id,),
-    ).fetchone()
-    if not char or not char["name"]:
-        return
-    node = _node_for_row(conn, run_id, sheet_name, row_index)
-    if not node:
-        return
+    section / hash. If a lookup fails, strict mode raises so the DB write can
+    roll back and we don't silently diverge DB from sidecar state."""
+    with _io_gate:
+        char = conn.execute(
+            "SELECT name, starting_class, created_at FROM characters WHERE id = ?",
+            (character_id,),
+        ).fetchone()
+        if not char or not char["name"]:
+            _raise_or_warn_write_through(
+                f"missing character metadata for id={character_id}"
+            )
+            return
+        path = sidecar_path(char["name"])
+        node = _node_for_row(conn, run_id, sheet_name, row_index)
+        if not node:
+            _handle_write_through_gap(
+                "missing node for write-through "
+                f"(character_id={character_id}, run_id={run_id}, "
+                f"sheet={sheet_name}, row={row_index})",
+                path=path,
+                soft_fail_in_batch=True,
+            )
+            return
 
-    ids = compute_stable_ids(
-        sheet_name, node["section_label"], node["label"],
-        node["row_json"], row_index,
-        precomputed_hash=node["stable_hash"] or None,
-    )
-    path = sidecar_path(char["name"])
+        ids = compute_stable_ids(
+            sheet_name, node["section_label"], node["label"],
+            node["row_json"], row_index,
+            precomputed_hash=node["stable_hash"] or None,
+        )
 
-    new_entry: dict = {
-        "ids": ids,
-        "state": state,
-        "ts": _now_iso(),
-    }
-    if progress_percent is not None:
-        new_entry["value"] = progress_percent
+        new_entry: dict = {
+            "ids": ids,
+            "state": state,
+            "ts": _now_iso(),
+        }
+        if progress_percent is not None:
+            new_entry["value"] = progress_percent
 
-    # Serialize concurrent writers on the same sidecar. Under a chain cascade
-    # the same thread reenters this for ~N rows; the outer batch() holds the
-    # RLock for the whole cascade so contention is rare in practice.
-    char_dict = dict(char)
-    with _path_lock(path):
-        doc = _get_doc(path, lambda: _new_doc(char_dict))
+        # Serialize concurrent writers on the same sidecar. Under a chain
+        # cascade the same thread reenters this for ~N rows; the outer batch()
+        # holds the RLock for the whole cascade so contention is rare.
+        char_dict = dict(char)
+        with _path_lock(path):
+            doc = _get_doc(path, lambda: _new_doc(char_dict))
 
-        # find an existing entry that matches by ANY of the new entry's ids
-        match_idx: int | None = None
-        new_id_values = set(ids.values())
-        for i, e in enumerate(doc["progress"]):
-            if not isinstance(e, dict):
-                continue
-            e_ids = (e.get("ids") or {}).values()
-            if any(v in new_id_values for v in e_ids):
-                match_idx = i
-                break
+            match_idx = _select_update_match(doc["progress"], ids)
 
-        if match_idx is None:
-            doc["progress"].append(new_entry)
-        else:
-            # preserve any unrelated fields the user might have added
-            prev = doc["progress"][match_idx]
-            prev.update(new_entry)
-            prev.pop("orphan", None)
+            if match_idx is None:
+                doc["progress"].append(new_entry)
+            else:
+                # preserve any unrelated fields the user might have added
+                prev = doc["progress"][match_idx]
+                prev.update(new_entry)
+                prev.pop("orphan", None)
 
-        _dirty.add(path)
-        if _batch_depth.get(path, 0) == 0:
-            _flush(path)
+            _dirty.add(path)
+            if _batch_depth.get(path, 0) == 0:
+                _flush(path)
 
 
 def remove_state_change(
@@ -373,58 +689,54 @@ def remove_state_change(
 
     Called when DB override rows are deleted (restore inherited baseline state).
     """
-    char = conn.execute(
-        "SELECT name, starting_class, created_at FROM characters WHERE id = ?",
-        (character_id,),
-    ).fetchone()
-    if not char or not char["name"]:
-        return
-    node = _node_for_row(conn, run_id, sheet_name, row_index)
-    if not node:
-        return
-
-    ids = compute_stable_ids(
-        sheet_name,
-        node["section_label"],
-        node["label"],
-        node["row_json"],
-        row_index,
-        precomputed_hash=node["stable_hash"] or None,
-    )
-    id_values = set(ids.values())
-    if not id_values:
-        return
-
-    path = sidecar_path(char["name"])
-    char_dict = dict(char)
-    with _path_lock(path):
-        doc = _get_doc(path, lambda: _new_doc(char_dict))
-        progress = doc.get("progress")
-        if not isinstance(progress, list) or not progress:
+    with _io_gate:
+        char = conn.execute(
+            "SELECT name, starting_class, created_at FROM characters WHERE id = ?",
+            (character_id,),
+        ).fetchone()
+        if not char or not char["name"]:
+            _raise_or_warn_write_through(
+                f"missing character metadata for id={character_id}"
+            )
+            return
+        path = sidecar_path(char["name"])
+        node = _node_for_row(conn, run_id, sheet_name, row_index)
+        if not node:
+            _handle_write_through_gap(
+                "missing node for remove write-through "
+                f"(character_id={character_id}, run_id={run_id}, "
+                f"sheet={sheet_name}, row={row_index})",
+                path=path,
+                soft_fail_in_batch=True,
+            )
             return
 
-        kept: list = []
-        removed_any = False
-        for entry in progress:
-            if not isinstance(entry, dict):
-                kept.append(entry)
-                continue
-            entry_ids = entry.get("ids")
-            if not isinstance(entry_ids, dict):
-                kept.append(entry)
-                continue
-            if any(v in id_values for v in entry_ids.values()):
-                removed_any = True
-                continue
-            kept.append(entry)
+        ids = compute_stable_ids(
+            sheet_name,
+            node["section_label"],
+            node["label"],
+            node["row_json"],
+            row_index,
+            precomputed_hash=node["stable_hash"] or None,
+        )
 
-        if not removed_any:
-            return
+        char_dict = dict(char)
+        with _path_lock(path):
+            doc = _get_doc(path, lambda: _new_doc(char_dict))
+            progress = doc.get("progress")
+            if not isinstance(progress, list) or not progress:
+                return
 
-        doc["progress"] = kept
-        _dirty.add(path)
-        if _batch_depth.get(path, 0) == 0:
-            _flush(path)
+            remove_indexes = set(_select_remove_indexes(progress, ids))
+            if not remove_indexes:
+                return
+
+            doc["progress"] = [
+                entry for idx, entry in enumerate(progress) if idx not in remove_indexes
+            ]
+            _dirty.add(path)
+            if _batch_depth.get(path, 0) == 0:
+                _flush(path)
 
 
 # --- reconcile JSON sidecars -> DB at startup ------------------------------
@@ -438,6 +750,8 @@ class CharacterReport:
     matched_position: int = 0
     orphaned: int = 0
     bootstrapped_from_db: int = 0
+    preexisting_db_rows: int = 0
+    replayed_rows: int = 0
 
 
 @dataclass
@@ -460,6 +774,8 @@ class ReconcileReport:
             f"  {c.name:<24} matched {c.matched_section_label}/{c.matched_label}"
             f"/{c.matched_hash}/{c.matched_position} (sec/lbl/hash/pos)"
             f"   orphaned {c.orphaned}"
+                + (f"   db_rows {c.preexisting_db_rows}->{c.replayed_rows}"
+                    if c.preexisting_db_rows or c.replayed_rows else "")
             + (f"   bootstrapped {c.bootstrapped_from_db}"
                if c.bootstrapped_from_db else "")
             for c in self.characters
@@ -482,6 +798,8 @@ def _ensure_character(
         (name, header.get("starting_class"),
          header.get("created_at") or _now_iso()),
     )
+    if cur.lastrowid is None:
+        raise ValueError(f"Could not create character '{name}'")
     return int(cur.lastrowid)
 
 
@@ -523,7 +841,7 @@ def _bootstrap_from_db(
     return len(entries)
 
 
-_NodeIndex = dict[str, dict]
+_NodeIndex = dict[str, dict[tuple, list[dict[str, object]]]]
 
 
 def _build_node_index(conn: sqlite3.Connection, run_id: int) -> _NodeIndex:
@@ -542,10 +860,10 @@ def _build_node_index(conn: sqlite3.Connection, run_id: int) -> _NodeIndex:
            FROM nodes WHERE run_id = ?""",
         (run_id,),
     ).fetchall()
-    by_section_label: dict = {}
-    by_label: dict = {}
-    by_hash: dict = {}
-    by_position: dict = {}
+    by_section_label: dict[tuple, list[dict[str, object]]] = {}
+    by_label: dict[tuple, list[dict[str, object]]] = {}
+    by_hash: dict[tuple, list[dict[str, object]]] = {}
+    by_position: dict[tuple, list[dict[str, object]]] = {}
     for r in rows:
         ref = {
             "sheet_name": r["sheet_name"],
@@ -558,13 +876,13 @@ def _build_node_index(conn: sqlite3.Connection, run_id: int) -> _NodeIndex:
         sn_lc = ref["sheet_name"].lower()
         if ref["section_label"] and ref["label"]:
             by_section_label.setdefault(
-                (sn_lc, ref["section_label"].lower(), ref["label"].lower()), ref
-            )
+                (sn_lc, ref["section_label"].lower(), ref["label"].lower()), []
+            ).append(ref)
         if ref["label"]:
-            by_label.setdefault((sn_lc, ref["label"].lower()), ref)
+            by_label.setdefault((sn_lc, ref["label"].lower()), []).append(ref)
         if ref["stable_hash"]:
-            by_hash.setdefault((sn_lc, ref["stable_hash"]), ref)
-        by_position.setdefault((sn_lc, ref["row_index"]), ref)
+            by_hash.setdefault((sn_lc, ref["stable_hash"]), []).append(ref)
+        by_position.setdefault((sn_lc, ref["row_index"]), []).append(ref)
     return {
         "section_label": by_section_label,
         "label": by_label,
@@ -585,32 +903,133 @@ def _resolve_in_memory(
 
     Matching for sheet/section/label tiers is case-insensitive so common
     capitalization fixes in workbook text don't drop progress on the floor."""
-    if v := ids.get("section_label"):
-        m = _parse_id(v, "section_label")
-        if m:
-            ref = index["section_label"].get(
-                (m["sheet"].lower(), m["section"].lower(), m["label"].lower())
+    parsed = {
+        "section_label": _parse_id(ids.get("section_label", ""), "section_label")
+        if ids.get("section_label") else None,
+        "label": _parse_id(ids.get("label", ""), "label")
+        if ids.get("label") else None,
+        "hash": _parse_id(ids.get("hash", ""), "hash")
+        if ids.get("hash") else None,
+        "position": _parse_id(ids.get("position", ""), "position")
+        if ids.get("position") else None,
+    }
+
+    def _row_index_of(ref: dict[str, object], *, default: int = -1) -> int:
+        value = ref.get("row_index")
+        try:
+            return int(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return default
+
+    def _disambiguate(refs: list[dict[str, object]]) -> list[dict[str, object]]:
+        out = list(refs)
+        hash_parts = parsed.get("hash")
+        if hash_parts and len(out) > 1:
+            narrowed = [
+                r for r in out
+                if str(r.get("stable_hash") or "") == str(hash_parts["hash"])
+            ]
+            if narrowed:
+                out = narrowed
+
+        section_parts = parsed.get("section_label")
+        if section_parts and len(out) > 1:
+            narrowed = [
+                r for r in out
+                if str(r.get("sheet_name") or "").lower() == str(section_parts["sheet"]).lower()
+                and str(r.get("section_label") or "").lower() == str(section_parts["section"]).lower()
+                and str(r.get("label") or "").lower() == str(section_parts["label"]).lower()
+            ]
+            if narrowed:
+                out = narrowed
+
+        label_parts = parsed.get("label")
+        if label_parts and len(out) > 1:
+            narrowed = [
+                r for r in out
+                if str(r.get("sheet_name") or "").lower() == str(label_parts["sheet"]).lower()
+                and str(r.get("label") or "").lower() == str(label_parts["label"]).lower()
+            ]
+            if narrowed:
+                out = narrowed
+
+        pos_parts = parsed.get("position")
+        if pos_parts and len(out) > 1:
+            row_value = int(pos_parts["row"])
+            narrowed = [r for r in out if _row_index_of(r) == row_value]
+            if narrowed:
+                out = narrowed
+
+        # If strict identity keys still leave multiple candidates, pick a
+        # deterministic nearest row to avoid unnecessary orphaning after small
+        # workbook shifts (insertions/removals around a section).
+        if pos_parts and len(out) > 1:
+            row_value = int(pos_parts["row"])
+            ranked = sorted(
+                out,
+                key=lambda r: (
+                    abs(_row_index_of(r, default=row_value) - row_value),
+                    _row_index_of(r, default=row_value),
+                ),
             )
-            if ref:
-                return ref, "section_label"
-    if v := ids.get("label"):
-        m = _parse_id(v, "label")
-        if m:
-            ref = index["label"].get((m["sheet"].lower(), m["label"].lower()))
-            if ref:
-                return ref, "label"
-    if v := ids.get("hash"):
-        m = _parse_id(v, "hash")
-        if m:
-            ref = index["hash"].get((m["sheet"].lower(), m["hash"]))
-            if ref:
-                return ref, "hash"
-    if allow_position_fallback and (v := ids.get("position")):
-        m = _parse_id(v, "position")
-        if m:
-            ref = index["position"].get((m["sheet"].lower(), int(m["row"])))
-            if ref:
-                return ref, "position"
+            if ranked:
+                best_distance = abs(
+                    _row_index_of(ranked[0], default=row_value) - row_value
+                )
+                best = [
+                    r
+                    for r in ranked
+                    if abs(_row_index_of(r, default=row_value) - row_value) == best_distance
+                ]
+                if len(best) == 1:
+                    out = [best[0]]
+
+        return out
+
+    section_parts = parsed.get("section_label")
+    if section_parts:
+        refs = index["section_label"].get(
+            (
+                str(section_parts["sheet"]).lower(),
+                str(section_parts["section"]).lower(),
+                str(section_parts["label"]).lower(),
+            ),
+            [],
+        )
+        refs = _disambiguate(refs)
+        if len(refs) == 1:
+            return refs[0], "section_label"
+
+    label_parts = parsed.get("label")
+    if label_parts:
+        refs = index["label"].get(
+            (str(label_parts["sheet"]).lower(), str(label_parts["label"]).lower()),
+            [],
+        )
+        refs = _disambiguate(refs)
+        if len(refs) == 1:
+            return refs[0], "label"
+
+    hash_parts = parsed.get("hash")
+    if hash_parts:
+        refs = index["hash"].get(
+            (str(hash_parts["sheet"]).lower(), str(hash_parts["hash"])),
+            [],
+        )
+        refs = _disambiguate(refs)
+        if len(refs) == 1:
+            return refs[0], "hash"
+
+    pos_parts = parsed.get("position")
+    if allow_position_fallback and pos_parts:
+        refs = index["position"].get(
+            (str(pos_parts["sheet"]).lower(), int(pos_parts["row"])),
+            [],
+        )
+        refs = _disambiguate(refs)
+        if len(refs) == 1:
+            return refs[0], "position"
+
     return None
 
 
@@ -721,89 +1140,116 @@ def reconcile_all(
     A 100 %-completion sidecar (~37 k entries) replays in well under a second
     instead of multiple seconds of per-row round-trips.
     """
-    PROGRESS_DIR.mkdir(parents=True, exist_ok=True)
-    report = ReconcileReport()
-    if allow_position_fallback is None:
-        allow_position_fallback = ALLOW_POSITION_FALLBACK_DEFAULT
+    with _io_gate:
+        PROGRESS_DIR.mkdir(parents=True, exist_ok=True)
+        report = ReconcileReport()
+        if allow_position_fallback is None:
+            allow_position_fallback = ALLOW_POSITION_FALLBACK_DEFAULT
 
-    # Step 1: bootstrap any characters with DB progress but no sidecar yet
-    bootstrapped: dict[str, int] = {}
-    chars = conn.execute(
-        "SELECT id, name, starting_class, created_at FROM characters"
-    ).fetchall()
-    for char in chars:
-        if not char["name"]:
-            continue
-        path = sidecar_path(char["name"])
-        if path.exists():
-            continue
-        n = _bootstrap_from_db(conn, char, run_id)
-        if n:
-            bootstrapped[char["name"]] = n
+        # Ensure reconcile reads authoritative disk state, not stale in-memory
+        # docs that might still be dirty from earlier writes.
+        invalidate_cache()
 
-    sidecars = list_sidecars()
-    if not sidecars:
-        conn.commit()
-        return report
+        # Step 1: bootstrap any characters with DB progress but no sidecar yet
+        bootstrapped: dict[str, int] = {}
+        chars = conn.execute(
+            "SELECT id, name, starting_class, created_at FROM characters"
+        ).fetchall()
+        for char in chars:
+            if not char["name"]:
+                continue
+            path = sidecar_path(char["name"])
+            if path.exists():
+                continue
+            n = _bootstrap_from_db(conn, char, run_id)
+            if n:
+                bootstrapped[char["name"]] = n
 
-    # One bulk scan of nodes for the whole run -- shared across every sidecar.
-    index = _build_node_index(conn, run_id)
+        sidecars = list_sidecars()
+        if not sidecars:
+            conn.commit()
+            return report
 
-    # Step 2: for every sidecar on disk, replay it into the DB
-    for path in sidecars:
-        doc = load_sidecar(path)
-        if not doc:
-            continue
-        header = doc.get("character") or {}
-        name = header.get("name")
-        if not name:
-            continue
+        # One bulk scan of nodes for the whole run -- shared across sidecars.
+        index = _build_node_index(conn, run_id)
+        processed_paths: set[Path] = set()
 
-        cid = _ensure_character(conn, name, header)
-        if header.get("starting_class") is not None:
+        # Step 2: for every sidecar on disk, replay it into the DB
+        for path in sidecars:
+            doc = load_sidecar(path)
+            if not doc:
+                continue
+            header = doc.get("character") or {}
+            name = header.get("name")
+            if not name:
+                continue
+            name = str(name).strip()
+            if not name:
+                continue
+            source_path = path
+            path = _promote_sidecar_to_canonical(source_path, name)
+            if path != source_path:
+                promoted_doc = load_sidecar(path)
+                if promoted_doc:
+                    doc = promoted_doc
+            if path in processed_paths:
+                continue
+            processed_paths.add(path)
+
+            cid = _ensure_character(conn, name, header)
+            if header.get("starting_class") is not None:
+                conn.execute(
+                    "UPDATE characters SET starting_class = ? WHERE id = ?",
+                    (header["starting_class"], cid),
+                )
+
+            existing_count_row = conn.execute(
+                "SELECT COUNT(*) AS c FROM character_progress "
+                "WHERE character_id = ? AND run_id = ?",
+                (cid, run_id),
+            ).fetchone()
+
+            # Wipe this character's progress for the current run; we're about to
+            # rebuild it from the sidecar (the sole source of truth).
             conn.execute(
-                "UPDATE characters SET starting_class = ? WHERE id = ?",
-                (header["starting_class"], cid),
+                "DELETE FROM character_progress WHERE character_id = ? AND run_id = ?",
+                (cid, run_id),
+            )
+            conn.execute(
+                "DELETE FROM progress_rollup WHERE character_id = ?", (cid,)
             )
 
-        # Wipe this character's progress for the current run; we're about to
-        # rebuild it from the sidecar (the sole source of truth).
-        conn.execute(
-            "DELETE FROM character_progress WHERE character_id = ? AND run_id = ?",
-            (cid, run_id),
-        )
-        conn.execute(
-            "DELETE FROM progress_rollup WHERE character_id = ?", (cid,)
-        )
-
-        cr, batch, dirty = _replay_sidecar(
-            doc, index,
-            allow_position_fallback=allow_position_fallback,
-            bootstrapped_count=bootstrapped.get(name, 0),
-        )
-        # name from header may differ slightly from filename — trust the doc
-        cr.name = name
-
-        if batch:
-            conn.executemany(
-                """INSERT INTO character_progress
-                   (character_id, run_id, sheet_name, row_index, state,
-                    progress_percent, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(character_id, run_id, sheet_name, row_index)
-                   DO UPDATE SET state = excluded.state,
-                                 progress_percent = excluded.progress_percent,
-                                 updated_at = excluded.updated_at""",
-                [(cid, run_id, sn, ri, st, val, ts)
-                 for (sn, ri, st, val, ts) in batch],
+            cr, batch, dirty = _replay_sidecar(
+                doc,
+                index,
+                allow_position_fallback=allow_position_fallback,
+                bootstrapped_count=bootstrapped.get(name, 0),
             )
+            # name from header may differ slightly from filename — trust the doc
+            cr.name = name
+            cr.preexisting_db_rows = int(existing_count_row["c"] if existing_count_row else 0)
+            cr.replayed_rows = len(batch)
 
-        if dirty:
-            save_sidecar(path, doc)
-        report.characters.append(cr)
+            if batch:
+                conn.executemany(
+                    """INSERT INTO character_progress
+                       (character_id, run_id, sheet_name, row_index, state,
+                        progress_percent, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(character_id, run_id, sheet_name, row_index)
+                       DO UPDATE SET state = excluded.state,
+                                     progress_percent = excluded.progress_percent,
+                                     updated_at = excluded.updated_at""",
+                    [(cid, run_id, sn, ri, st, val, ts)
+                     for (sn, ri, st, val, ts) in batch],
+                )
 
-    conn.commit()
-    # Reconcile rewrote disk-side state; drop any in-memory cache so the
-    # next record_state_change re-reads from the now-authoritative files.
-    invalidate_cache()
-    return report
+            if dirty:
+                save_sidecar(path, doc)
+            report.characters.append(cr)
+
+        conn.commit()
+        # Reconcile rewrote disk-side state; drop any in-memory cache so the
+        # next record_state_change re-reads from the now-authoritative files.
+        invalidate_cache()
+        return report

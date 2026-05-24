@@ -999,14 +999,35 @@ def rebuild_schema(conn: sqlite3.Connection) -> tuple[list[tuple], list[tuple]]:
             saved_progress = list(
                 conn.execute(
                     """
-                    SELECT character_id, sheet_name, row_index, state, progress_percent, updated_at
-                    FROM character_progress
-                    WHERE run_id = (SELECT MAX(run_id) FROM character_progress)
+                    SELECT character_id, sheet_name, row_index,
+                           state, progress_percent, updated_at
+                    FROM (
+                        SELECT character_id, sheet_name, row_index,
+                               state, progress_percent, updated_at,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY character_id, sheet_name, row_index
+                                   ORDER BY COALESCE(updated_at, '') DESC, run_id DESC
+                               ) AS rn
+                        FROM character_progress
+                    ) ranked
+                    WHERE rn = 1
                     """
                 )
             )
         except sqlite3.OperationalError:
-            saved_progress = []
+            try:
+                saved_progress = list(
+                    conn.execute(
+                        """
+                        SELECT character_id, sheet_name, row_index,
+                               state, progress_percent, updated_at
+                        FROM character_progress
+                        WHERE run_id = (SELECT MAX(run_id) FROM character_progress)
+                        """
+                    )
+                )
+            except sqlite3.OperationalError:
+                saved_progress = []
 
     for table in (
         "edges",
