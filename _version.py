@@ -4,4 +4,4 @@ Bump this on every tagged release. The updater compares it against the
 latest GitHub release tag to decide whether an update is available.
 """
 
-__version__ = "v1.0.7"
+__version__ = "v1.0.8"

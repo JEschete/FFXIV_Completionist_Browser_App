@@ -1,5 +1,45 @@
 # Changelog
 
+## v1.0.8 — 2026-05-24
+
+### Between-Run Progress Reports
+- Added persistent progress baseline/report support under `data/logs/progress_reports` with timestamped reports plus `latest.json` and `progress_baseline.json`.
+- Added automatic between-run transition reports during startup/ingest reconciliation and import transitions.
+- Added a new `Progress Reports` page with per-character filtering, unresolved review counts, and advanced added/removed/orphaned detail views.
+- Added report review resolution actions (`done`, `excluded`, `todo`) in the web UI, including apply-and-save behavior for report-backed row changes.
+- Added an on-demand report API endpoint at `/api/progress/between-run-report` for generating and optionally persisting snapshot diffs.
+
+### Import and Data Hardening
+- Added import transition guard behavior: initial imports with no prior explicit progress now skip transition report generation and reset the baseline.
+- Added clear-existing import handling that resets the baseline instead of producing noisy transition reports.
+- Import run summaries now include existing explicit progress counts, optional history artifacts, unmatched report paths, and progress report paths.
+- Lodestone JSON import now syncs `Classes-Jobs` level rows from `class_job` payload data with merge modes (`keep-highest` default, `overwrite` optional).
+- Hardened progress write paths with immediate transaction acquisition and rollback-safe sidecar write-through for row state updates and override clears.
+- Deleting a character now also removes rollup rows and cleans up/invalidate related sidecar files.
+
+### Workbook Ingest and Structure Hardening
+- Added pre-ingest baseline snapshot capture when required tables are present, with graceful fallback when snapshot capture is unavailable.
+- Schema rebuild now restores latest per-row progress deterministically via windowed ranking, with compatibility fallback for older/partial schemas.
+- Improved submenu parent resolution to avoid ambiguous shared cross-links during hierarchy inference.
+- Added explicit content parent override support (including `Fish Guide` under `Fishing Logs`).
+
+### UI and Navigation Data Improvements
+- Added row-type aware export rows to support richer report comparisons and review-item actions.
+- Added trackable rollup helpers for virtual content group aggregation, including label-prefix grouping support for `Hunting Logs`.
+
+### CI and Test Coverage
+- Added GitHub Actions CI workflow in `.github/workflows/ci.yml` with:
+	- `ruff check` linting (plus advisory format check),
+	- `pytest` + coverage reporting,
+	- OS/Python matrix coverage (`ubuntu-latest` and `windows-latest`; Python `3.10` and `3.13`).
+- Expanded regression coverage across between-run reporting, import transition guards, DB rollups/helpers, ingest helpers, scraper/parser paths, and web routes.
+
+### Included Commits Since v1.0.7
+- `9414245` Data hardening
+- `3e50d77` Initial CI/CD pipeline and data hardening
+- `06ef1a5` Diff report implemented
+- `d61d120` Merge pull request #33 from `JEschete/progressLoss`
+
 ## v1.0.7 — 2026-05-23
 
 ### Desktop App Import
