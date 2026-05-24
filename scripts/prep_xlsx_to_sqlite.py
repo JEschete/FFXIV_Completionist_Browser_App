@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import gc
+import hashlib
 import json
 import os
 import re
@@ -24,7 +25,6 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
-import hashlib
 
 if __package__ in {None, ""}:
     sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -56,6 +56,12 @@ MENU_PREFIX_PARENT = {
     "Char. Menu - ": "Character Menu",
     "Duty Menu - ": "Duty Menu",
     "Logs Menu - ": "Logs Menu",
+}
+
+# Explicit structural overrides for content sheets whose workbook "Main Page"
+# links don't reflect the desired sidebar hierarchy.
+CONTENT_PARENT_OVERRIDES: dict[str, str] = {
+    "Fish Guide": "Fishing Logs",
 }
 
 # data-column header keywords used to pick the "name" of a row
@@ -999,14 +1005,35 @@ def rebuild_schema(conn: sqlite3.Connection) -> tuple[list[tuple], list[tuple]]:
             saved_progress = list(
                 conn.execute(
                     """
-                    SELECT character_id, sheet_name, row_index, state, progress_percent, updated_at
-                    FROM character_progress
-                    WHERE run_id = (SELECT MAX(run_id) FROM character_progress)
+                    SELECT character_id, sheet_name, row_index,
+                           state, progress_percent, updated_at
+                    FROM (
+                        SELECT character_id, sheet_name, row_index,
+                               state, progress_percent, updated_at,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY character_id, sheet_name, row_index
+                                   ORDER BY COALESCE(updated_at, '') DESC, run_id DESC
+                               ) AS rn
+                        FROM character_progress
+                    ) ranked
+                    WHERE rn = 1
                     """
                 )
             )
         except sqlite3.OperationalError:
-            saved_progress = []
+            try:
+                saved_progress = list(
+                    conn.execute(
+                        """
+                        SELECT character_id, sheet_name, row_index,
+                               state, progress_percent, updated_at
+                        FROM character_progress
+                        WHERE run_id = (SELECT MAX(run_id) FROM character_progress)
+                        """
+                    )
+                )
+            except sqlite3.OperationalError:
+                saved_progress = []
 
     for table in (
         "edges",
@@ -1029,12 +1056,36 @@ def rebuild_schema(conn: sqlite3.Connection) -> tuple[list[tuple], list[tuple]]:
     return saved_chars, saved_progress
 
 
+def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table_name,),
+    ).fetchone()
+    return bool(row)
+
+
+def _maybe_capture_pre_ingest_baseline(conn: sqlite3.Connection) -> None:
+    required_tables = ("characters", "nodes", "character_progress")
+    if not all(_table_exists(conn, name) for name in required_tables):
+        return
+    try:
+        from app import progress_report
+
+        snapshot = progress_report.build_snapshot(conn, source="ingest-script-pre-rebuild")
+        if snapshot.get("characters"):
+            progress_report.save_snapshot(snapshot, progress_report.BASELINE_PATH)
+    except Exception as exc:
+        print(f"[warn] Skipped pre-ingest baseline snapshot: {exc}")
+
+
 # --- ingest -----------------------------------------------------------------
 
 def ingest(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
     log_memory_checkpoint(mem_log, "ingest: start")
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
+
+    _maybe_capture_pre_ingest_baseline(conn)
 
     saved_chars, saved_progress = rebuild_schema(conn)
     log_memory_checkpoint(mem_log, "ingest: schema rebuilt")
@@ -1400,6 +1451,31 @@ def ingest(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
         )
     }
 
+    # Count how many sibling submenus under each top menu link to a target.
+    # If a target appears in multiple submenus, treat it as a shared cross-link
+    # and keep it under the top menu instead of arbitrarily nesting it under
+    # whichever submenu happens to run first.
+    submenu_target_counts: dict[str, dict[str, int]] = {}
+    for menu_row in menu_rows:
+        menu_name = menu_row[0]
+        top_parent = menu_parent(menu_name)
+        if top_parent is None:
+            continue
+        try:
+            ws = wb[menu_name]
+        except KeyError:
+            continue
+        targets = {
+            t
+            for t in extract_menu_link_targets(ws)
+            if t in content_sheet_names
+        }
+        if not targets:
+            continue
+        counts = submenu_target_counts.setdefault(top_parent, {})
+        for target in targets:
+            counts[target] = counts.get(target, 0) + 1
+
     relinked_total = 0
     for menu_row in menu_rows:
         menu_name = menu_row[0]
@@ -1415,6 +1491,13 @@ def ingest(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
         submenu_parent = menu_parent(menu_name)
         applied = 0
         for target in targets:
+            if submenu_parent is not None:
+                target_links = submenu_target_counts.get(submenu_parent, {})
+                if target_links.get(target, 0) != 1:
+                    # Shared submenu cross-link: leave this sheet at the
+                    # top-menu level.
+                    continue
+
             if submenu_parent is None:
                 # Top menus should only adopt currently-unparented sheets.
                 cur = conn.execute(
@@ -1440,6 +1523,21 @@ def ingest(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
             print(f"  [{menu_name}]: re-parented {applied} child sheets")
 
     print(f"  total re-parented: {relinked_total}")
+
+    override_total = 0
+    for child_sheet, parent_sheet in CONTENT_PARENT_OVERRIDES.items():
+        if child_sheet not in content_sheet_names or parent_sheet not in content_sheet_names:
+            continue
+        cur = conn.execute(
+            "UPDATE sheets SET parent_sheet = ? "
+            "WHERE run_id = ? AND sheet_name = ? "
+            "AND is_menu = 0 AND is_readonly = 0",
+            (parent_sheet, run_id, child_sheet),
+        )
+        override_total += int(cur.rowcount or 0)
+    if override_total:
+        print(f"  explicit parent overrides applied: {override_total}")
+
     log_memory_checkpoint(mem_log, "ingest: repair pass complete")
 
     # --- Third pass: capture menu-sheet column groupings ------------------

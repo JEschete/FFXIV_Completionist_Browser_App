@@ -8,8 +8,8 @@ etc.) while preserving workbook row order as a stable tie-breaker.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 
 SORT_MODE_WORKBOOK = "workbook"
 SORT_MODE_PROGRESSION = "progression"

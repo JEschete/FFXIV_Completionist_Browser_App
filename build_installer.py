@@ -192,6 +192,7 @@ def regenerate_icon() -> None:
     # the function keeps build_installer.py importable even without PyQt6
     # (e.g. for a CI lint pass).
     from PyQt6.QtGui import QGuiApplication
+
     from build_icons import png_to_ico
     _ = QGuiApplication.instance() or QGuiApplication(sys.argv)
     png_to_ico(src, dst)

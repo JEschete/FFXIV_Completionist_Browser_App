@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Progress Reports · FFXIV Tracker{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Progress Reports</h1>
+    <p class="page-sub">
+      Review detected progression changes around ingest/import/session boundaries.
+      Resolve each item as done, excluded, or todo.
+    </p>
+  </div>
+</div>
+
+{% if error %}<div class="error-banner">{{ error }}</div>{% endif %}
+
+{% if not report_doc %}
+<section class="probe-card report-card">
+  <h2>No report found yet</h2>
+  <p class="page-sub">Run an ingest/import or request a report first. A baseline is saved on close.</p>
+</section>
+{% else %}
+<section class="probe-card report-card">
+  <h2>Latest Report</h2>
+  <div class="report-meta-grid">
+    <div><span>Reason</span><strong>{{ report_reason or 'unknown' }}</strong></div>
+    <div><span>Generated</span><strong>{{ report_generated_at or 'unknown' }}</strong></div>
+    <div><span>Changed Characters</span><strong>{{ report_summary.characters_changed or 0 }}</strong></div>
+    <div><span>Review Unresolved</span><strong>{{ report_summary.review_unresolved or 0 }}</strong></div>
+  </div>
+  {% if report_path %}
+  <p class="page-sub">Report file: {{ report_path }}</p>
+  {% endif %}
+</section>
+
+<section class="probe-card report-card">
+  <form method="get" action="/progress-reports" class="report-filter-form">
+    <label for="report-character-id">Character</label>
+    <select id="report-character-id" name="character_id" onchange="this.form.submit()">
+      {% for c in characters %}
+      <option value="{{ c.id }}" {{ 'selected' if c.id == report_selected_character_id else '' }}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+
+    <label class="probe-check report-advanced-check">
+      <input type="checkbox" name="show_advanced" value="1" {{ 'checked' if report_show_advanced else '' }} onchange="this.form.submit()" />
+      Show advanced added/removed/orphaned details
+    </label>
+  </form>
+</section>
+
+<section class="probe-card report-card">
+  <h2>Review Items for {{ report_selected_character.name }}</h2>
+  {% if report_review_items %}
+  <div class="table-wrap report-table-wrap">
+    <table class="data-table report-table">
+      <thead>
+        <tr>
+          <th>Row</th>
+          <th>Change</th>
+          <th>Before</th>
+          <th>After</th>
+          <th>Resolution</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in report_review_items %}
+        {% set res = item.resolution or {} %}
+        <tr class="data-row report-row report-row-{{ item.change_kind }}">
+          <td>
+            <div class="report-row-title">{{ item.sheet_name }} #{{ item.row_index }}</div>
+            <div class="report-row-label">{{ item.label or '(no label)' }}</div>
+          </td>
+          <td>
+            <span class="badge badge-todo">{{ item.change_kind }}</span>
+          </td>
+          <td>
+            <div>state: {{ item.before.state }}</div>
+            <div>value: {{ item.before.value if item.before.value is not none else '—' }}</div>
+          </td>
+          <td>
+            <div>state: {{ item.after.state }}</div>
+            <div>value: {{ item.after.value if item.after.value is not none else '—' }}</div>
+          </td>
+          <td>
+            <form method="post" action="/progress-reports/resolve" class="report-resolution-form">
+              <input type="hidden" name="item_id" value="{{ item.id }}" />
+              <input type="hidden" name="next_url" value="/progress-reports?character_id={{ report_selected_character_id }}{% if report_show_advanced %}&show_advanced=1{% endif %}" />
+              <select name="resolution">
+                <option value="todo" {{ 'selected' if res.status == 'todo' else '' }}>todo</option>
+                <option value="done" {{ 'selected' if res.status == 'done' else '' }}>done (accept change)</option>
+                <option value="excluded" {{ 'selected' if res.status == 'excluded' else '' }}>excluded (revert change)</option>
+              </select>
+              <button type="submit" class="btn-mini">Accept Resolution</button>
+            </form>
+            {% if res.updated_at %}
+            <div class="report-resolution-meta">updated: {{ res.updated_at }}</div>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="page-sub">No review items for this character in the latest report.</p>
+  {% endif %}
+</section>
+
+{% if report_show_advanced %}
+<section class="probe-card report-card">
+  <h2>Advanced Details</h2>
+  {% if report_orphaned_map %}
+  <div class="report-orphan-block">
+    <h3>Orphaned Entries</h3>
+    <ul>
+      {% for name, count in report_orphaned_map.items() %}
+      <li>{{ name }}: {{ count }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if report_advanced_items %}
+  <div class="table-wrap report-table-wrap">
+    <table class="data-table report-table">
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Sheet</th>
+          <th>Row</th>
+          <th>Label</th>
+          <th>State</th>
+          <th>Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in report_advanced_items %}
+        {% set entry = item.entry or {} %}
+        <tr class="data-row">
+          <td><span class="badge badge-excluded">{{ item.type }}</span></td>
+          <td>{{ entry.sheet_name }}</td>
+          <td>{{ entry.row_index }}</td>
+          <td>{{ entry.label or '—' }}</td>
+          <td>{{ entry.state or 'todo' }}</td>
+          <td>{{ entry.value if entry.value is not none else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="page-sub">No advanced added/removed items for this character.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

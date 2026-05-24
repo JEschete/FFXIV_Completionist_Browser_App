@@ -30,7 +30,259 @@ if __package__ in {None, ""}:
 
 from contextlib import asynccontextmanager
 
-from app import db, lodestone_import, progress_io, section_sort
+from app import db, lodestone_import, progress_io, progress_report, section_sort
+
+RECONCILE_RUN_LOCK = threading.Lock()
+LAST_RECONCILED_RUN_TOKEN: tuple[Any, ...] | None = None
+SESSION_BASELINE_SNAPSHOT: dict[str, Any] | None = None
+LAST_BETWEEN_RUN_REPORT_PATH: Path | None = None
+
+
+def _load_session_baseline_snapshot(*, force: bool = False) -> dict[str, Any] | None:
+    global SESSION_BASELINE_SNAPSHOT
+    if force or SESSION_BASELINE_SNAPSHOT is None:
+        SESSION_BASELINE_SNAPSHOT = progress_report.load_baseline_snapshot()
+    return SESSION_BASELINE_SNAPSHOT
+
+
+def _save_session_baseline_snapshot(
+    conn,
+    run_id: int,
+    *,
+    source: str,
+    run_token: tuple[Any, ...] | None,
+) -> Path:
+    global SESSION_BASELINE_SNAPSHOT
+    SESSION_BASELINE_SNAPSHOT = progress_report.build_snapshot(
+        conn,
+        run_id,
+        source=source,
+        run_token=run_token,
+    )
+    return progress_report.save_baseline_snapshot(SESSION_BASELINE_SNAPSHOT)
+
+
+def _save_shutdown_progress_baseline() -> None:
+    conn = db.get_connection()
+    try:
+        run_id, run_token = _latest_run_identity(conn)
+        if run_id is None:
+            return
+        path = _save_session_baseline_snapshot(
+            conn,
+            run_id,
+            source="project_close",
+            run_token=run_token,
+        )
+        print(f"Progress baseline saved on shutdown: {path}")
+    except Exception as exc:
+        print(f"Progress baseline warning: could not save shutdown baseline: {exc}")
+    finally:
+        conn.close()
+
+
+def _load_latest_progress_report() -> dict[str, Any] | None:
+    return progress_report.load_latest_report()
+
+
+def _progress_report_alert_for_character(character_id: int) -> dict[str, Any] | None:
+    report_doc = _load_latest_progress_report()
+    if not isinstance(report_doc, dict):
+        return None
+
+    unresolved = progress_report.count_unresolved_review_items(
+        report_doc,
+        character_id=character_id,
+    )
+    if unresolved <= 0:
+        return None
+
+    reason = str(report_doc.get("reason") or "progress-change")
+    generated_at = str(report_doc.get("generated_at") or "")
+    return {
+        "unresolved": unresolved,
+        "reason": reason,
+        "generated_at": generated_at,
+        "path": "/progress-reports",
+    }
+
+
+def _latest_run_identity(
+    conn,
+) -> tuple[int | None, tuple[Any, ...] | None]:
+    row = conn.execute(
+        """
+        SELECT id, source_file, started_at, completed_at, sheet_count, row_count
+        FROM ingest_runs
+        ORDER BY id DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    if row is None:
+        return None, None
+
+    run_id = int(row["id"])
+    token: tuple[Any, ...] = (
+        run_id,
+        str(row["source_file"] or ""),
+        str(row["started_at"] or ""),
+        str(row["completed_at"] or ""),
+        int(row["sheet_count"] or 0),
+        int(row["row_count"] or 0),
+    )
+    return run_id, token
+
+
+def _ensure_progress_reconciled_for_run(
+    conn,
+    run_id: int,
+    run_token: tuple[Any, ...],
+) -> None:
+    """Reconcile sidecars for a run once per process lifetime.
+
+    Handles in-process workbook ingests: when the latest ingest run identity
+    changes, replay sidecars before request handlers read/write progress.
+    """
+    global LAST_RECONCILED_RUN_TOKEN
+
+    if LAST_RECONCILED_RUN_TOKEN == run_token:
+        return
+
+    with RECONCILE_RUN_LOCK:
+        global LAST_BETWEEN_RUN_REPORT_PATH
+        if LAST_RECONCILED_RUN_TOKEN == run_token:
+            return
+        previous_run_token = LAST_RECONCILED_RUN_TOKEN
+        report = progress_io.reconcile_all(conn, run_id)
+        LAST_RECONCILED_RUN_TOKEN = run_token
+        if report.characters:
+            print(f"Progress reconcile (run {run_id}):")
+            print(report.summary())
+            if report.total_orphaned() > 0:
+                print(
+                    "Progress reconcile warning: "
+                    f"{report.total_orphaned()} orphaned sidecar entries "
+                    "were not replayed"
+                )
+            dropped_rows = sum(
+                max(0, c.preexisting_db_rows - c.replayed_rows)
+                for c in report.characters
+            )
+            if dropped_rows > 0:
+                print(
+                    "Progress reconcile warning: "
+                    f"{dropped_rows} preexisting DB row(s) were replaced "
+                    "by sidecar replay"
+                )
+
+        # First reconcile in a fresh process: keep any existing persisted
+        # baseline (from the last close/ingest). If that baseline belongs to
+        # a different run identity, generate a startup transition report.
+        if previous_run_token is None:
+            baseline = _load_session_baseline_snapshot()
+            if baseline is None:
+                path = _save_session_baseline_snapshot(
+                    conn,
+                    run_id,
+                    source="session_start",
+                    run_token=run_token,
+                )
+                print(
+                    "Progress baseline initialized for between-run reports: "
+                    f"{path}"
+                )
+                return
+
+            baseline_token_raw = baseline.get("run_token") if isinstance(baseline, dict) else None
+            baseline_token: tuple[Any, ...] | None = None
+            if isinstance(baseline_token_raw, list):
+                baseline_token = tuple(baseline_token_raw)
+
+            baseline_differs = baseline_token is not None and baseline_token != run_token
+            if baseline_token is None and isinstance(baseline, dict):
+                baseline_run = baseline.get("run") if isinstance(baseline.get("run"), dict) else {}
+                baseline_run_id = int(baseline_run.get("id") or 0) if baseline_run else 0
+                baseline_source = str(baseline_run.get("source_file") or "") if baseline_run else ""
+                baseline_differs = (
+                    baseline_run_id != int(run_id)
+                    or baseline_source != str(run_token[1])
+                )
+
+            if baseline_differs:
+                orphaned_by_character = {
+                    str(c.name): int(c.orphaned)
+                    for c in report.characters
+                    if int(c.orphaned) > 0
+                }
+                startup_doc, startup_path = progress_report.create_between_run_report(
+                    conn,
+                    run_id,
+                    reason="startup-run-transition",
+                    run_token=run_token,
+                    baseline=baseline,
+                    orphaned_by_character=orphaned_by_character,
+                    persist=True,
+                )
+                if startup_path is not None:
+                    LAST_BETWEEN_RUN_REPORT_PATH = startup_path
+                    print(f"Progress startup transition report saved: {startup_path}")
+                startup_summary = startup_doc.get("summary") if isinstance(startup_doc, dict) else None
+                if isinstance(startup_summary, dict):
+                    print(
+                        "Progress startup transition summary: "
+                        f"changed={startup_summary.get('characters_changed', 0)}, "
+                        f"review_unresolved={startup_summary.get('review_unresolved', 0)}"
+                    )
+
+                rotated = _save_session_baseline_snapshot(
+                    conn,
+                    run_id,
+                    source="startup_run",
+                    run_token=run_token,
+                )
+                print(f"Progress baseline rotated after startup transition: {rotated}")
+            return
+
+        # In-process ingest/run transition: generate a transition report against
+        # the previous baseline, then rotate baseline to the newly reconciled run.
+        baseline = _load_session_baseline_snapshot()
+        orphaned_by_character = {
+            str(c.name): int(c.orphaned)
+            for c in report.characters
+            if int(c.orphaned) > 0
+        }
+        between_doc, between_path = progress_report.create_between_run_report(
+            conn,
+            run_id,
+            reason="ingest-run-transition",
+            run_token=run_token,
+            baseline=baseline,
+            orphaned_by_character=orphaned_by_character,
+            persist=True,
+        )
+        if between_path is not None:
+            LAST_BETWEEN_RUN_REPORT_PATH = between_path
+            print(
+                "Progress between-run report saved: "
+                f"{between_path}"
+            )
+        summary = between_doc.get("summary") if isinstance(between_doc, dict) else None
+        if isinstance(summary, dict) and summary.get("baseline_available"):
+            print(
+                "Progress between-run summary: "
+                f"characters changed={summary.get('characters_changed', 0)}, "
+                f"entries +{summary.get('entries_added', 0)} "
+                f"-{summary.get('entries_removed', 0)} "
+                f"~{summary.get('entries_changed', 0)}"
+            )
+
+        rotated = _save_session_baseline_snapshot(
+            conn,
+            run_id,
+            source="ingest_run",
+            run_token=run_token,
+        )
+        print(f"Progress baseline rotated after ingest run transition: {rotated}")
 
 
 def reconcile_progress_sidecars() -> None:
@@ -40,15 +292,16 @@ def reconcile_progress_sidecars() -> None:
     run's character_progress table. Detail logic lives in progress_io."""
     conn = db.get_connection()
     try:
-        run_id = db.latest_run_id(conn)
+        global LAST_RECONCILED_RUN_TOKEN
+        _load_session_baseline_snapshot()
+        run_id, run_token = _latest_run_identity(conn)
         if run_id is None:
+            LAST_RECONCILED_RUN_TOKEN = None
             print("Progress reconcile: skipped — no ingest run found "
                   "(run scripts/prep_xlsx_to_sqlite.py to populate the DB)")
             return
-        report = progress_io.reconcile_all(conn, run_id)
-        if report.characters:
-            print("Progress reconcile:")
-            print(report.summary())
+        assert run_token is not None
+        _ensure_progress_reconciled_for_run(conn, run_id, run_token)
     finally:
         conn.close()
 
@@ -56,7 +309,10 @@ def reconcile_progress_sidecars() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     reconcile_progress_sidecars()
-    yield
+    try:
+        yield
+    finally:
+        _save_shutdown_progress_baseline()
 
 
 app = FastAPI(title="FFXIV Completion Tracker", lifespan=lifespan)
@@ -685,6 +941,11 @@ def normalize_import_input_method(raw: str) -> str | None:
     return value if value in {"upload-file", "server-file", "auto"} else None
 
 
+def normalize_lodestone_level_mode(raw: str) -> str | None:
+    value = raw.strip().lower().replace("_", "-")
+    return value if value in {"keep-highest", "overwrite"} else None
+
+
 def parse_extra_paths(raw: str) -> list[str]:
     values: list[str] = []
     seen: set[str] = set()
@@ -1157,6 +1418,43 @@ def _write_import_history(run_id: str, payload: dict[str, Any]) -> Path | None:
         return None
 
 
+def _character_existing_progress_counts(
+    conn,
+    *,
+    run_id: int,
+    character_id: int,
+    starting_class: str | None,
+) -> dict[str, int]:
+    progress_rows_raw = conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM character_progress
+        WHERE run_id = ? AND character_id = ?
+        """,
+        (run_id, character_id),
+    ).fetchone()
+    progress_rows = int(progress_rows_raw[0] if progress_rows_raw else 0)
+
+    class_overrides = 0
+    normalized_starting_class = str(starting_class or "").strip().upper()
+    if normalized_starting_class:
+        class_overrides_raw = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM class_overrides
+            WHERE run_id = ? AND starting_class = ?
+            """,
+            (run_id, normalized_starting_class),
+        ).fetchone()
+        class_overrides = int(class_overrides_raw[0] if class_overrides_raw else 0)
+
+    return {
+        "row_overrides": progress_rows,
+        "class_overrides": class_overrides,
+        "total": progress_rows + class_overrides,
+    }
+
+
 def _run_character_import_job(
     run_id: str,
     *,
@@ -1164,6 +1462,7 @@ def _run_character_import_job(
     character_id: int,
     source_path: Path,
     clear_existing: bool,
+    lodestone_level_mode: str,
 ) -> None:
     _update_character_import_run(
         run_id,
@@ -1174,6 +1473,7 @@ def _run_character_import_job(
     _append_character_import_run_log(run_id, f"{import_label} job started")
     conn = db.get_connection()
     try:
+        global LAST_BETWEEN_RUN_REPORT_PATH
         run_id_db = db.latest_run_id(conn)
         if run_id_db is None:
             raise ValueError("No ingest run found. Run scripts/prep_xlsx_to_sqlite.py first.")
@@ -1182,11 +1482,33 @@ def _run_character_import_job(
             raise ValueError(f"Character id {character_id} was not found")
         starting_class = character["starting_class"]
 
+        _, run_token_before = _latest_run_identity(conn)
+        compare_baseline_snapshot = progress_report.build_snapshot(
+            conn,
+            run_id_db,
+            source=f"pre-{import_type}-import",
+            run_token=run_token_before,
+        )
+
         before_snapshot = db.snapshot_trackable_rows(
             conn,
             run_id_db,
             character_id,
             starting_class,
+        )
+        existing_progress_counts = _character_existing_progress_counts(
+            conn,
+            run_id=run_id_db,
+            character_id=character_id,
+            starting_class=starting_class,
+        )
+        had_existing_progress = existing_progress_counts["total"] > 0
+        _append_character_import_run_log(
+            run_id,
+            "Existing explicit progress before import: "
+            f"{existing_progress_counts['total']} "
+            f"(rows={existing_progress_counts['row_overrides']}, "
+            f"class_overrides={existing_progress_counts['class_overrides']})",
         )
 
         if import_type == "desktop-app":
@@ -1203,6 +1525,7 @@ def _run_character_import_job(
                 character_id=character_id,
                 payload_path=source_path,
                 clear_existing=clear_existing,
+                level_merge_mode=lodestone_level_mode,
                 progress=lambda msg: _append_character_import_run_log(run_id, msg),
             )
 
@@ -1241,6 +1564,8 @@ def _run_character_import_job(
 
         history_step_summary: dict[str, Any] | None = None
         history_path: Path | None = None
+        between_run_report_path: Path | None = None
+
         if import_changes:
             history_payload = {
                 "kind": "import-run",
@@ -1265,6 +1590,66 @@ def _run_character_import_job(
                 "changes_count": len(import_changes),
             }
 
+        _, run_token_after = _latest_run_identity(conn)
+        if clear_existing:
+            baseline_path = _save_session_baseline_snapshot(
+                conn,
+                run_id_db,
+                source=f"{import_type}-clean-run",
+                run_token=run_token_after,
+            )
+            _append_character_import_run_log(
+                run_id,
+                f"Clean run checked: skipped diff report and reset baseline to {baseline_path}",
+            )
+        elif not had_existing_progress:
+            baseline_path = _save_session_baseline_snapshot(
+                conn,
+                run_id_db,
+                source=f"{import_type}-initial-import",
+                run_token=run_token_after,
+            )
+            _append_character_import_run_log(
+                run_id,
+                "Initial import detected (no prior explicit progress): "
+                f"skipped diff report and reset baseline to {baseline_path}",
+            )
+        else:
+            between_doc, between_path = progress_report.create_between_run_report(
+                conn,
+                run_id_db,
+                reason=f"{import_type}-import-transition",
+                run_token=run_token_after,
+                baseline=compare_baseline_snapshot,
+                persist=True,
+            )
+            if between_path is not None:
+                between_run_report_path = between_path
+                LAST_BETWEEN_RUN_REPORT_PATH = between_path
+                _append_character_import_run_log(
+                    run_id,
+                    f"Saved between-run report to {between_path}",
+                )
+            between_summary = between_doc.get("summary") if isinstance(between_doc, dict) else None
+            if isinstance(between_summary, dict):
+                _append_character_import_run_log(
+                    run_id,
+                    "Report summary: "
+                    f"changed={between_summary.get('characters_changed', 0)}, "
+                    f"review_unresolved={between_summary.get('review_unresolved', 0)}",
+                )
+
+            baseline_path = _save_session_baseline_snapshot(
+                conn,
+                run_id_db,
+                source=f"{import_type}-import",
+                run_token=run_token_after,
+            )
+            _append_character_import_run_log(
+                run_id,
+                f"Rotated baseline snapshot to {baseline_path}",
+            )
+
         unmatched_report_path = _write_unmatched_report(run_id, summary)
         _update_character_import_run(
             run_id,
@@ -1272,6 +1657,7 @@ def _run_character_import_job(
             finished_at=dt.datetime.now().isoformat(),
             unmatched_report_path=(str(unmatched_report_path) if unmatched_report_path else None),
             history_path=(str(history_path) if history_path else None),
+            progress_report_path=(str(between_run_report_path) if between_run_report_path else None),
             summary={
                 "character_id": summary.character_id,
                 "character_name": summary.character_name,
@@ -1282,6 +1668,7 @@ def _run_character_import_job(
                 "unmatched_candidates": summary.unmatched_candidates,
                 "rows_applied": summary.rows_applied,
                 "rows_skipped_already_done": summary.rows_skipped_already_done,
+                "existing_progress_before_import": existing_progress_counts,
                 "unmatched_sample": summary.unmatched_items[:20],
                 "history_step": history_step_summary,
             },
@@ -1349,10 +1736,12 @@ class Ctx:
     def __init__(self, request: Request, *, full: bool = True):
         self.request = request
         self.conn = db.get_connection()
-        run_id = db.latest_run_id(self.conn)
+        run_id, run_token = _latest_run_identity(self.conn)
         if run_id is None:
             raise HTTPException(503, "No ingest run found. Run the prep script first.")
+        assert run_token is not None
         self.run_id: int = run_id
+        _ensure_progress_reconciled_for_run(self.conn, self.run_id, run_token)
         self.theme_state = resolve_theme_state(request)
         self.character = db.resolve_active_character(
             self.conn, cookie_character_id(request)
@@ -1422,6 +1811,7 @@ class Ctx:
             "section_sort_mode_label": section_sort.sort_mode_label(
                 self.section_sort_mode
             ),
+            "progress_report_alert": _progress_report_alert_for_character(self.character_id),
             "theme_first_paint_bg": theme["first_paint_bg"],
             "theme_first_paint_text": theme["first_paint_text"],
             "theme_color_scheme_meta": theme["color_scheme_meta"],
@@ -1607,10 +1997,31 @@ def browse(request: Request, sheet_name: str, q: str = "", state: str = "all"):
                 for i in (sheet.get("section_row_indexes") or [])
                 if isinstance(i, int) or (isinstance(i, str) and i.isdigit())
             }
-            groups = [
-                g for g in groups
-                if int(g.get("row_index") or -1) in allowed_section_rows
-            ]
+            if allowed_section_rows:
+                groups = [
+                    g for g in groups
+                    if int(g.get("row_index") or -1) in allowed_section_rows
+                ]
+            else:
+                label_prefixes = [
+                    " ".join(str(p).strip().lower().split())
+                    for p in (sheet.get("row_label_prefixes") or [])
+                    if str(p).strip()
+                ]
+                if label_prefixes:
+                    filtered_groups: list[dict] = []
+                    for group in groups:
+                        rows_for_group = []
+                        for row in group.get("rows", []):
+                            label_norm = " ".join(str(row.get("label") or "").strip().lower().split())
+                            if any(label_norm.startswith(f"{prefix} ") for prefix in label_prefixes):
+                                rows_for_group.append(row)
+                        if rows_for_group:
+                            filtered_groups.append({
+                                **group,
+                                "rows": rows_for_group,
+                            })
+                    groups = filtered_groups
 
         shown = sum(len(g["rows"]) for g in groups)
         view_sheet = dict(source_sheet)
@@ -1672,6 +2083,7 @@ def characters_page(
     desktop_path: str = "",
     import_source: str = "",
     import_input: str = "",
+    lodestone_level_mode: str = "",
 ):
     ctx = Ctx(request)
     try:
@@ -1682,9 +2094,11 @@ def characters_page(
 
         run_import_source = ""
         run_import_input = ""
+        run_level_mode = ""
         if isinstance(run, dict):
             run_import_source = str(run.get("import_type") or "").strip().lower()
             run_import_input = str(run.get("input_method") or "").strip().lower()
+            run_level_mode = str(run.get("lodestone_level_mode") or "").strip().lower()
 
         selected_import_source = normalize_import_source(import_source) or normalize_import_source(run_import_source) or "lodestone-json"
         selected_import_input_method = (
@@ -1694,6 +2108,12 @@ def characters_page(
         )
         if selected_import_input_method == "auto":
             selected_import_input_method = "upload-file"
+
+        selected_lodestone_level_mode = (
+            normalize_lodestone_level_mode(lodestone_level_mode)
+            or normalize_lodestone_level_mode(run_level_mode)
+            or "keep-highest"
+        )
 
         suggested_payload = ""
         suggested_desktop_path = ""
@@ -1733,6 +2153,7 @@ def characters_page(
             "desktop_completion_options": desktop_options,
             "selected_import_source": selected_import_source,
             "selected_import_input_method": selected_import_input_method,
+            "selected_lodestone_level_mode": selected_lodestone_level_mode,
             "suggested_source_path": suggested_source_path,
             "active_sheet": None,
         })
@@ -1748,6 +2169,7 @@ def _submit_character_import(
     payload_path: str,
     payload_file: UploadFile | None,
     clear_existing: str,
+    lodestone_level_mode: str,
 ) -> RedirectResponse:
     normalized_source = normalize_import_source(import_source)
     if normalized_source is None:
@@ -1759,6 +2181,12 @@ def _submit_character_import(
     if normalized_input_method is None:
         return RedirectResponse(
             f"/characters?error={quote('Choose a valid import input method.')}",
+            status_code=303,
+        )
+    normalized_level_mode = normalize_lodestone_level_mode(lodestone_level_mode)
+    if normalized_level_mode is None:
+        return RedirectResponse(
+            f"/characters?error={quote('Choose a valid Lodestone level merge mode.')}",
             status_code=303,
         )
 
@@ -1793,7 +2221,7 @@ def _submit_character_import(
             resolved_path = _resolve_uploaded_file() or _resolve_server_file()
     except ValueError as exc:
         return RedirectResponse(
-            f"/characters?error={quote(str(exc))}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}",
+            f"/characters?error={quote(str(exc))}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}&lodestone_level_mode={quote(normalized_level_mode)}",
             status_code=303,
         )
 
@@ -1817,14 +2245,14 @@ def _submit_character_import(
                 else "Choose a JSON payload file or pick a server payload below."
             )
         return RedirectResponse(
-            f"/characters?error={quote(message)}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}",
+            f"/characters?error={quote(message)}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}&lodestone_level_mode={quote(normalized_level_mode)}",
             status_code=303,
         )
 
     if not resolved_path.exists() or not resolved_path.is_file():
         label = "Desktop completion file" if normalized_source == "desktop-app" else "Payload file"
         return RedirectResponse(
-            f"/characters?error={quote(f'{label} not found: {resolved_path}')}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}",
+            f"/characters?error={quote(f'{label} not found: {resolved_path}')}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}&lodestone_level_mode={quote(normalized_level_mode)}",
             status_code=303,
         )
 
@@ -1835,7 +2263,7 @@ def _submit_character_import(
         conn.close()
     if char is None:
         return RedirectResponse(
-            f"/characters?error={quote(f'Character id {character_id} was not found')}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}",
+            f"/characters?error={quote(f'Character id {character_id} was not found')}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}&lodestone_level_mode={quote(normalized_level_mode)}",
             status_code=303,
         )
 
@@ -1844,7 +2272,7 @@ def _submit_character_import(
         run_ref = str(active_run.get("id") or "").strip()
         detail = f" (run_id={run_ref})" if run_ref else ""
         return RedirectResponse(
-            f"/characters?error={quote(f'An import is already in progress for this character{detail}. Wait for it to finish.')}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}",
+            f"/characters?error={quote(f'An import is already in progress for this character{detail}. Wait for it to finish.')}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}&lodestone_level_mode={quote(normalized_level_mode)}",
             status_code=303,
         )
 
@@ -1866,6 +2294,7 @@ def _submit_character_import(
             "character_name": char["name"],
             "payload_path": str(resolved_path),
             "clear_existing": clear_existing_flag,
+            "lodestone_level_mode": normalized_level_mode,
             "log_path": str(log_path),
             "logs": [f"[{dt.datetime.now().strftime('%H:%M:%S')}] {import_label} queued"],
         }
@@ -1878,13 +2307,14 @@ def _submit_character_import(
             "character_id": character_id,
             "source_path": resolved_path,
             "clear_existing": clear_existing_flag,
+            "lodestone_level_mode": normalized_level_mode,
         },
         daemon=True,
     )
     worker.start()
 
     return RedirectResponse(
-        f"/characters?run_id={quote(run_id)}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}&payload_path={quote(str(resolved_path))}",
+        f"/characters?run_id={quote(run_id)}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}&payload_path={quote(str(resolved_path))}&lodestone_level_mode={quote(normalized_level_mode)}",
         status_code=303,
     )
 
@@ -1897,6 +2327,7 @@ def character_import(
     payload_path: str = Form(""),
     payload_file: UploadFile | None = File(None),
     clear_existing: str = Form("0"),
+    lodestone_level_mode: str = Form("keep-highest"),
 ):
     return _submit_character_import(
         import_source=import_source,
@@ -1905,6 +2336,7 @@ def character_import(
         payload_path=payload_path,
         payload_file=payload_file,
         clear_existing=clear_existing,
+        lodestone_level_mode=lodestone_level_mode,
     )
 
 
@@ -1914,6 +2346,7 @@ def character_import_lodestone(
     payload_path: str = Form(""),
     payload_file: UploadFile | None = File(None),
     clear_existing: str = Form("0"),
+    lodestone_level_mode: str = Form("keep-highest"),
 ):
     return _submit_character_import(
         import_source="lodestone-json",
@@ -1922,6 +2355,7 @@ def character_import_lodestone(
         payload_path=payload_path,
         payload_file=payload_file,
         clear_existing=clear_existing,
+        lodestone_level_mode=lodestone_level_mode,
     )
 
 
@@ -1931,6 +2365,7 @@ def character_import_desktop_app(
     completion_path: str = Form(""),
     completion_file: UploadFile | None = File(None),
     clear_existing: str = Form("0"),
+    lodestone_level_mode: str = Form("keep-highest"),
 ):
     return _submit_character_import(
         import_source="desktop-app",
@@ -1939,6 +2374,7 @@ def character_import_desktop_app(
         payload_path=completion_path,
         payload_file=completion_file,
         clear_existing=clear_existing,
+        lodestone_level_mode=lodestone_level_mode,
     )
 
 
@@ -1963,6 +2399,11 @@ def character_import_status(run_id: str):
             "finished_at": run.get("finished_at"),
             "log_path": run.get("log_path"),
             "unmatched_report_path": run.get("unmatched_report_path"),
+            "progress_report_path": run.get("progress_report_path"),
+            "progress_report_url": (
+                "/progress-reports"
+                if run.get("progress_report_path") else None
+            ),
             "unmatched_report_url": (
                 f"/characters/import-unmatched?run_id={quote(str(run.get('id') or ''))}"
                 if run.get("unmatched_report_path") else None
@@ -2148,7 +2589,8 @@ def settings_theme_save(
     section_sort_mode: str = Form(section_sort.DEFAULT_SORT_MODE),
 ):
     catalog = get_theme_catalog()
-    themes = catalog.get("themes") if isinstance(catalog.get("themes"), list) else []
+    themes_raw = catalog.get("themes")
+    themes = [t for t in themes_raw if isinstance(t, dict)] if isinstance(themes_raw, list) else []
     by_id = {str(theme.get("id")): theme for theme in themes}
 
     normalized_theme_id = (theme_id or "").strip()
@@ -2161,7 +2603,10 @@ def settings_theme_save(
 
     normalized_scheme = normalize_theme_scheme_setting(theme_scheme)
     normalized_section_sort_mode = section_sort.normalize_sort_mode(section_sort_mode)
-    selected_schemes = selected_theme.get("schemes") if isinstance(selected_theme.get("schemes"), dict) else {}
+    selected_schemes_raw = selected_theme.get("schemes")
+    selected_schemes: dict[str, Any] = (
+        selected_schemes_raw if isinstance(selected_schemes_raw, dict) else {}
+    )
     if normalized_scheme in {"dark", "light"} and normalized_scheme not in selected_schemes:
         normalized_scheme = "default"
 
@@ -2759,28 +3204,29 @@ def api_bulk_set_section(
                     )
                 )
         else:
-            for idx in checkbox_rows:
-                current_state = db.effective_state(
-                    ctx.conn,
-                    ctx.character_id,
-                    ctx.run_id,
-                    sheet_name,
-                    idx,
-                    ctx.starting_class,
-                )
-                if current_state == target_state:
-                    continue
-                db.set_row_state(
-                    ctx.conn,
-                    ctx.character_id,
-                    ctx.run_id,
-                    sheet_name,
-                    idx,
-                    target_state,
-                    commit=False,
-                    starting_class=ctx.starting_class,
-                )
-                changed.add(idx)
+            with progress_io.batch(ctx.conn, ctx.character_id):
+                for idx in checkbox_rows:
+                    current_state = db.effective_state(
+                        ctx.conn,
+                        ctx.character_id,
+                        ctx.run_id,
+                        sheet_name,
+                        idx,
+                        ctx.starting_class,
+                    )
+                    if current_state == target_state:
+                        continue
+                    db.set_row_state(
+                        ctx.conn,
+                        ctx.character_id,
+                        ctx.run_id,
+                        sheet_name,
+                        idx,
+                        target_state,
+                        commit=False,
+                        starting_class=ctx.starting_class,
+                    )
+                    changed.add(idx)
             if changed:
                 ctx.conn.commit()
 
@@ -2847,8 +3293,9 @@ def api_history_apply(
 
         step_character_id: int | None = None
         try:
-            if step.get("character_id") is not None:
-                step_character_id = int(step.get("character_id"))
+            step_character_id_raw = step.get("character_id")
+            if step_character_id_raw is not None:
+                step_character_id = int(step_character_id_raw)
         except (TypeError, ValueError):
             step_character_id = None
         if step_character_id is not None and step_character_id != ctx.character_id:
@@ -2867,8 +3314,9 @@ def api_history_apply(
 
         step_run_id: int | None = None
         try:
-            if step.get("run_id") is not None:
-                step_run_id = int(step.get("run_id"))
+            step_run_id_raw = step.get("run_id")
+            if step_run_id_raw is not None:
+                step_run_id = int(step_run_id_raw)
         except (TypeError, ValueError):
             step_run_id = None
         if step_run_id is not None and step_run_id != ctx.run_id:
@@ -2894,7 +3342,10 @@ def api_history_apply(
             if not sheet_name:
                 continue
             try:
-                row_index = int(change.get("row_index"))
+                row_index_raw = change.get("row_index")
+                if row_index_raw is None:
+                    continue
+                row_index = int(row_index_raw)
             except (TypeError, ValueError):
                 continue
 
@@ -2963,7 +3414,8 @@ def api_history_apply(
                 sheet_name = str(change.get("sheet_name") or "")
                 row_index = int(change.get("row_index") or 0)
                 row_type = str(change.get("row_type") or "checkbox")
-                target = change.get("target") if isinstance(change.get("target"), dict) else {}
+                target_raw = change.get("target")
+                target: dict[str, Any] = target_raw if isinstance(target_raw, dict) else {}
                 target_state = str(target.get("state") or "todo")
                 target_pct = target.get("progress_percent")
                 target_explicit = bool(target.get("explicit")) if "explicit" in target else True
@@ -3028,7 +3480,6 @@ def api_history_apply(
                     raise HTTPException(400, f"Invalid history change for row {sheet_name}:{row_index}: {exc}") from exc
 
                 touched_by_sheet.setdefault(sheet_name, set()).add(row_index)
-
         if touched_by_sheet:
             ctx.conn.commit()
 
@@ -3176,6 +3627,255 @@ def character_delete(request: Request, character_id: int = Form(...)):
     return resp
 
 
+@app.get("/progress-reports", response_class=HTMLResponse)
+def progress_reports_page(
+    request: Request,
+    character_id: int | None = None,
+    show_advanced: int = 0,
+    error: str = "",
+):
+    ctx = Ctx(request)
+    try:
+        report_doc = _load_latest_progress_report()
+        selected_character_id = int(character_id) if character_id is not None else ctx.character_id
+        known_character_ids = {int(c["id"]) for c in ctx.characters}
+        if selected_character_id not in known_character_ids:
+            selected_character_id = ctx.character_id
+
+        selected_character = next(
+            (c for c in ctx.characters if int(c["id"]) == selected_character_id),
+            ctx.character,
+        )
+
+        report_reason = ""
+        report_generated_at = ""
+        report_path = ""
+        summary: dict[str, Any] = {}
+        review_items: list[dict[str, Any]] = []
+        advanced_items: list[dict[str, Any]] = []
+        orphaned_map: dict[str, int] = {}
+
+        if isinstance(report_doc, dict):
+            report_reason = str(report_doc.get("reason") or "")
+            report_generated_at = str(report_doc.get("generated_at") or "")
+            report_path = str(report_doc.get("report_path") or "")
+            summary_raw = report_doc.get("summary")
+            summary = summary_raw if isinstance(summary_raw, dict) else {}
+
+            review_items = progress_report.review_items_for_character(
+                report_doc,
+                selected_character_id,
+            )
+            review_items.sort(
+                key=lambda item: (
+                    str(item.get("sheet_name") or ""),
+                    int(item.get("row_index") or 0),
+                    str(item.get("label") or ""),
+                )
+            )
+
+            advanced_raw = report_doc.get("advanced_items")
+            if isinstance(advanced_raw, list):
+                for item in advanced_raw:
+                    if not isinstance(item, dict):
+                        continue
+                    try:
+                        item_character_id = int(item.get("character_id") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if item_character_id == selected_character_id:
+                        advanced_items.append(item)
+
+            advanced_meta = report_doc.get("advanced")
+            if isinstance(advanced_meta, dict):
+                orphans_raw = advanced_meta.get("orphaned_by_character")
+                if isinstance(orphans_raw, dict):
+                    orphaned_map = {
+                        str(k): int(v)
+                        for (k, v) in orphans_raw.items()
+                        if isinstance(v, (int, float)) and int(v) > 0
+                    }
+
+        return ctx.render(
+            "progress_reports.html",
+            {
+                "active_sheet": None,
+                "report_doc": report_doc if isinstance(report_doc, dict) else None,
+                "report_reason": report_reason,
+                "report_generated_at": report_generated_at,
+                "report_path": report_path,
+                "report_summary": summary,
+                "report_review_items": review_items,
+                "report_advanced_items": advanced_items,
+                "report_orphaned_map": orphaned_map,
+                "report_show_advanced": bool(show_advanced),
+                "report_selected_character": selected_character,
+                "report_selected_character_id": selected_character_id,
+                "error": error,
+            },
+        )
+    finally:
+        ctx.close()
+
+
+@app.post("/progress-reports/resolve")
+def progress_report_resolve_item(
+    request: Request,
+    item_id: str = Form(...),
+    resolution: str = Form("todo"),
+    next_url: str = Form("/progress-reports"),
+):
+    destination = next_url if next_url.startswith("/") else "/progress-reports"
+    normalized_resolution = str(resolution or "todo").strip().lower()
+    if normalized_resolution not in progress_report.RESOLUTION_VALUES:
+        return RedirectResponse(
+            f"{destination}?error={quote('Invalid resolution state.')}",
+            status_code=303,
+        )
+
+    report_doc = _load_latest_progress_report()
+    if not isinstance(report_doc, dict):
+        return RedirectResponse(
+            f"{destination}?error={quote('No progress report found to resolve.')}",
+            status_code=303,
+        )
+
+    review_items = report_doc.get("review_items")
+    target_item: dict[str, Any] | None = None
+    if isinstance(review_items, list):
+        for item in review_items:
+            if isinstance(item, dict) and str(item.get("id") or "") == item_id:
+                target_item = item
+                break
+    if target_item is None:
+        return RedirectResponse(
+            f"{destination}?error={quote('Could not find that report item.')}",
+            status_code=303,
+        )
+
+    applied_state: str | None = None
+    if normalized_resolution != "todo":
+        character_id = int(target_item.get("character_id") or 0)
+        sheet_name = str(target_item.get("sheet_name") or "")
+        row_index = int(target_item.get("row_index") or 0)
+        row_type = str(target_item.get("row_type") or "checkbox")
+        desired = target_item.get("after") if normalized_resolution == "done" else target_item.get("before")
+        if not isinstance(desired, dict):
+            return RedirectResponse(
+                f"{destination}?error={quote('Report item snapshot data is missing.')}",
+                status_code=303,
+            )
+
+        desired_state = str(desired.get("state") or "todo").strip().lower()
+        desired_value = desired.get("value")
+        if desired_state not in {"done", "todo", "excluded"}:
+            desired_state = "todo"
+
+        conn = db.get_connection()
+        try:
+            run_id = db.latest_run_id(conn)
+            if run_id is None:
+                raise ValueError("No ingest run found.")
+
+            node_exists = conn.execute(
+                """
+                SELECT 1 FROM nodes
+                WHERE run_id = ? AND sheet_name = ? AND row_index = ?
+                LIMIT 1
+                """,
+                (run_id, sheet_name, row_index),
+            ).fetchone()
+            if node_exists is None:
+                raise ValueError("Target row no longer exists in the current workbook.")
+
+            character = db.get_character(conn, character_id)
+            if character is None:
+                raise ValueError("Target character no longer exists.")
+            starting_class = character["starting_class"]
+
+            if row_type == "value":
+                if desired_state == "excluded":
+                    db.set_row_state(
+                        conn,
+                        character_id,
+                        run_id,
+                        sheet_name,
+                        row_index,
+                        "excluded",
+                        starting_class=starting_class,
+                    )
+                    applied_state = "excluded"
+                elif isinstance(desired_value, (int, float)):
+                    db.set_row_value(
+                        conn,
+                        character_id,
+                        run_id,
+                        sheet_name,
+                        row_index,
+                        float(desired_value),
+                        starting_class=starting_class,
+                    )
+                    applied_state = desired_state
+                else:
+                    db.set_row_state(
+                        conn,
+                        character_id,
+                        run_id,
+                        sheet_name,
+                        row_index,
+                        desired_state,
+                        starting_class=starting_class,
+                    )
+                    applied_state = desired_state
+            else:
+                db.set_row_state(
+                    conn,
+                    character_id,
+                    run_id,
+                    sheet_name,
+                    row_index,
+                    desired_state,
+                    starting_class=starting_class,
+                )
+                applied_state = desired_state
+
+            _, current_run_token = _latest_run_identity(conn)
+            _save_session_baseline_snapshot(
+                conn,
+                run_id,
+                source="report_resolution",
+                run_token=current_run_token,
+            )
+        except Exception as exc:
+            conn.close()
+            return RedirectResponse(
+                f"{destination}?error={quote(str(exc))}",
+                status_code=303,
+            )
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    updated = progress_report.set_review_item_resolution(
+        report_doc,
+        item_id=item_id,
+        status=normalized_resolution,
+        applied_state=applied_state,
+    )
+    if updated is None:
+        return RedirectResponse(
+            f"{destination}?error={quote('Could not update report resolution state.')}",
+            status_code=303,
+        )
+
+    report_path_raw = report_doc.get("report_path")
+    report_path = Path(str(report_path_raw)) if isinstance(report_path_raw, str) and report_path_raw else None
+    progress_report.save_report_document(report_doc, report_path=report_path)
+    return RedirectResponse(destination, status_code=303)
+
+
 # --- export -----------------------------------------------------------------
 
 @app.get("/export/current.csv")
@@ -3200,6 +3900,45 @@ def export_csv(request: Request):
             data, media_type="text/csv",
             headers={"Content-Disposition": f'attachment; filename="{fname}"'},
         )
+    finally:
+        ctx.close()
+
+
+@app.get("/api/progress/between-run-report")
+def api_between_run_report(
+    request: Request,
+    persist: bool = False,
+    sample_limit: int = progress_report.SAMPLE_LIMIT_DEFAULT,
+):
+    ctx = Ctx(request, full=False)
+    try:
+        _, run_token = _latest_run_identity(ctx.conn)
+        if run_token is None:
+            raise HTTPException(503, "No ingest run found.")
+
+        baseline = _load_session_baseline_snapshot()
+        bounded_sample_limit = max(1, min(int(sample_limit), 200))
+        report_doc, report_path = progress_report.create_between_run_report(
+            ctx.conn,
+            ctx.run_id,
+            reason="api-request",
+            run_token=run_token,
+            sample_limit=bounded_sample_limit,
+            persist=persist,
+            baseline=baseline,
+        )
+
+        global LAST_BETWEEN_RUN_REPORT_PATH
+        if report_path is not None:
+            LAST_BETWEEN_RUN_REPORT_PATH = report_path
+
+        payload = dict(report_doc)
+        payload["report_path"] = str(report_path) if report_path is not None else None
+        latest_path = progress_report.latest_report_path()
+        payload["latest_report_path"] = (
+            str(latest_path) if latest_path.exists() else None
+        )
+        return JSONResponse(payload)
     finally:
         ctx.close()
 

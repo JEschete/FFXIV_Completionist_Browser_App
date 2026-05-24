@@ -103,6 +103,17 @@
       Clear existing character progress before import
     </label>
 
+    <label for="lodestone-level-mode">Lodestone level merge mode</label>
+    <select id="lodestone-level-mode" name="lodestone_level_mode">
+      <option value="keep-highest" {{ 'selected' if selected_lodestone_level_mode == 'keep-highest' else '' }}>
+        Keep highest value (max of existing/imported)
+      </option>
+      <option value="overwrite" {{ 'selected' if selected_lodestone_level_mode == 'overwrite' else '' }}>
+        Overwrite existing value with imported level
+      </option>
+    </select>
+    <p class="probe-hint" id="lodestone-level-mode-hint"></p>
+
     <button type="submit" class="btn-primary">Start import</button>
   </form>
 </section>
@@ -119,6 +130,8 @@
   const fileLabelEl = document.getElementById('import-file-label');
   const selectLabelEl = document.getElementById('import-source-path-label');
   const hintEl = document.getElementById('import-source-hint');
+  const levelModeSelect = document.getElementById('lodestone-level-mode');
+  const levelModeHint = document.getElementById('lodestone-level-mode-hint');
   const dataEl = document.getElementById('import-source-data');
   const initialValue = (selectEl?.dataset.initialValue || '').trim();
 
@@ -170,6 +183,16 @@
         ? 'Server dropdown is active and takes precedence for import.'
         : 'File picker is active and takes precedence for import.';
       hintEl.textContent = `${meta.hint} ${methodHint}`;
+    }
+
+    if (levelModeSelect) {
+      const useLodestoneMode = source === 'lodestone-json';
+      levelModeSelect.disabled = !useLodestoneMode;
+      if (levelModeHint) {
+        levelModeHint.textContent = useLodestoneMode
+          ? 'Used for Classes-Jobs level rows from Lodestone class/job payload.'
+          : 'Desktop imports ignore this option.';
+      }
     }
   };
 
@@ -275,6 +298,15 @@
         Open unmatched items
       </a>
     </div>
+    <div class="probe-monitor-meta" id="progress-report-link-wrap" {% if not import_run or not import_run.progress_report_path %}style="display:none"{% endif %}>
+      <a
+        id="progress-report-open-link"
+        class="btn-mini"
+        href="/progress-reports"
+      >
+        Open progress report review
+      </a>
+    </div>
     <pre id="import-run-log" class="probe-log">{% if import_run and import_run.logs %}{{ '\n'.join(import_run.logs[-160:]) }}{% else %}Waiting for import output...{% endif %}</pre>
   </div>
 </section>
@@ -351,6 +383,8 @@
   const logPathEl = document.getElementById('import-run-log-path');
   const unmatchedWrap = document.getElementById('unmatched-link-wrap');
   const unmatchedLink = document.getElementById('unmatched-open-link');
+  const reportWrap = document.getElementById('progress-report-link-wrap');
+  const reportLink = document.getElementById('progress-report-open-link');
   const logEl = document.getElementById('import-run-log');
   const stopStates = new Set(['completed', 'failed']);
   let timer = null;
@@ -451,6 +485,14 @@
           unmatchedWrap.style.display = '';
         } else {
           unmatchedWrap.style.display = 'none';
+        }
+      }
+      if (reportWrap && reportLink) {
+        if (data.progress_report_url) {
+          reportLink.setAttribute('href', data.progress_report_url);
+          reportWrap.style.display = '';
+        } else {
+          reportWrap.style.display = 'none';
         }
       }
       if (data.summary && data.status === 'completed') {
