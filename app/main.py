@@ -32,7 +32,6 @@ from contextlib import asynccontextmanager
 
 from app import db, lodestone_import, progress_io, section_sort
 
-
 RECONCILE_RUN_LOCK = threading.Lock()
 LAST_RECONCILED_RUN_TOKEN: tuple[Any, ...] | None = None
 
@@ -1680,10 +1679,31 @@ def browse(request: Request, sheet_name: str, q: str = "", state: str = "all"):
                 for i in (sheet.get("section_row_indexes") or [])
                 if isinstance(i, int) or (isinstance(i, str) and i.isdigit())
             }
-            groups = [
-                g for g in groups
-                if int(g.get("row_index") or -1) in allowed_section_rows
-            ]
+            if allowed_section_rows:
+                groups = [
+                    g for g in groups
+                    if int(g.get("row_index") or -1) in allowed_section_rows
+                ]
+            else:
+                label_prefixes = [
+                    " ".join(str(p).strip().lower().split())
+                    for p in (sheet.get("row_label_prefixes") or [])
+                    if str(p).strip()
+                ]
+                if label_prefixes:
+                    filtered_groups: list[dict] = []
+                    for group in groups:
+                        rows_for_group = []
+                        for row in group.get("rows", []):
+                            label_norm = " ".join(str(row.get("label") or "").strip().lower().split())
+                            if any(label_norm.startswith(f"{prefix} ") for prefix in label_prefixes):
+                                rows_for_group.append(row)
+                        if rows_for_group:
+                            filtered_groups.append({
+                                **group,
+                                "rows": rows_for_group,
+                            })
+                    groups = filtered_groups
 
         shown = sum(len(g["rows"]) for g in groups)
         view_sheet = dict(source_sheet)

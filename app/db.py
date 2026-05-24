@@ -1058,6 +1058,8 @@ _GRAND_COMPANY_HEADERS = {
     "immortal flames": "Flame",
 }
 
+_HUNTING_LOG_LABEL_RE = re.compile(r"^(.+?)\s+\d{1,3}$")
+
 
 def _slugify(text: str) -> str:
     raw = (text or "").strip().lower()
@@ -1080,6 +1082,41 @@ def _is_likely_sheet_header(label: str, sheet_title: str) -> bool:
     if norm_label.endswith(" guide") and norm_title.endswith(" guide"):
         return True
     return False
+
+
+def _hunting_log_label_prefixes(conn: sqlite3.Connection, run_id: int) -> list[str]:
+    """Ordered unique class/job prefixes inferred from Hunting Logs labels.
+
+    Hunting Logs rows are shaped like "Arcanist 01" with no explicit section
+    banners, so derive virtual subgroup labels from the shared text prefix.
+    """
+    rows = conn.execute(
+        """
+        SELECT label
+        FROM nodes
+        WHERE run_id = ? AND sheet_name = 'Hunting Logs'
+          AND row_type IN ('checkbox', 'value')
+        ORDER BY row_index
+        """,
+        (run_id,),
+    ).fetchall()
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        label = str(row["label"] or "").strip()
+        if not label:
+            continue
+        match = _HUNTING_LOG_LABEL_RE.match(label)
+        if not match:
+            continue
+        prefix = " ".join(match.group(1).split())
+        norm = prefix.lower()
+        if not prefix or norm in seen:
+            continue
+        seen.add(norm)
+        out.append(prefix)
+    return out
 
 
 def _content_virtual_specs_for_sheet(
@@ -1203,6 +1240,68 @@ def _content_virtual_specs_for_sheet(
     return groups if len(groups) >= 2 else []
 
 
+def _label_prefix_trackable_rollups(
+    conn: sqlite3.Connection,
+    run_id: int,
+    character_id: int,
+    sheet_name: str,
+    label_prefixes: list[str],
+    starting_class: str | None = None,
+) -> dict[str, dict[str, int]]:
+    """Trackable row rollups keyed by lower-cased row-label prefix."""
+    prefixes: list[str] = []
+    seen: set[str] = set()
+    for raw in label_prefixes:
+        norm = " ".join(str(raw or "").strip().lower().split())
+        if not norm or norm in seen:
+            continue
+        seen.add(norm)
+        prefixes.append(norm)
+    if not prefixes:
+        return {}
+
+    eff, join, jparams = _state_clauses(starting_class)
+    rows = conn.execute(
+        f"""
+        SELECT n.label, {eff} AS eff
+        FROM nodes n
+        LEFT JOIN character_progress p
+          ON p.character_id = ? AND p.run_id = n.run_id
+         AND p.sheet_name = n.sheet_name AND p.row_index = n.row_index
+        {join}
+        WHERE n.run_id = ? AND n.sheet_name = ?
+          AND n.row_type IN ('checkbox', 'value')
+        ORDER BY n.row_index
+        """,
+        (character_id, *jparams, run_id, sheet_name),
+    ).fetchall()
+
+    rollups = {prefix: _empty_roll() for prefix in prefixes}
+    for row in rows:
+        label_norm = " ".join(str(row["label"] or "").strip().lower().split())
+        if not label_norm:
+            continue
+        matched_prefix: str | None = None
+        for prefix in prefixes:
+            if label_norm.startswith(f"{prefix} "):
+                matched_prefix = prefix
+                break
+        if matched_prefix is None:
+            continue
+
+        roll = rollups[matched_prefix]
+        roll["total"] += 1
+        eff_state = str(row["eff"] or "todo")
+        if eff_state == "done":
+            roll["done"] += 1
+        elif eff_state == "excluded":
+            roll["excluded"] += 1
+
+    for roll in rollups.values():
+        roll["countable"] = roll["total"] - roll["excluded"]
+    return rollups
+
+
 def attach_content_virtual_nodes(
     conn: sqlite3.Connection,
     tree: list[dict],
@@ -1256,6 +1355,16 @@ def attach_content_virtual_nodes(
 
         sections = sections_by_sheet.get(sheet_name, [])
         specs = _content_virtual_specs_for_sheet(sheet_name, str(node.get("title") or ""), sections)
+        if not specs and sheet_name == "Hunting Logs":
+            hunting_prefixes = _hunting_log_label_prefixes(conn, run_id)
+            if len(hunting_prefixes) >= 2:
+                specs = [
+                    {
+                        "title": prefix,
+                        "label_prefixes": [prefix],
+                    }
+                    for prefix in hunting_prefixes
+                ]
         if not specs:
             return
 
@@ -1276,20 +1385,44 @@ def attach_content_virtual_nodes(
                 for idx in spec.get("section_row_indexes", [])
                 if int(idx) in section_rollups
             ]
-            if not section_indexes:
-                continue
+            label_prefixes = [
+                " ".join(str(p).split())
+                for p in spec.get("label_prefixes", [])
+                if str(p).strip()
+            ]
 
             roll = _empty_roll()
-            for sec_idx in section_indexes:
-                sec_roll = section_rollups.get(sec_idx)
-                if sec_roll is None:
-                    continue
-                roll["done"] += int(sec_roll.get("done") or 0)
-                roll["excluded"] += int(sec_roll.get("excluded") or 0)
-                roll["total"] += int(sec_roll.get("total") or 0)
+            if section_indexes:
+                for sec_idx in section_indexes:
+                    sec_roll = section_rollups.get(sec_idx)
+                    if sec_roll is None:
+                        continue
+                    roll["done"] += int(sec_roll.get("done") or 0)
+                    roll["excluded"] += int(sec_roll.get("excluded") or 0)
+                    roll["total"] += int(sec_roll.get("total") or 0)
+                roll["countable"] = roll["total"] - roll["excluded"]
+            elif label_prefixes:
+                prefix_rollups = _label_prefix_trackable_rollups(
+                    conn,
+                    run_id,
+                    character_id,
+                    sheet_name,
+                    label_prefixes,
+                    starting_class,
+                )
+                for prefix in label_prefixes:
+                    sec_roll = prefix_rollups.get(prefix.lower())
+                    if sec_roll is None:
+                        continue
+                    roll["done"] += int(sec_roll.get("done") or 0)
+                    roll["excluded"] += int(sec_roll.get("excluded") or 0)
+                    roll["total"] += int(sec_roll.get("total") or 0)
+                roll["countable"] = roll["total"] - roll["excluded"]
+            else:
+                continue
+
             if roll["total"] <= 0:
                 continue
-            roll["countable"] = roll["total"] - roll["excluded"]
 
             title = str(spec.get("title") or "Group").strip() or "Group"
             slug = _slugify(title)
@@ -1310,6 +1443,7 @@ def attach_content_virtual_nodes(
                 "virtual_kind": "content_group",
                 "source_sheet": sheet_name,
                 "section_row_indexes": section_indexes,
+                "row_label_prefixes": label_prefixes,
                 "parent_menu_section": None,
                 "children": [],
                 "roll": roll,
@@ -1326,6 +1460,7 @@ def attach_content_virtual_nodes(
                 "virtual_kind": "content_group",
                 "source_sheet": sheet_name,
                 "section_row_indexes": section_indexes,
+                "row_label_prefixes": label_prefixes,
                 "parent_sheet": sheet_name,
                 "parent_menu_section": None,
                 "sheet_index": int(sheet_meta.get("sheet_index") or 0) * 1000 + ordinal,

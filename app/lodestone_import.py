@@ -9,11 +9,11 @@ import sqlite3
 import traceback
 import unicodedata
 import urllib.request
+from collections import Counter
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
-from collections import Counter
 
 from app import db, progress_io
 
@@ -1146,7 +1146,7 @@ def _lookup_source_labels(
         if labels:
             return labels, candidate_bucket
 
-    for candidate_bucket in _CANONICAL_SOURCE_FALLBACKS.get(bucket, ()): 
+    for candidate_bucket in _CANONICAL_SOURCE_FALLBACKS.get(bucket, ()):
         labels = source_index.get(candidate_bucket, {}).get(source_id)
         if labels:
             return labels, candidate_bucket

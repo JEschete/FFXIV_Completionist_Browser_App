@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import gc
+import hashlib
 import json
 import os
 import re
@@ -24,7 +25,6 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
-import hashlib
 
 if __package__ in {None, ""}:
     sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -56,6 +56,12 @@ MENU_PREFIX_PARENT = {
     "Char. Menu - ": "Character Menu",
     "Duty Menu - ": "Duty Menu",
     "Logs Menu - ": "Logs Menu",
+}
+
+# Explicit structural overrides for content sheets whose workbook "Main Page"
+# links don't reflect the desired sidebar hierarchy.
+CONTENT_PARENT_OVERRIDES: dict[str, str] = {
+    "Fish Guide": "Fishing Logs",
 }
 
 # data-column header keywords used to pick the "name" of a row
@@ -1421,6 +1427,31 @@ def ingest(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
         )
     }
 
+    # Count how many sibling submenus under each top menu link to a target.
+    # If a target appears in multiple submenus, treat it as a shared cross-link
+    # and keep it under the top menu instead of arbitrarily nesting it under
+    # whichever submenu happens to run first.
+    submenu_target_counts: dict[str, dict[str, int]] = {}
+    for menu_row in menu_rows:
+        menu_name = menu_row[0]
+        top_parent = menu_parent(menu_name)
+        if top_parent is None:
+            continue
+        try:
+            ws = wb[menu_name]
+        except KeyError:
+            continue
+        targets = {
+            t
+            for t in extract_menu_link_targets(ws)
+            if t in content_sheet_names
+        }
+        if not targets:
+            continue
+        counts = submenu_target_counts.setdefault(top_parent, {})
+        for target in targets:
+            counts[target] = counts.get(target, 0) + 1
+
     relinked_total = 0
     for menu_row in menu_rows:
         menu_name = menu_row[0]
@@ -1436,6 +1467,13 @@ def ingest(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
         submenu_parent = menu_parent(menu_name)
         applied = 0
         for target in targets:
+            if submenu_parent is not None:
+                target_links = submenu_target_counts.get(submenu_parent, {})
+                if target_links.get(target, 0) != 1:
+                    # Shared submenu cross-link: leave this sheet at the
+                    # top-menu level.
+                    continue
+
             if submenu_parent is None:
                 # Top menus should only adopt currently-unparented sheets.
                 cur = conn.execute(
@@ -1461,6 +1499,21 @@ def ingest(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
             print(f"  [{menu_name}]: re-parented {applied} child sheets")
 
     print(f"  total re-parented: {relinked_total}")
+
+    override_total = 0
+    for child_sheet, parent_sheet in CONTENT_PARENT_OVERRIDES.items():
+        if child_sheet not in content_sheet_names or parent_sheet not in content_sheet_names:
+            continue
+        cur = conn.execute(
+            "UPDATE sheets SET parent_sheet = ? "
+            "WHERE run_id = ? AND sheet_name = ? "
+            "AND is_menu = 0 AND is_readonly = 0",
+            (parent_sheet, run_id, child_sheet),
+        )
+        override_total += int(cur.rowcount or 0)
+    if override_total:
+        print(f"  explicit parent overrides applied: {override_total}")
+
     log_memory_checkpoint(mem_log, "ingest: repair pass complete")
 
     # --- Third pass: capture menu-sheet column groupings ------------------

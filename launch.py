@@ -124,7 +124,7 @@ def banner() -> None:
         host_label = f"{host}  (all interfaces - LAN reachable)"
     else:
         host_label = f"{host}  (LAN bind)"
-    runtime_label = "python\\ (bundled)" if IS_EMBEDDED else f".venv\\"
+    runtime_label = "python\\ (bundled)" if IS_EMBEDDED else ".venv\\"
     bar = "=" * 60
     print()
     print(bar)

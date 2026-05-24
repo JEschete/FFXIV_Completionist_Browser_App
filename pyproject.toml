@@ -1,0 +1,64 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "scraper: offline Lodestone HTML parsing tests",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["app", "scripts", "CharacterScraping"]
+omit = [
+    "*/.venv/*",
+    "*/build/*",
+    "*/dist/*",
+    "*/tests/*",
+    # GUI launcher pulls in PyQt6 and isn't import-safe on headless runners.
+    "*/launch_gui.py",
+    "*/launch.py",
+    # Standalone maintenance/CLI tools, not part of the app runtime.
+    "*/scripts/crawl_quest_wiki.py",
+    "*/scripts/preview_themes.py",
+    "*/scripts/relight_themes.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = [
+    ".venv",
+    "build",
+    "dist",
+    "data",
+    "Spreadsheet",
+    "Assets",
+    "GameDataReferences",
+]
+
+[tool.ruff.lint]
+# Pragmatic baseline: pyflakes (real bugs / unused code), pycodestyle errors,
+# and import sorting. Stylistic line-length is left to the formatter.
+select = ["E", "F", "W", "I"]
+ignore = [
+    "E501",  # line length handled by the formatter, not enforced as a hard error
+    "E402",  # several modules deliberately set sys.path before importing `app`
+    "E741",  # ambiguous single-letter names appear in color-math helpers
+]
+
+[tool.ruff.lint.per-file-ignores]
+# conftest bootstraps sys.path before importing the prep script, so the import
+# block is deliberately ordered and split.
+"tests/*" = ["E402", "I001"]

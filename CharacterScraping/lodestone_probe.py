@@ -12,7 +12,6 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlsplit, urlun
 import requests
 from bs4 import BeautifulSoup, Tag
 
-
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "

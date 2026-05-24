@@ -42,7 +42,7 @@ from PyQt6.QtCore import (
     QTimer,
     pyqtSignal,
 )
-from PyQt6.QtGui import QCloseEvent, QColor, QFont, QIcon, QPaintEvent, QPainter, QPixmap
+from PyQt6.QtGui import QCloseEvent, QColor, QFont, QIcon, QPainter, QPaintEvent, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -69,6 +69,9 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+import updater
+from _version import __version__ as APP_VERSION
+
 # Reuse helpers + path constants from the CLI launcher so the two stay in sync.
 from launch import (
     BACKUP_DIR,
@@ -92,9 +95,6 @@ from launch import (
     port_in_use,
     save_config,
 )
-
-from _version import __version__ as APP_VERSION
-import updater
 
 ICON_PATH = ROOT / "assets" / "icon.png"
 

@@ -16,7 +16,7 @@ import struct
 from io import BytesIO
 from pathlib import Path
 
-from PyQt6.QtCore import QBuffer, QByteArray, QIODevice, QSize, Qt
+from PyQt6.QtCore import QBuffer, QIODevice, QSize, Qt
 from PyQt6.QtGui import QImage, QPainter
 
 # Standard Windows shell icon sizes. 256 must be present so Explorer's "Large
@@ -90,6 +90,7 @@ def png_to_ico(src_png: Path, dst_ico: Path,
 if __name__ == "__main__":
     # Allow `python build_icons.py` for ad-hoc rebuilds.
     import sys
+
     from PyQt6.QtGui import QGuiApplication  # noqa: F401 — ensures Qt is initialized
     _ = QGuiApplication.instance() or QGuiApplication(sys.argv)
 
