@@ -12,11 +12,18 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any
 
+from app import section_sort
+
 DB_PATH = Path("data/ffxiv_tracker.sqlite")
+VALUE_CAPS_PATH = Path("data/value_caps.json")
+
+_VALUE_CAPS_CACHE_MTIME_NS: int | None = None
+_VALUE_CAPS_CACHE_DATA: dict[str, float] = {}
 
 # state cycle used by the toggle endpoint
 NEXT_STATE = {"todo": "done", "done": "excluded", "excluded": "todo"}
@@ -26,6 +33,179 @@ STARTING_CLASSES = (
     "ARCANIST", "ARCHER", "CONJURER", "GLADIATOR",
     "LANCER", "MARAUDER", "PUGILIST", "THAUMATURGE",
 )
+
+
+def _norm_text(value: str | None) -> str:
+    text = (value or "").replace("\xa0", " ").strip().lower()
+    return re.sub(r"\s+", " ", text)
+
+
+def _value_cap_key(sheet_name: str, section_label: str | None, label: str | None) -> str:
+    return "|".join((
+        _norm_text(sheet_name),
+        _norm_text(section_label),
+        _norm_text(label),
+    ))
+
+
+def _default_value_cap(sheet_name: str, section_label: str | None, label: str | None) -> float:
+    sheet_norm = _norm_text(sheet_name)
+    section_norm = _norm_text(section_label)
+    label_norm = _norm_text(label)
+
+    if sheet_norm == "classes-jobs":
+        if "desynthesis" in section_norm:
+            return 770.0
+        if "blue mage" in label_norm:
+            return 80.0
+    return 100.0
+
+
+def load_value_cap_overrides() -> dict[str, float]:
+    global _VALUE_CAPS_CACHE_MTIME_NS, _VALUE_CAPS_CACHE_DATA
+
+    try:
+        stat = VALUE_CAPS_PATH.stat()
+    except OSError:
+        _VALUE_CAPS_CACHE_MTIME_NS = None
+        _VALUE_CAPS_CACHE_DATA = {}
+        return {}
+
+    mtime_ns = int(stat.st_mtime_ns)
+    if _VALUE_CAPS_CACHE_MTIME_NS == mtime_ns:
+        return dict(_VALUE_CAPS_CACHE_DATA)
+
+    parsed: dict[str, float] = {}
+    try:
+        raw = json.loads(VALUE_CAPS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raw = {}
+
+    if isinstance(raw, dict):
+        for key, value in raw.items():
+            try:
+                cap = float(value)
+            except (TypeError, ValueError):
+                continue
+            if cap > 0:
+                parsed[str(key)] = cap
+
+    _VALUE_CAPS_CACHE_MTIME_NS = mtime_ns
+    _VALUE_CAPS_CACHE_DATA = parsed
+    return dict(parsed)
+
+
+def save_value_cap_overrides(overrides: dict[str, float]) -> dict[str, float]:
+    global _VALUE_CAPS_CACHE_MTIME_NS, _VALUE_CAPS_CACHE_DATA
+
+    cleaned: dict[str, float] = {}
+    for key, value in overrides.items():
+        try:
+            cap = float(value)
+        except (TypeError, ValueError):
+            continue
+        if cap <= 0:
+            continue
+        cleaned[str(key)] = cap
+
+    VALUE_CAPS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    VALUE_CAPS_PATH.write_text(
+        json.dumps(cleaned, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    try:
+        _VALUE_CAPS_CACHE_MTIME_NS = int(VALUE_CAPS_PATH.stat().st_mtime_ns)
+    except OSError:
+        _VALUE_CAPS_CACHE_MTIME_NS = None
+    _VALUE_CAPS_CACHE_DATA = dict(cleaned)
+    return dict(cleaned)
+
+
+def resolve_value_cap(
+    sheet_name: str,
+    section_label: str | None,
+    label: str | None,
+) -> float:
+    defaults = _default_value_cap(sheet_name, section_label, label)
+    overrides = load_value_cap_overrides()
+    key = _value_cap_key(sheet_name, section_label, label)
+    return float(overrides.get(key, defaults))
+
+
+def value_row_cap(
+    conn: sqlite3.Connection,
+    run_id: int,
+    sheet_name: str,
+    row_index: int,
+) -> float:
+    row = conn.execute(
+        """
+        SELECT label, section_label, row_type
+        FROM nodes
+        WHERE run_id = ? AND sheet_name = ? AND row_index = ?
+        """,
+        (run_id, sheet_name, row_index),
+    ).fetchone()
+    if row is None or row["row_type"] != "value":
+        return 100.0
+    return resolve_value_cap(
+        sheet_name,
+        row["section_label"],
+        row["label"],
+    )
+
+
+def classes_jobs_cap_rows(conn: sqlite3.Connection, run_id: int) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT row_index, label, section_label, row_json
+        FROM nodes
+        WHERE run_id = ? AND sheet_name = 'Classes-Jobs' AND row_type = 'value'
+        ORDER BY row_index
+        """,
+        (run_id,),
+    ).fetchall()
+
+    parsed: list[dict[str, Any]] = []
+    name_counts: dict[str, int] = {}
+    for row in rows:
+        payload = json.loads(row["row_json"] or "{}")
+        label = str(row["label"] or payload.get("job_class") or "").strip()
+        section_label = str(row["section_label"] or "").strip()
+        name_counts[label] = name_counts.get(label, 0) + 1
+        parsed.append(
+            {
+                "row_index": int(row["row_index"]),
+                "label": label,
+                "section_label": section_label,
+            }
+        )
+
+    out: list[dict[str, Any]] = []
+    for item in parsed:
+        label = item["label"]
+        section_label = item["section_label"]
+        if name_counts.get(label, 0) > 1 and section_label:
+            display_name = f"{label} ({section_label})"
+        else:
+            display_name = label
+
+        default_cap = _default_value_cap("Classes-Jobs", section_label, label)
+        current_cap = resolve_value_cap("Classes-Jobs", section_label, label)
+        cap_key = _value_cap_key("Classes-Jobs", section_label, label)
+        out.append(
+            {
+                "row_index": item["row_index"],
+                "display_name": display_name,
+                "label": label,
+                "section_label": section_label,
+                "cap_key": cap_key,
+                "default_cap": int(default_cap) if float(default_cap).is_integer() else default_cap,
+                "current_cap": int(current_cap) if float(current_cap).is_integer() else current_cap,
+            }
+        )
+    return out
 
 
 def _state_clauses(starting_class: str | None) -> tuple[str, str, list]:
@@ -457,15 +637,16 @@ def set_row_value(
     commit: bool = True,
     starting_class: str | None = None,
 ) -> str:
-    """Set a row's numeric value (0-100). Derives state from the value:
-    100+ → done; <100 → todo; never auto-unexcludes."""
-    pct = max(0.0, min(100.0, float(percent)))
+    """Set a row's numeric value (0..cap). Derives state from that row's cap:
+    cap+ → done; <cap → todo; never auto-unexcludes."""
+    cap = value_row_cap(conn, run_id, sheet_name, row_index)
+    pct = max(0.0, min(cap, float(percent)))
     cur = effective_state(
         conn, character_id, run_id, sheet_name, row_index, starting_class
     )
     if cur == "excluded":
         new_state = "excluded"
-    elif pct >= 100:
+    elif pct >= cap:
         new_state = "done"
     else:
         new_state = "todo"
@@ -490,13 +671,14 @@ def toggle_excluded(
         conn, character_id, run_id, sheet_name, row_index, starting_class
     )
     if cur == "excluded":
+        cap = value_row_cap(conn, run_id, sheet_name, row_index)
         prev = conn.execute(
             """SELECT progress_percent FROM character_progress
                WHERE character_id=? AND run_id=? AND sheet_name=? AND row_index=?""",
             (character_id, run_id, sheet_name, row_index),
         ).fetchone()
         pct = float(prev["progress_percent"]) if prev and prev["progress_percent"] else 0.0
-        new = "done" if pct >= 100 else "todo"
+        new = "done" if pct >= cap else "todo"
     else:
         new = "excluded"
     set_row_state(
@@ -752,6 +934,314 @@ def pct(roll: dict[str, int]) -> float:
 # Picked because ``|`` is URL-safe and never appears in a workbook sheet name.
 VIRTUAL_SEP = "|"
 
+CONTENT_VIRTUAL_PREFIX = "content-group:"
+
+_PAGE_SECTION_RE = re.compile(r"^PAGE\s+\d+$", re.IGNORECASE)
+
+_GRAND_COMPANY_HEADERS = {
+    "maelstrom": "Storm",
+    "order of the twin adder": "Serpent",
+    "immortal flames": "Flame",
+}
+
+
+def _slugify(text: str) -> str:
+    raw = (text or "").strip().lower()
+    raw = re.sub(r"[^a-z0-9]+", "-", raw)
+    raw = re.sub(r"-+", "-", raw).strip("-")
+    return raw or "group"
+
+
+def _is_likely_sheet_header(label: str, sheet_title: str) -> bool:
+    norm_label = " ".join((label or "").strip().lower().split())
+    norm_title = " ".join((sheet_title or "").strip().lower().split())
+    if not norm_label:
+        return True
+    if norm_label == norm_title:
+        return True
+    if norm_label.endswith(" logs") and norm_title.endswith(" logs"):
+        return True
+    if norm_label.endswith(" log") and norm_title.endswith(" log"):
+        return True
+    if norm_label.endswith(" guide") and norm_title.endswith(" guide"):
+        return True
+    return False
+
+
+def _content_virtual_specs_for_sheet(
+    sheet_name: str,
+    sheet_title: str,
+    sections: list[dict],
+) -> list[dict]:
+    """Return virtual subgroup specs for a content sheet.
+
+    Each spec is ``{"title": str, "section_row_indexes": [int, ...]}`` and
+    maps to one synthetic child page in the sidebar.
+    """
+    if len(sections) < 2:
+        return []
+
+    # 0) Grand Company split (specific user-facing labels).
+    # Workbook headers are MAELSTROM / ORDER OF THE TWIN ADDER / IMMORTAL FLAMES,
+    # but the desired sidebar labels are Storm / Serpent / Flame.
+    company_headers: list[tuple[int, str]] = []
+    for idx, sec in enumerate(sections):
+        norm = " ".join(str(sec.get("label") or "").strip().lower().split())
+        label = _GRAND_COMPANY_HEADERS.get(norm)
+        if label is not None:
+            company_headers.append((idx, label))
+
+    if len(company_headers) >= 2:
+        groups: list[dict] = []
+        for n, (start_idx, title) in enumerate(company_headers):
+            end_idx = company_headers[n + 1][0] if (n + 1) < len(company_headers) else len(sections)
+            span = sections[start_idx:end_idx]
+            section_row_indexes = [int(s["row_index"]) for s in span]
+            if section_row_indexes:
+                groups.append(
+                    {
+                        "title": title,
+                        "section_row_indexes": section_row_indexes,
+                    }
+                )
+        if groups:
+            return groups
+
+    # 1) Track-based split (Miner/Botanist style: mining vs quarrying, etc.).
+    track_order: list[str] = []
+    track_sections: dict[str, list[int]] = {}
+    for sec in sections:
+        meta = sec.get("meta") if isinstance(sec.get("meta"), dict) else {}
+        track_raw = meta.get("track")
+        track = str(track_raw).strip().lower() if track_raw is not None else ""
+        if not track:
+            label_norm = str(sec.get("label") or "").upper()
+            if "QUARRY" in label_norm:
+                track = "quarrying"
+            elif "HARVEST" in label_norm:
+                track = "harvesting"
+            elif "LOGGING" in label_norm:
+                track = "logging"
+            elif "MINING" in label_norm:
+                track = "mining"
+        if track not in {"mining", "quarrying", "logging", "harvesting"}:
+            continue
+        if track not in track_sections:
+            track_sections[track] = []
+            track_order.append(track)
+        track_sections[track].append(int(sec["row_index"]))
+
+    if len(track_order) >= 2:
+        return [
+            {
+                "title": track.title(),
+                "section_row_indexes": track_sections[track],
+            }
+            for track in track_order
+        ]
+
+    # 2) Expansion/chapter split when PAGE labels repeat under parent headers.
+    page_labels = [
+        sec["label"] for sec in sections
+        if _PAGE_SECTION_RE.match(str(sec.get("label") or "").strip())
+    ]
+    if len(page_labels) < 2:
+        return []
+
+    counts: dict[str, int] = {}
+    for label in page_labels:
+        counts[label] = counts.get(label, 0) + 1
+    if max(counts.values(), default=0) < 2:
+        return []
+
+    non_page_indexes = [
+        i for i, sec in enumerate(sections)
+        if not _PAGE_SECTION_RE.match(str(sec.get("label") or "").strip())
+    ]
+    groups: list[dict] = []
+    for n, idx in enumerate(non_page_indexes):
+        sec = sections[idx]
+        label = str(sec.get("label") or "").strip()
+        if not label:
+            continue
+
+        next_non_page_idx = (
+            non_page_indexes[n + 1] if (n + 1) < len(non_page_indexes) else len(sections)
+        )
+        pages_in_span = [
+            sections[i]
+            for i in range(idx + 1, next_non_page_idx)
+            if _PAGE_SECTION_RE.match(str(sections[i].get("label") or "").strip())
+        ]
+        if not pages_in_span:
+            continue
+        if _is_likely_sheet_header(label, sheet_title):
+            continue
+
+        groups.append(
+            {
+                "title": label.title(),
+                "section_row_indexes": [int(p["row_index"]) for p in pages_in_span],
+            }
+        )
+
+    return groups if len(groups) >= 2 else []
+
+
+def attach_content_virtual_nodes(
+    conn: sqlite3.Connection,
+    tree: list[dict],
+    by_name: dict[str, dict],
+    run_id: int,
+    character_id: int,
+    starting_class: str | None = None,
+) -> None:
+    """Attach synthetic child pages under content sheets.
+
+    This powers sidebar-level subpages for sheets that contain multiple logical
+    tracks (e.g., Mining/Quarrying) or repeated PAGE groups under expansion
+    headers (e.g., Sightseeing Logs).
+    """
+    section_rows = conn.execute(
+        """
+        SELECT sheet_name, row_index, label, row_json
+        FROM nodes
+        WHERE run_id = ? AND row_type = 'section'
+        ORDER BY sheet_name, row_index
+        """,
+        (run_id,),
+    ).fetchall()
+
+    sections_by_sheet: dict[str, list[dict]] = {}
+    for row in section_rows:
+        sheet_name = str(row["sheet_name"])
+        payload = json.loads(row["row_json"] or "{}")
+        meta = payload.get("section_sort") if isinstance(payload, dict) else None
+        sections_by_sheet.setdefault(sheet_name, []).append(
+            {
+                "row_index": int(row["row_index"]),
+                "label": str(row["label"] or ""),
+                "meta": meta if isinstance(meta, dict) else None,
+            }
+        )
+
+    def walk(node: dict) -> None:
+        for child in node.get("children", []):
+            walk(child)
+
+        if node.get("is_menu") or node.get("is_virtual"):
+            return
+
+        sheet_name = str(node.get("sheet_name") or "")
+        if not sheet_name:
+            return
+        sheet_meta = by_name.get(sheet_name)
+        if sheet_meta is None:
+            return
+
+        sections = sections_by_sheet.get(sheet_name, [])
+        specs = _content_virtual_specs_for_sheet(sheet_name, str(node.get("title") or ""), sections)
+        if not specs:
+            return
+
+        rows = fetch_rows(
+            conn,
+            run_id,
+            character_id,
+            sheet_name,
+            q="",
+            state="all",
+            starting_class=starting_class,
+        )
+        grouped = group_rows_by_section(
+            rows,
+            sheet_name=sheet_name,
+            section_sort_mode=section_sort.SORT_MODE_WORKBOOK,
+        )
+        groups_by_section_idx = {
+            int(g["row_index"]): g
+            for g in grouped
+            if g.get("section")
+        }
+
+        used_names: set[str] = set(by_name.keys())
+        virtual_children: list[dict] = []
+        for ordinal, spec in enumerate(specs, start=1):
+            section_indexes = [
+                int(idx)
+                for idx in spec.get("section_row_indexes", [])
+                if int(idx) in groups_by_section_idx
+            ]
+            if not section_indexes:
+                continue
+
+            roll = _empty_roll()
+            for sec_idx in section_indexes:
+                for row in groups_by_section_idx[sec_idx]["rows"]:
+                    if row.get("row_type") not in {"checkbox", "value"}:
+                        continue
+                    roll["total"] += 1
+                    eff = row.get("eff")
+                    if eff == "done":
+                        roll["done"] += 1
+                    elif eff == "excluded":
+                        roll["excluded"] += 1
+            if roll["total"] <= 0:
+                continue
+            roll["countable"] = roll["total"] - roll["excluded"]
+
+            title = str(spec.get("title") or "Group").strip() or "Group"
+            slug = _slugify(title)
+            base_name = f"{sheet_name}{VIRTUAL_SEP}{CONTENT_VIRTUAL_PREFIX}{slug}"
+            v_name = base_name
+            suffix = 2
+            while v_name in used_names:
+                v_name = f"{base_name}-{suffix}"
+                suffix += 1
+            used_names.add(v_name)
+
+            virtual = {
+                "sheet_name": v_name,
+                "title": title,
+                "is_menu": False,
+                "is_readonly": False,
+                "is_virtual": True,
+                "virtual_kind": "content_group",
+                "source_sheet": sheet_name,
+                "section_row_indexes": section_indexes,
+                "parent_menu_section": None,
+                "children": [],
+                "roll": roll,
+                "pct": pct(roll),
+            }
+            virtual_children.append(virtual)
+
+            by_name[v_name] = {
+                "sheet_name": v_name,
+                "title": title,
+                "is_menu": 0,
+                "is_readonly": 0,
+                "is_virtual": True,
+                "virtual_kind": "content_group",
+                "source_sheet": sheet_name,
+                "section_row_indexes": section_indexes,
+                "parent_sheet": sheet_name,
+                "parent_menu_section": None,
+                "sheet_index": int(sheet_meta.get("sheet_index") or 0) * 1000 + ordinal,
+                # Keep content-sheet metadata available for callers that only
+                # have sheets_by_name.
+                "data_columns_json": sheet_meta.get("data_columns_json", "[]"),
+                "label_key": sheet_meta.get("label_key"),
+                "value_key": sheet_meta.get("value_key"),
+                "total_rows": roll["total"],
+            }
+
+        if virtual_children:
+            node["children"] = [*node.get("children", []), *virtual_children]
+
+    for root in tree:
+        walk(root)
+
 
 def _virtualize_sections(node: dict, by_name: dict[str, dict]) -> None:
     """Post-pass on a tree node: if its real children carry ``parent_menu_section``
@@ -953,7 +1443,9 @@ def fetch_rows(
     params: list[Any] = [character_id, *jparams, run_id, sheet_name]
     where = ""
     if q.strip():
-        where += " AND n.row_json LIKE ?"
+        # Keep section banners even when filtering so group boundaries remain
+        # intact (virtual subgroup pages depend on section row_index anchors).
+        where += " AND (n.row_type = 'section' OR n.row_json LIKE ?)"
         params.append(f"%{q.strip()}%")
     rows = conn.execute(
         f"""
@@ -976,6 +1468,12 @@ def fetch_rows(
         d = dict(r)
         d["data"] = json.loads(r["row_json"])
         d["is_section"] = r["row_type"] == "section"
+        if r["row_type"] == "value":
+            d["value_cap"] = resolve_value_cap(
+                sheet_name,
+                d.get("section_label"),
+                d.get("label"),
+            )
         if state != "all" and not d["is_section"] and d["eff"] != state:
             continue
         out.append(d)
@@ -1030,20 +1528,54 @@ def snapshot_trackable_rows(
     return snap
 
 
-def group_rows_by_section(rows: list[dict]) -> list[dict]:
-    """Turn a flat row list into [{section, rows:[...]}] preserving order."""
+def sheet_supports_section_sort(sheet_name: str) -> bool:
+    return section_sort.supports_sheet(sheet_name)
+
+
+def group_rows_by_section(
+    rows: list[dict],
+    *,
+    sheet_name: str | None = None,
+    section_sort_mode: str = section_sort.SORT_MODE_WORKBOOK,
+) -> list[dict]:
+    """Turn a flat row list into [{section, rows:[...]}].
+
+    By default the workbook row order is preserved. For supported sheets, a
+    non-workbook ``section_sort_mode`` reorders section groups using stored
+    metadata (or inferred metadata for older ingest runs).
+    """
     groups: list[dict] = []
     current: dict | None = None
     for r in rows:
         if r["is_section"]:
-            current = {"section": r["label"], "row_index": r["row_index"], "rows": []}
+            section_meta = None
+            payload = r.get("data")
+            if isinstance(payload, dict):
+                raw_meta = payload.get("section_sort")
+                if isinstance(raw_meta, dict):
+                    section_meta = raw_meta
+            current = {
+                "section": r["label"],
+                "row_index": r["row_index"],
+                "rows": [],
+                "section_sort": section_meta,
+            }
             groups.append(current)
         else:
             if current is None:
-                current = {"section": None, "row_index": 0, "rows": []}
+                current = {
+                    "section": None,
+                    "row_index": 0,
+                    "rows": [],
+                    "section_sort": None,
+                }
                 groups.append(current)
             current["rows"].append(r)
-    return [g for g in groups if g["rows"]]
+
+    grouped = [g for g in groups if g["rows"]]
+    if sheet_name is None:
+        return grouped
+    return section_sort.sort_group_dicts(sheet_name, grouped, section_sort_mode)
 
 
 def sheet_chain_flags(
@@ -1120,6 +1652,12 @@ def fetch_row(
         return None
     d = dict(r)
     d["data"] = json.loads(r["row_json"])
+    if r["row_type"] == "value":
+        d["value_cap"] = resolve_value_cap(
+            sheet_name,
+            d.get("section_label"),
+            d.get("label"),
+        )
     return d
 
 
