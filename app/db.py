@@ -642,7 +642,6 @@ def clear_row_override(
         """,
         (character_id, *jparams, run_id, sheet_name, row_index),
     ).fetchone()
-    old_row = prev
     old_roll = _trackable_row_rollup(prev) if prev else _empty_roll()
 
     cur = conn.execute(
@@ -1041,6 +1040,53 @@ def _section_trackable_rollups(
     return rollups
 
 
+def _row_index_trackable_rollups(
+    conn: sqlite3.Connection,
+    run_id: int,
+    character_id: int,
+    sheet_name: str,
+    row_indexes: list[int],
+    starting_class: str | None = None,
+) -> dict[int, dict[str, int]]:
+    """Trackable row rollups keyed by explicit row index."""
+    targets = sorted({int(i) for i in row_indexes})
+    if not targets:
+        return {}
+
+    target_set = set(targets)
+    eff, join, jparams = _state_clauses(starting_class)
+    rows = conn.execute(
+        f"""
+                SELECT n.sheet_name, n.row_type, n.section_label, n.label, n.row_json,
+                             p.progress_percent,
+                             {eff} AS eff,
+                             n.row_index
+        FROM nodes n
+        LEFT JOIN character_progress p
+          ON p.character_id = ? AND p.run_id = n.run_id
+         AND p.sheet_name = n.sheet_name AND p.row_index = n.row_index
+        {join}
+        WHERE n.run_id = ? AND n.sheet_name = ?
+          AND n.row_type IN ('checkbox', 'value')
+        ORDER BY n.row_index
+        """,
+        (character_id, *jparams, run_id, sheet_name),
+    ).fetchall()
+
+    rollups = {idx: _empty_roll() for idx in targets}
+    for row in rows:
+        idx = int(row["row_index"])
+        if idx not in target_set:
+            continue
+        roll = rollups.get(idx)
+        if roll is None:
+            continue
+        row_roll = _trackable_row_rollup(row)
+        for key in roll:
+            roll[key] += int(row_roll[key])
+    return rollups
+
+
 # --- sheet / node reads -----------------------------------------------------
 
 def fetch_sheet(conn: sqlite3.Connection, run_id: int, sheet_name: str) -> sqlite3.Row | None:
@@ -1157,7 +1203,69 @@ _GRAND_COMPANY_HEADERS = {
     "immortal flames": "Flame",
 }
 
+_DUTY_JOURNAL_CHRONICLES_SHEETS = frozenset({
+    "yorha dark apocalypse",
+    "yorha: dark apocalypse",
+    "the sorrow of werlyt",
+    "pandæmonium",
+    "pandemonium",
+    "myths of the realm",
+    "the arcadion",
+    "echoes of vanadiel",
+    "echoes of vana'diel",
+})
+
+_STUDIUM_FACULTY_TITLE_BY_VALUE = {
+    "Studium": "Studium",
+    "Aetherology": "Faculty of Aetherology",
+    "Anthropology": "Faculty of Anthropology",
+    "Archaeology": "Faculty of Archaeology",
+    "Astronomy": "Faculty of Astronomy",
+    "Medicine": "Faculty of Medicine",
+}
+
+_STUDIUM_GROUP_ORDER = (
+    "Studium",
+    "Faculty of Aetherology",
+    "Faculty of Anthropology",
+    "Faculty of Archaeology",
+    "Faculty of Astronomy",
+    "Faculty of Medicine",
+)
+
+_CRYSTALLINE_MEAN_NPC_GROUP = {
+    "Katliss": "Crystalline Mean",
+    "Iola": "Facet of Forging",
+    "Bethric": "Facet of Crafting",
+    "Thiuna": "Facet of Nourishing",
+    "Recording Nodes": "Facet of Nourishing",
+    "Qeshi-rae": "Facet of Gathering",
+    "Frithrik": "Facet of Fishing",
+}
+
+_CRYSTALLINE_MEAN_GROUP_ORDER = (
+    "Crystalline Mean",
+    "Facet of Forging",
+    "Facet of Crafting",
+    "Facet of Nourishing",
+    "Facet of Gathering",
+    "Facet of Fishing",
+)
+
 _HUNTING_LOG_LABEL_RE = re.compile(r"^(.+?)\s+\d{1,3}$")
+
+
+def _override_parent_menu_section(
+    *,
+    sheet_name: str,
+    parent_sheet: str | None,
+    parent_menu_section: str | None,
+) -> str | None:
+    if _norm_text(parent_sheet) != "duty menu - journal":
+        return parent_menu_section
+    if _norm_text(sheet_name) in _DUTY_JOURNAL_CHRONICLES_SHEETS:
+        return "Chronicles of a New Era"
+    return parent_menu_section
 
 
 def _slugify(text: str) -> str:
@@ -1339,6 +1447,74 @@ def _content_virtual_specs_for_sheet(
     return groups if len(groups) >= 2 else []
 
 
+def _row_json_virtual_specs_for_sheet(
+    conn: sqlite3.Connection,
+    run_id: int,
+    sheet_name: str,
+) -> list[dict]:
+    """Fallback virtual subgroup specs inferred from row_json metadata."""
+    rows = conn.execute(
+        """
+        SELECT row_index, row_json
+        FROM nodes
+        WHERE run_id = ? AND sheet_name = ?
+          AND row_type IN ('checkbox', 'value')
+        ORDER BY row_index
+        """,
+        (run_id, sheet_name),
+    ).fetchall()
+    if not rows:
+        return []
+
+    groups: dict[str, list[int]] = {}
+
+    if sheet_name == "Studium Quests":
+        for row in rows:
+            data = json.loads(row["row_json"] or "{}")
+            raw_faculty = data.get("faculty") if isinstance(data, dict) else None
+            faculty = " ".join(str(raw_faculty or "").split())
+            if not faculty:
+                continue
+            title = _STUDIUM_FACULTY_TITLE_BY_VALUE.get(faculty)
+            if not title:
+                title = faculty if faculty.lower() == "studium" else f"Faculty of {faculty}"
+            groups.setdefault(title, []).append(int(row["row_index"]))
+
+        ordered: list[dict] = []
+        for title in _STUDIUM_GROUP_ORDER:
+            indexes = groups.pop(title, None)
+            if indexes:
+                ordered.append({"title": title, "row_indexes": indexes})
+        for title in sorted(groups):
+            indexes = groups[title]
+            if indexes:
+                ordered.append({"title": title, "row_indexes": indexes})
+        return ordered if len(ordered) >= 2 else []
+
+    if sheet_name == "Crystalline Mean Quests":
+        for row in rows:
+            data = json.loads(row["row_json"] or "{}")
+            raw_npc = data.get("npc") if isinstance(data, dict) else None
+            npc = " ".join(str(raw_npc or "").split())
+            title = _CRYSTALLINE_MEAN_NPC_GROUP.get(npc)
+            if not title:
+                continue
+            groups.setdefault(title, []).append(int(row["row_index"]))
+
+        ordered = []
+        for title in _CRYSTALLINE_MEAN_GROUP_ORDER:
+            indexes = groups.pop(title, None)
+            if indexes:
+                ordered.append({"title": title, "row_indexes": indexes})
+        for title in sorted(groups):
+            indexes = groups[title]
+            if indexes:
+                ordered.append({"title": title, "row_indexes": indexes})
+        return ordered if len(ordered) >= 2 else []
+
+    return []
+
+
 def _label_prefix_trackable_rollups(
     conn: sqlite3.Connection,
     run_id: int,
@@ -1462,6 +1638,8 @@ def attach_content_virtual_nodes(
                     for prefix in hunting_prefixes
                 ]
         if not specs:
+            specs = _row_json_virtual_specs_for_sheet(conn, run_id, sheet_name)
+        if not specs:
             return
 
         section_rollups = _section_trackable_rollups(
@@ -1470,6 +1648,19 @@ def attach_content_virtual_nodes(
             character_id,
             sheet_name,
             [int(s["row_index"]) for s in sections],
+            starting_class,
+        )
+        row_rollups = _row_index_trackable_rollups(
+            conn,
+            run_id,
+            character_id,
+            sheet_name,
+            [
+                int(idx)
+                for spec in specs
+                for idx in spec.get("row_indexes", [])
+                if isinstance(idx, int) or (isinstance(idx, str) and str(idx).strip().isdigit())
+            ],
             starting_class,
         )
 
@@ -1486,6 +1677,12 @@ def attach_content_virtual_nodes(
                 for p in spec.get("label_prefixes", [])
                 if str(p).strip()
             ]
+            row_indexes = [
+                int(idx)
+                for idx in spec.get("row_indexes", [])
+                if (isinstance(idx, int) or (isinstance(idx, str) and str(idx).strip().isdigit()))
+                and int(idx) in row_rollups
+            ]
 
             roll = _empty_roll()
             if section_indexes:
@@ -1496,6 +1693,15 @@ def attach_content_virtual_nodes(
                     roll["done"] += int(sec_roll.get("done") or 0)
                     roll["excluded"] += int(sec_roll.get("excluded") or 0)
                     roll["total"] += int(sec_roll.get("total") or 0)
+                roll["countable"] = roll["total"] - roll["excluded"]
+            elif row_indexes:
+                for row_idx in row_indexes:
+                    row_roll = row_rollups.get(row_idx)
+                    if row_roll is None:
+                        continue
+                    roll["done"] += int(row_roll.get("done") or 0)
+                    roll["excluded"] += int(row_roll.get("excluded") or 0)
+                    roll["total"] += int(row_roll.get("total") or 0)
                 roll["countable"] = roll["total"] - roll["excluded"]
             elif label_prefixes:
                 prefix_rollups = _label_prefix_trackable_rollups(
@@ -1539,6 +1745,7 @@ def attach_content_virtual_nodes(
                 "virtual_kind": "content_group",
                 "source_sheet": sheet_name,
                 "section_row_indexes": section_indexes,
+                "row_indexes": row_indexes,
                 "row_label_prefixes": label_prefixes,
                 "parent_menu_section": None,
                 "children": [],
@@ -1556,6 +1763,7 @@ def attach_content_virtual_nodes(
                 "virtual_kind": "content_group",
                 "source_sheet": sheet_name,
                 "section_row_indexes": section_indexes,
+                "row_indexes": row_indexes,
                 "row_label_prefixes": label_prefixes,
                 "parent_sheet": sheet_name,
                 "parent_menu_section": None,
@@ -1689,7 +1897,14 @@ def build_nav_tree(
             # populated for content sheets whose parent menu used a
             # multi-column layout, NULL otherwise.
             "parent_menu_section": (
-                s["parent_menu_section"]
+                _override_parent_menu_section(
+                    sheet_name=name,
+                    parent_sheet=(s["parent_sheet"] if "parent_sheet" in s.keys() else None),
+                    parent_menu_section=(
+                        s["parent_menu_section"]
+                        if "parent_menu_section" in s.keys() else None
+                    ),
+                )
                 if "parent_menu_section" in s.keys() else None
             ),
             "children": [],

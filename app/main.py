@@ -335,6 +335,7 @@ CHAR_IMPORT_LOG_DIR = LODESTONE_OUTPUT_DIR / "import_logs"
 CHAR_IMPORT_UPLOAD_DIR = LODESTONE_OUTPUT_DIR / "import_uploads"
 CHAR_IMPORT_UNMATCHED_DIR = LODESTONE_OUTPUT_DIR / "unmatched"
 CHAR_IMPORT_HISTORY_DIR = LODESTONE_OUTPUT_DIR / "import_history"
+MAX_PERSISTED_LOG_FILES_PER_TYPE = 10
 THEME_COOKIE = "ffxiv_theme"
 THEME_SCHEME_COOKIE = "ffxiv_theme_scheme"
 THEME_ALLOWED_SCHEME_SETTINGS = {"default", "dark", "light"}
@@ -1038,6 +1039,7 @@ def run_lodestone_authenticated_probe(
         output_path = LODESTONE_OUTPUT_DIR / f"{probe.character_output_stem(payload)}_auth_{timestamp}.json"
         log(f"Saving output to {output_path}")
         probe.save_payload(payload, output_path)
+        _prune_files_by_pattern(LODESTONE_OUTPUT_DIR, pattern="*_auth_*.json")
         log("Scrape completed")
         return output_path
     finally:
@@ -1052,6 +1054,34 @@ def _append_lodestone_log_file(log_path: Path, line: str) -> None:
     except OSError:
         # Keep runtime logging resilient even if local file writes fail.
         pass
+
+
+def _path_mtime_sort_key(path: Path) -> tuple[int, str]:
+    try:
+        return path.stat().st_mtime_ns, path.name.casefold()
+    except OSError:
+        return 0, path.name.casefold()
+
+
+def _prune_files_by_pattern(
+    directory: Path,
+    *,
+    pattern: str,
+    keep: int = MAX_PERSISTED_LOG_FILES_PER_TYPE,
+) -> None:
+    if keep < 1:
+        return
+    try:
+        files = [path for path in directory.glob(pattern) if path.is_file()]
+    except OSError:
+        return
+    files.sort(key=_path_mtime_sort_key, reverse=True)
+    for stale_path in files[keep:]:
+        try:
+            stale_path.unlink()
+        except OSError:
+            # Best-effort retention cleanup should never break normal flow.
+            continue
 
 
 def _update_lodestone_run(run_id: str, **updates: Any) -> None:
@@ -1413,6 +1443,7 @@ def _write_import_history(run_id: str, payload: dict[str, Any]) -> Path | None:
         CHAR_IMPORT_HISTORY_DIR.mkdir(parents=True, exist_ok=True)
         path = CHAR_IMPORT_HISTORY_DIR / f"{run_id}.json"
         path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        _prune_files_by_pattern(CHAR_IMPORT_HISTORY_DIR, pattern="*.json")
         return path
     except OSError:
         return None
@@ -1712,6 +1743,7 @@ def _write_unmatched_report(
             json.dumps(unmatched_payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        _prune_files_by_pattern(CHAR_IMPORT_UNMATCHED_DIR, pattern="*.json")
         _append_character_import_run_log(
             run_id,
             f"Saved unmatched report to {unmatched_report_path}",
@@ -1992,12 +2024,31 @@ def browse(request: Request, sheet_name: str, q: str = "", state: str = "all"):
         )
 
         if sheet.get("is_virtual") and sheet.get("virtual_kind") == "content_group":
+            allowed_row_indexes = {
+                int(i)
+                for i in (sheet.get("row_indexes") or [])
+                if isinstance(i, int) or (isinstance(i, str) and i.isdigit())
+            }
             allowed_section_rows = {
                 int(i)
                 for i in (sheet.get("section_row_indexes") or [])
                 if isinstance(i, int) or (isinstance(i, str) and i.isdigit())
             }
-            if allowed_section_rows:
+            if allowed_row_indexes:
+                filtered_groups: list[dict] = []
+                for group in groups:
+                    rows_for_group = [
+                        row
+                        for row in group.get("rows", [])
+                        if int(row.get("row_index") or -1) in allowed_row_indexes
+                    ]
+                    if rows_for_group:
+                        filtered_groups.append({
+                            **group,
+                            "rows": rows_for_group,
+                        })
+                groups = filtered_groups
+            elif allowed_section_rows:
                 groups = [
                     g for g in groups
                     if int(g.get("row_index") or -1) in allowed_section_rows
@@ -2284,6 +2335,7 @@ def _submit_character_import(
         log_path,
         f"[{dt.datetime.now().strftime('%H:%M:%S')}] {import_label} created for character_id={character_id} source={resolved_path}",
     )
+    _prune_files_by_pattern(CHAR_IMPORT_LOG_DIR, pattern="*.log")
     with CHAR_IMPORT_RUNS_LOCK:
         CHAR_IMPORT_RUNS[run_id] = {
             "id": run_id,
@@ -2730,6 +2782,7 @@ def lodestone_probe_run(
         log_path,
         f"[{dt.datetime.now().strftime('%H:%M:%S')}] Job created for URL: {normalized_url}",
     )
+    _prune_files_by_pattern(LODESTONE_LOG_DIR, pattern="*.log")
     with LODESTONE_RUNS_LOCK:
         LODESTONE_RUNS[run_id] = {
             "id": run_id,

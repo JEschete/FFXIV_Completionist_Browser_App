@@ -26,6 +26,8 @@ if __package__ in {None, ""}:
 from app import db
 from app import lodestone_import as li
 
+MAX_DESKTOP_COLLISION_REPORTS_PER_TYPE = 10
+
 
 @dataclass
 class MatchContext:
@@ -806,7 +808,46 @@ def _write_reports(
         writer.writeheader()
         writer.writerows(hit_rows)
 
+    _prune_desktop_collision_reports(
+        output_prefix.parent,
+        keep=MAX_DESKTOP_COLLISION_REPORTS_PER_TYPE,
+    )
+
     return json_path, summary_csv_path, hits_csv_path
+
+
+def _path_mtime_sort_key(path: Path) -> tuple[int, str]:
+    try:
+        return path.stat().st_mtime_ns, path.name.casefold()
+    except OSError:
+        return 0, path.name.casefold()
+
+
+def _prune_desktop_collision_reports(directory: Path, *, keep: int) -> None:
+    if keep < 1:
+        return
+    if not directory.exists() or not directory.is_dir():
+        return
+
+    groups: dict[str, list[Path]] = {
+        "json": [path for path in directory.glob("desktop_collisions_*.json") if path.is_file()],
+        "summary_csv": [
+            path for path in directory.glob("desktop_collisions_*.csv")
+            if path.is_file() and not path.name.casefold().endswith("_hits.csv")
+        ],
+        "hits_csv": [
+            path for path in directory.glob("desktop_collisions_*_hits.csv")
+            if path.is_file()
+        ],
+    }
+
+    for files in groups.values():
+        files.sort(key=_path_mtime_sort_key, reverse=True)
+        for stale_path in files[keep:]:
+            try:
+                stale_path.unlink()
+            except OSError:
+                continue
 
 
 def _parse_args() -> argparse.Namespace:

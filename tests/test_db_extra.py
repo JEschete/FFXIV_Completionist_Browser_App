@@ -116,7 +116,25 @@ def test_build_nav_tree_and_breadcrumbs(conn, character_id):
     rollups = db.sheet_rollups(connection, run_id, character_id)
     roots, overall, by_name = db.build_nav_tree(sheets, rollups)
     assert any(r["sheet_name"] == "Character Menu" for r in roots)
-    assert overall["total"] == 8
+
+    trackable_rows = connection.execute(
+        """
+        SELECT sheet_name, row_index, row_type
+        FROM nodes
+        WHERE run_id = ? AND row_type IN ('checkbox', 'value')
+        """,
+        (run_id,),
+    ).fetchall()
+    expected_total = 0
+    for row in trackable_rows:
+        row_type = str(row["row_type"] or "checkbox")
+        if row_type == "value":
+            expected_total += int(
+                float(db.value_row_cap(connection, run_id, row["sheet_name"], int(row["row_index"])))
+            )
+        else:
+            expected_total += 1
+    assert overall["total"] == expected_total
 
     crumbs = db.breadcrumb_path(by_name, "Story Quests")
     assert [c["sheet_name"] for c in crumbs] == ["Character Menu", "Story Quests"]

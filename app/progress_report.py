@@ -20,6 +20,7 @@ BASELINE_FILE_NAME = "progress_baseline.json"
 LATEST_REPORT_FILE_NAME = "latest.json"
 SAMPLE_LIMIT_DEFAULT = 40
 RESOLUTION_VALUES = {"done", "excluded", "todo"}
+MAX_PERSISTED_BETWEEN_RUN_REPORTS = 10
 
 
 def _now_iso() -> str:
@@ -777,6 +778,31 @@ def _next_report_path() -> Path:
     return candidate
 
 
+def _path_mtime_sort_key(path: Path) -> tuple[int, str]:
+    try:
+        return path.stat().st_mtime_ns, path.name.casefold()
+    except OSError:
+        return 0, path.name.casefold()
+
+
+def _prune_between_run_reports(*, keep: int = MAX_PERSISTED_BETWEEN_RUN_REPORTS) -> None:
+    if keep < 1:
+        return
+    root = _report_root()
+    if not root.exists() or not root.is_dir():
+        return
+    try:
+        files = [path for path in root.glob("between_run_*.json") if path.is_file()]
+    except OSError:
+        return
+    files.sort(key=_path_mtime_sort_key, reverse=True)
+    for stale_path in files[keep:]:
+        try:
+            stale_path.unlink()
+        except OSError:
+            continue
+
+
 def create_between_run_report(
     conn: sqlite3.Connection,
     run_id: int,
@@ -876,4 +902,5 @@ def create_between_run_report(
     report_doc["report_path"] = str(out_path)
     _write_json(out_path, report_doc)
     _write_json(latest_report_path(), report_doc)
+    _prune_between_run_reports()
     return report_doc, out_path

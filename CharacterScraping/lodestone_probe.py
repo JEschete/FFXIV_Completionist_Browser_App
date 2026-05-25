@@ -301,7 +301,7 @@ def parse_achievement_entries(page: Page) -> list[dict[str, Any]]:
         epoch_match = re.search(r"ldst_strftime\((\d+),\s*'YMD'\)", script_text)
         if epoch_match:
             import datetime as dt
-            date = dt.datetime.fromtimestamp(int(epoch_match.group(1)), dt.UTC).strftime("%m/%d/%Y")
+            date = dt.datetime.fromtimestamp(int(epoch_match.group(1)), dt.timezone.utc).strftime("%m/%d/%Y")
         hit = re.match(
             r"(?P<category>.+?)\s+achievement\s+\"(?P<title>.+)\"\s+earned!",
             text,
@@ -510,7 +510,7 @@ def parse_quest_page(page: Page) -> dict[str, Any]:
         date = None
         if epoch_match:
             import datetime as dt
-            date = dt.datetime.fromtimestamp(int(epoch_match.group(1)), dt.UTC).strftime("%m/%d/%Y")
+            date = dt.datetime.fromtimestamp(int(epoch_match.group(1)), dt.timezone.utc).strftime("%m/%d/%Y")
         if title:
             entries.append(
                 {

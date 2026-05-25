@@ -128,6 +128,10 @@ def test_candidate_aliases_dispatch():
     assert li._candidate_aliases("minion", "Wind-up Cursor") == ["Wind-up Cursor"]
     lucis = li._candidate_aliases("character/relic-gear/lucis-tools", "Halcyon")
     assert "Halcyon Rod" in lucis
+    porters = li._candidate_aliases("travel/porters/the-black-shroud", "The Hawthorne Hut")
+    assert "Hawthorne Hut" in porters
+    sightseeing = li._candidate_aliases("logs/sightseeing-log/a-realm-reborn", "The Brewer's Beacon")
+    assert "Brewer's Beacon" in sightseeing
 
 
 def test_index_labels_for_bucket_splits_quest_pairs():
@@ -348,6 +352,13 @@ def test_hall_of_the_novice_role_helpers():
     assert "duty/island-sanctuary/crafting" in craft_buckets
     assert "duty/island-sanctuary/crafting/tools" in craft_buckets
 
+    rare_animal_buckets = li._row_buckets_for_sheet(
+        "Island Sanctuary - Rare Animals",
+        "Rare Animals",
+        row_json_obj={"name": "Goobue"},
+    )
+    assert "duty/island-sanctuary/animals" in rare_animal_buckets
+
     isleventory_buckets = li._row_buckets_for_sheet(
         "Island Sanctuary - Isleventory",
         "Gardening Starters",
@@ -425,6 +436,21 @@ def test_index_labels_for_bucket_guildhests_and_aetherytes():
     )
     assert "Avoid Area of Effect Attacks" in novice_labels
 
+    dungeon_labels = li._index_labels_for_bucket(
+        bucket="duty/duty-raid-finder/dungeon",
+        node_label="70",
+        row_json_obj={"dungeon": "Hells' Lid (Duty)"},
+    )
+    assert "Hells' Lid (Duty)" in dungeon_labels
+    assert "Hells' Lid" in dungeon_labels
+
+    trial_labels = li._index_labels_for_bucket(
+        bucket="duty/duty-raid-finder/trial",
+        node_label="100",
+        row_json_obj={"trial": "Hells' Kier"},
+    )
+    assert "Hells' Kier" in trial_labels
+
     aeth_labels = li._index_labels_for_bucket(
         bucket="travel/aetherytes/the-far-east",
         node_label="Kugane",
@@ -447,6 +473,35 @@ def test_index_labels_for_bucket_guildhests_and_aetherytes():
     )
     assert any(label.startswith("@AETHSIG.") for label in aeth_parent_labels)
 
+    aeth_suffix_labels = li._index_labels_for_bucket(
+        bucket="travel/aetherytes/others",
+        node_label="Old Sharlayan",
+        row_json_obj={
+            "zone_name": "Old Sharlayan",
+            "type": "Crystal",
+            "location_name": "Old Sharlayan Aetheryte Plaza",
+        },
+    )
+    assert "@AETHSIG.oldsharlayan.crystal.oldsharlayan" in aeth_suffix_labels
+
+
+def test_index_labels_for_bucket_island_sanctuary_rank_aliases():
+    labels = li._index_labels_for_bucket(
+        bucket="duty/island-sanctuary/rank",
+        node_label="Islekeep's Stone Hatchet",
+        row_json_obj={"sanctuary_rank": "1"},
+    )
+    assert "1" in labels
+    assert "Rank 1" in labels
+
+    labels_int = li._index_labels_for_bucket(
+        bucket="duty/island-sanctuary/rank",
+        node_label="10",
+        row_json_obj={"sanctuary_rank": 10},
+    )
+    assert "10" in labels_int
+    assert "Rank 10" in labels_int
+
 
 def test_aetheryte_source_signatures():
     item = {
@@ -457,11 +512,33 @@ def test_aetheryte_source_signatures():
     signatures = li._aetheryte_source_signatures(item)
     assert "@AETHSIG.kugane.crystal.kugane" in signatures
 
+    old_sharlayan = {
+        "name_en": "Old Sharlayan Aetheryte Plaza",
+        "type": "@TYPE.AETHERYTE.CRYSTAL",
+        "zone": "@PLACE.OLD_SHARLAYAN",
+    }
+    suffix_signatures = li._aetheryte_source_signatures(old_sharlayan)
+    assert "@AETHSIG.oldsharlayan.crystal.oldsharlayan" in suffix_signatures
+
 
 def test_is_quarantined_bucket():
+    assert li._is_quarantined_bucket("duty/squadron/squadron")
     assert li._is_quarantined_bucket("duty/squadron/command-missions")
+    assert li._is_quarantined_bucket("duty/treasure-hunt/maps")
+    assert li._is_quarantined_bucket("duty/treasure-hunt/duties")
+    assert li._is_quarantined_bucket("duty/duty-raid-finder/deep-dungeons")
     assert li._is_quarantined_bucket("duty/trust/dt")
     assert not li._is_quarantined_bucket("duty/exploratory-missions/bozja/duties")
+
+
+def test_is_ignored_untracked_candidate_by_bucket_and_id():
+    assert li._is_ignored_untracked_candidate("duty/squadron", "7")
+    assert li._is_ignored_untracked_candidate("duty/island-sanctuary/animals", "0")
+    assert not li._is_ignored_untracked_candidate("duty/island-sanctuary/animals", "1")
+    assert li._is_ignored_untracked_candidate("duty/island-sanctuary/buildings", "10")
+    assert li._is_ignored_untracked_candidate("duty/collection", "0")
+    assert li._is_ignored_untracked_candidate("logs/crafting-log/armorer", "6202")
+    assert li._is_ignored_untracked_candidate("logs/crafting-log/leatherworker", "360")
 
 
 def test_parse_place_rank_and_current():
@@ -552,6 +629,15 @@ def test_filter_hits_for_bucket_scopes_adventure_plate():
         "character/gold-saucer/triple-triad-opponents",
         opponents_hits,
     ) == [("Triple Triad Opponents", 10, "checkbox")]
+
+    island_animal_hits = [
+        ("Island Sanctuary - Rare Animals", 22, "checkbox"),
+        ("Island Sanctuary - Buildings", 22, "checkbox"),
+    ]
+    assert li._filter_hits_for_bucket(
+        "duty/island-sanctuary/animals",
+        island_animal_hits,
+    ) == [("Island Sanctuary - Rare Animals", 22, "checkbox")]
 
 
 def test_filter_adventure_plate_hits_by_sections_and_multi_hit_allowance():
@@ -816,6 +902,18 @@ def test_island_sanctuary_and_gathering_filters():
         ("Island Sanctuary - Buildings", 38, "checkbox"),
     ]
 
+    animal_hits = [
+        ("Island Sanctuary - Rare Animals", 52, "checkbox"),
+        ("Island Sanctuary - Buildings", 52, "checkbox"),
+    ]
+    animal_filtered = li._filter_island_sanctuary_hits(
+        bucket="duty/island-sanctuary/animals",
+        hits=animal_hits,
+        source_state="done",
+        source_value=None,
+    )
+    assert animal_filtered == [("Island Sanctuary - Rare Animals", 52, "checkbox")]
+
     gathering_hits = [
         ("Botanist Logs", 115, "checkbox"),
         ("Botanist Logs", 523, "checkbox"),
@@ -876,6 +974,164 @@ def test_island_sanctuary_and_gathering_filters():
     assert ingredient_only == []
 
 
+def test_remap_crafting_log_cross_bucket_hits_job_to_shared():
+    label = "Magitek Repair Materials"
+    norm = li._norm_label(label)
+    entry = ("Shared Craft Log", 101, "checkbox")
+    exact_idx = {
+        "logs/crafting-log/armorer": {},
+        "logs/crafting-log/shared": {label.casefold(): [entry]},
+    }
+    norm_idx = {
+        "logs/crafting-log/armorer": {},
+        "logs/crafting-log/shared": {norm: [entry]},
+    }
+    row_context = {
+        entry: {
+            "label": label,
+            "row_json_obj": {"item": label},
+        }
+    }
+
+    remapped = li._remap_crafting_log_cross_bucket_hits(
+        bucket="logs/crafting-log/armorer",
+        aliases=[label],
+        match_labels=[label],
+        exact_idx=exact_idx,
+        norm_idx=norm_idx,
+        row_context=row_context,
+    )
+    assert remapped == [entry]
+
+
+def test_remap_crafting_log_cross_bucket_hits_shared_to_job_family():
+    label = "Amaro Barding Repair Materials"
+    norm = li._norm_label(label)
+    entries = [
+        ("Carpentry Log", 301, "checkbox"),
+        ("Leatherworking Log", 401, "checkbox"),
+        ("Weaving Log", 501, "checkbox"),
+    ]
+    exact_idx = {
+        "logs/crafting-log/shared": {},
+        "logs/crafting-log/carpenter": {label.casefold(): [entries[0]]},
+        "logs/crafting-log/leatherworker": {label.casefold(): [entries[1]]},
+        "logs/crafting-log/weaver": {label.casefold(): [entries[2]]},
+    }
+    norm_idx = {
+        "logs/crafting-log/shared": {},
+        "logs/crafting-log/carpenter": {norm: [entries[0]]},
+        "logs/crafting-log/leatherworker": {norm: [entries[1]]},
+        "logs/crafting-log/weaver": {norm: [entries[2]]},
+    }
+    row_context = {
+        entry: {
+            "label": label,
+            "row_json_obj": {"item": label},
+        }
+        for entry in entries
+    }
+
+    remapped = li._remap_crafting_log_cross_bucket_hits(
+        bucket="logs/crafting-log/shared",
+        aliases=[label],
+        match_labels=[label],
+        exact_idx=exact_idx,
+        norm_idx=norm_idx,
+        row_context=row_context,
+    )
+    assert remapped is not None
+    assert set(remapped) == set(entries)
+
+
+def test_allows_multi_hit_candidate_for_safe_crafting_shared_family():
+    safe_hits = [
+        ("Carpentry Log", 301, "checkbox"),
+        ("Leatherworking Log", 401, "checkbox"),
+        ("Weaving Log", 501, "checkbox"),
+    ]
+    assert li._allows_multi_hit_candidate(
+        bucket="logs/crafting-log/shared",
+        source_labels=["Amaro Barding Repair Materials"],
+        hits=safe_hits,
+    )
+
+    unsafe_hits = [
+        ("Carpentry Log", 301, "checkbox"),
+        ("Weaving Log", 501, "checkbox"),
+    ]
+    assert not li._allows_multi_hit_candidate(
+        bucket="logs/crafting-log/shared",
+        source_labels=["Amaro Barding Repair Materials"],
+        hits=unsafe_hits,
+    )
+
+
+def test_candidate_aliases_for_crafting_typo_variants():
+    alch = li._candidate_aliases("logs/crafting-log/alchemist", "Grade 3 Tincture of Dexterity")
+    assert "Grade 3 Tinctures of Dexterity" in alch
+
+    blacksmith = li._candidate_aliases("logs/crafting-log/blacksmith", "Titanbronze Fists")
+    assert "Titanbronze Fist" in blacksmith
+
+    leather = li._candidate_aliases(
+        "logs/crafting-log/leatherworker",
+        "Rarefied Crocodileskin Leggings",
+    )
+    assert "Rarefied Crocodileskin Leggins" in leather
+
+
+def test_filter_crafting_log_hits_stat_affix_for_truncated_labels():
+    hits = [
+        ("Goldsmithing Log", 180, "checkbox"),
+        ("Goldsmithing Log", 182, "checkbox"),
+        ("Goldsmithing Log", 183, "checkbox"),
+        ("Goldsmithing Log", 184, "checkbox"),
+    ]
+    row_context = {
+        ("Goldsmithing Log", 180, "checkbox"): {
+            "sheet_name": "Goldsmithing Log",
+            "section_label": "Levels 86-90",
+            "label": "Star Quartz Wristband of",
+            "row_json_obj": {"item": "Star Quartz Wristband of", "mat_3": "Grade 5 Vitality Alkahest"},
+        },
+        ("Goldsmithing Log", 182, "checkbox"): {
+            "sheet_name": "Goldsmithing Log",
+            "section_label": "Levels 86-90",
+            "label": "Star Quartz Wristband of",
+            "row_json_obj": {"item": "Star Quartz Wristband of", "mat_3": "Grade 5 Dexterity Alkahest"},
+        },
+        ("Goldsmithing Log", 183, "checkbox"): {
+            "sheet_name": "Goldsmithing Log",
+            "section_label": "Levels 86-90",
+            "label": "Star Quartz Wristband of",
+            "row_json_obj": {"item": "Star Quartz Wristband of", "mat_3": "Grade 5 Intelligence Alkahest"},
+        },
+        ("Goldsmithing Log", 184, "checkbox"): {
+            "sheet_name": "Goldsmithing Log",
+            "section_label": "Levels 86-90",
+            "label": "Star Quartz Wristband of",
+            "row_json_obj": {"item": "Star Quartz Wristband of", "mat_3": "Grade 5 Mind Alkahest"},
+        },
+    }
+
+    aiming = li._filter_crafting_log_hits(
+        bucket="logs/crafting-log/goldsmith",
+        match_labels=["Star Quartz Wristband of Aiming"],
+        hits=hits,
+        row_context=row_context,
+    )
+    assert aiming == [("Goldsmithing Log", 182, "checkbox")]
+
+    casting = li._filter_crafting_log_hits(
+        bucket="logs/crafting-log/goldsmith",
+        match_labels=["Star Quartz Wristband of Casting"],
+        hits=hits,
+        row_context=row_context,
+    )
+    assert casting == [("Goldsmithing Log", 183, "checkbox")]
+
+
 def test_aether_zone_from_path():
     # zone label sits three positions after the "travel" segment
     parts = ("travel", "aether-currents", "endwalker", "the-sea-of-clouds", "x1")
@@ -890,6 +1146,11 @@ def test_dedupe_hits_and_partial_generic():
     hits = li._partial_match_hits_generic(["Quest Alpha Longg"], idx, cutoff=0.8)
     assert hits == [("Story Quests", 3, "checkbox")]
     assert li._partial_match_hits_generic(["x"], {}) is None
+
+
+def test_generic_label_aliases_goobue_spelling_variant():
+    aliases = li._generic_label_aliases("Goobbue")
+    assert "Goobue" in aliases
 
 
 def test_partial_match_hits_quest_multiword_still_allowed():
