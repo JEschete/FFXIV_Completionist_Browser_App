@@ -281,6 +281,10 @@ _QUEST_LIKE_SHEET_TOKENS_NORM = tuple(
 
 _SHEET_BUCKET_OVERRIDES: dict[str, frozenset[str]] = {
     _norm_label("Adventurer Plate"): frozenset({"character/adventure-plate"}),
+    # Desktop adventure-plate @PORTRAIT.* decorations live in the workbook's
+    # separate "Portraits" sheet; index it under the same bucket so portrait
+    # backgrounds/frames/accents resolve (section filtering keeps them apart).
+    _norm_label("Portraits"): frozenset({"character/adventure-plate"}),
     _norm_label("Alchemy Log"): frozenset({"logs/crafting-log/alchemist"}),
     _norm_label("Armorcrafting Log"): frozenset({"logs/crafting-log/armorer"}),
     _norm_label("Blacksmithing Log"): frozenset({"logs/crafting-log/blacksmith"}),
@@ -369,47 +373,50 @@ _STARTING_CITY_SOURCE_TOKENS = {
     "uldah": {"uldah", "uldahn", "uldahnsidequests"},
 }
 
+# Decoration tokens are namespaced "plate.*"/"portrait.*" so that a single
+# desktop item (which can grant several decoration slots) is filtered to the
+# matching workbook sheet/section. The desktop "Adventure Plate" group maps to
+# two workbook sheets: "Adventurer Plate" (the @PLATE.* slots) and "Portraits"
+# (the @PORTRAIT.* slots). Both sheets reuse some section names (notably
+# "Accent"), so keys must stay sheet-qualified to avoid cross-sheet collisions.
 _ADVENTURE_PLATE_DECORATION_SECTION_KEYS = {
-    "PLATE.BASE": "baseplate",
-    "PLATE.BACKING": "backing",
-    "PLATE.TOP_BORDER": "topborder",
-    "PLATE.BOTTOM_BORDER": "bottomborder",
-    "PLATE.ACCENT": "accent",
-    "PLATE.FRAME": "plateframe",
-    "PLATE.PORTRAIT_FRAME": "portraitframe",
-    "PLATE.PATTERN_OVERLAY": "patternoverlay",
-    "PLATE.OVERLAY": "patternoverlay",
-    # Workbook "Accent" and "Portrait Frame" rows can represent both
-    # plate and portrait decoration tokens.
-    "PORTRAIT.ACCENT": "accent",
-    "PORTRAIT.FRAME": "portraitframe",
-    "PORTRAIT.PORTRAIT_FRAME": "portraitframe",
+    "PLATE.BASE": "plate.base",
+    "PLATE.BACKING": "plate.backing",
+    "PLATE.TOP_BORDER": "plate.topborder",
+    "PLATE.BOTTOM_BORDER": "plate.bottomborder",
+    "PLATE.ACCENT": "plate.accent",
+    "PLATE.FRAME": "plate.frame",
+    "PLATE.PORTRAIT_FRAME": "plate.portraitframe",
+    "PLATE.PATTERN": "plate.pattern",
+    "PLATE.PATTERN_OVERLAY": "plate.pattern",
+    "PLATE.OVERLAY": "plate.pattern",
+    "PORTRAIT.BACKGROUND": "portrait.background",
+    "PORTRAIT.FRAME": "portrait.frame",
+    "PORTRAIT.ACCENT": "portrait.accent",
+}
+
+# Workbook (sheet, normalized section label) -> namespaced section key.
+_ADVENTURE_PLATE_ROW_SECTION_KEYS = {
+    ("Adventurer Plate", "baseplate"): "plate.base",
+    ("Adventurer Plate", "backing"): "plate.backing",
+    ("Adventurer Plate", "topborder"): "plate.topborder",
+    ("Adventurer Plate", "bottomborder"): "plate.bottomborder",
+    ("Adventurer Plate", "accent"): "plate.accent",
+    ("Adventurer Plate", "plateframe"): "plate.frame",
+    ("Adventurer Plate", "portraitframe"): "plate.portraitframe",
+    ("Adventurer Plate", "patternoverlay"): "plate.pattern",
+    ("Portraits", "background"): "portrait.background",
+    ("Portraits", "frame"): "portrait.frame",
+    ("Portraits", "accent"): "portrait.accent",
 }
 
 
-def _adventure_plate_section_key(value: Any) -> str | None:
-    text = str(value or "").strip()
-    if not text:
+def _adventure_plate_row_section_key(sheet_name: Any, section_label: Any) -> str | None:
+    sheet = str(sheet_name or "").strip()
+    norm = _norm_lookup_key(str(section_label or ""))
+    if not sheet or not norm:
         return None
-    key = _norm_lookup_key(text)
-    if not key:
-        return None
-    aliases = {
-        "base": "baseplate",
-        "baseplate": "baseplate",
-        "backing": "backing",
-        "top": "topborder",
-        "topborder": "topborder",
-        "bottom": "bottomborder",
-        "bottomborder": "bottomborder",
-        "accent": "accent",
-        "frame": "plateframe",
-        "plateframe": "plateframe",
-        "portraitframe": "portraitframe",
-        "pattern": "patternoverlay",
-        "patternoverlay": "patternoverlay",
-    }
-    return aliases.get(key, key)
+    return _ADVENTURE_PLATE_ROW_SECTION_KEYS.get((sheet, norm))
 
 
 def _adventure_plate_source_section_tags(item: dict[str, Any]) -> set[str]:
@@ -442,10 +449,9 @@ def _adventure_plate_sections_from_labels(labels: list[str] | tuple[str, ...]) -
             continue
         if not value.casefold().startswith(prefix):
             continue
-        suffix = value[len(_ADVENTURE_PLATE_SECTION_TAG_PREFIX):]
-        section_key = _adventure_plate_section_key(suffix)
-        if section_key:
-            out.add(section_key)
+        suffix = value[len(_ADVENTURE_PLATE_SECTION_TAG_PREFIX):].strip()
+        if suffix:
+            out.add(suffix)
     return out
 
 
@@ -764,6 +770,34 @@ def _suffix_roman_digit_aliases(raw: str) -> set[str]:
     return aliases
 
 
+def _qualifier_reorder_aliases(raw: str) -> set[str]:
+    # Duty Finder sources name difficulty-qualified turns as
+    # "<duty> (Savage) - Turn 1", while the workbook places the qualifier last
+    # ("<duty> - Turn 1 (Savage)"). Generate both orderings so either layout
+    # resolves to the same row.
+    value = raw.strip()
+    if not value:
+        return set()
+
+    aliases = {value}
+
+    # "<prefix> (<qual>) - <rest>" -> "<prefix> - <rest> (<qual>)"
+    m = re.match(r"^(.*?)\s*\(([^)]+)\)\s*-\s*(.+)$", value)
+    if m:
+        prefix, qual, rest = m.group(1).strip(), m.group(2).strip(), m.group(3).strip()
+        if prefix and qual and rest:
+            aliases.add(f"{prefix} - {rest} ({qual})")
+
+    # "<prefix> - <rest> (<qual>)" -> "<prefix> (<qual>) - <rest>"
+    m = re.match(r"^(.*?)\s*-\s*(.+?)\s*\(([^)]+)\)$", value)
+    if m:
+        prefix, rest, qual = m.group(1).strip(), m.group(2).strip(), m.group(3).strip()
+        if prefix and rest and qual:
+            aliases.add(f"{prefix} ({qual}) - {rest}")
+
+    return aliases
+
+
 def _achievement_label_aliases(raw: str) -> set[str]:
     value = raw.strip()
     if not value:
@@ -821,6 +855,8 @@ def _candidate_aliases(bucket: str, raw_label: str) -> list[str]:
             aliases.add("Halcyon Rod Supra")
         elif value.casefold() == "halcyon lucis":
             aliases.add("Halcyon Rod Lucis")
+    elif bucket.startswith("duty/duty-raid-finder/"):
+        aliases = _qualifier_reorder_aliases(raw_label)
     else:
         aliases = {raw_label}
 
@@ -1995,8 +2031,8 @@ _BUCKET_ALLOWED_SHEETS_PREFIXES: tuple[tuple[str, frozenset[str]], ...] = (
     ("travel/porters/", frozenset({"Porters"})),
     ("travel/aetherytes/", frozenset({"Aetherytes"})),
     ("duty/collection", frozenset({"Collection"})),
-    ("character/adventure-plate", frozenset({"Adventurer Plate"})),
-    ("character/adventure-plate/", frozenset({"Adventurer Plate"})),
+    ("character/adventure-plate", frozenset({"Adventurer Plate", "Portraits"})),
+    ("character/adventure-plate/", frozenset({"Adventurer Plate", "Portraits"})),
     ("character/companion/barding", frozenset({"Bardings"})),
     ("character/relic-gear/resplendent-tools", frozenset({"Relic Tools"})),
 )
@@ -3180,8 +3216,8 @@ def import_desktop_completion(
             "row_json_obj": row_json_obj,
         }
 
-        if sheet_name == "Adventurer Plate":
-            section_key = _adventure_plate_section_key(section_label)
+        if sheet_name in ("Adventurer Plate", "Portraits"):
+            section_key = _adventure_plate_row_section_key(sheet_name, section_label)
             if section_key:
                 adventure_plate_row_sections[entry] = section_key
 

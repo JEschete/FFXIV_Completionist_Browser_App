@@ -177,8 +177,8 @@ def _build_match_context(
             "row_json_obj": row_json_obj,
         }
 
-        if sheet_name == "Adventurer Plate":
-            section_key = li._adventure_plate_section_key(section_label)
+        if sheet_name in ("Adventurer Plate", "Portraits"):
+            section_key = li._adventure_plate_row_section_key(sheet_name, section_label)
             if section_key:
                 adventure_plate_row_sections[entry] = section_key
 

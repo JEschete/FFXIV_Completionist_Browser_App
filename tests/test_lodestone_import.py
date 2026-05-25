@@ -24,6 +24,28 @@ def test_strip_marker_prefixes():
     assert li._strip_marker_prefixes("Α Test of Wιll") == "Α Test of Wιll"
 
 
+def test_qualifier_reorder_aliases():
+    # Desktop "<duty> (Savage) - Turn N" should also match the workbook layout
+    # "<duty> - Turn N (Savage)" and vice versa.
+    fwd = li._qualifier_reorder_aliases("The Second Coil of Bahamut (Savage) - Turn 1")
+    assert "The Second Coil of Bahamut - Turn 1 (Savage)" in fwd
+
+    rev = li._qualifier_reorder_aliases("The Second Coil of Bahamut - Turn 1 (Savage)")
+    assert "The Second Coil of Bahamut (Savage) - Turn 1" in rev
+
+    # Routed through the duty raid-finder bucket aliases.
+    raid_aliases = li._candidate_aliases(
+        "duty/duty-raid-finder/raid",
+        "The Second Coil of Bahamut (Savage) - Turn 4",
+    )
+    assert "The Second Coil of Bahamut - Turn 4 (Savage)" in raid_aliases
+
+    # Labels without the qualifier/turn pattern are left untouched.
+    assert li._qualifier_reorder_aliases("Eden's Verse: Furor (Savage)") == {
+        "Eden's Verse: Furor (Savage)"
+    }
+
+
 def test_quest_label_aliases():
     aliases = li._quest_label_aliases("Abalathian Sidequests (A Cropper's Duty)")
     assert "A Cropper's Duty" in aliases
@@ -362,15 +384,27 @@ def test_adventure_plate_section_tag_helpers():
             ]
         }
     )
-    assert f"{li._ADVENTURE_PLATE_SECTION_TAG_PREFIX}baseplate" in tags
-    assert f"{li._ADVENTURE_PLATE_SECTION_TAG_PREFIX}topborder" in tags
-    assert f"{li._ADVENTURE_PLATE_SECTION_TAG_PREFIX}accent" in tags
+    assert f"{li._ADVENTURE_PLATE_SECTION_TAG_PREFIX}plate.base" in tags
+    assert f"{li._ADVENTURE_PLATE_SECTION_TAG_PREFIX}plate.topborder" in tags
+    assert f"{li._ADVENTURE_PLATE_SECTION_TAG_PREFIX}portrait.accent" in tags
 
     sections = li._adventure_plate_sections_from_labels(sorted(tags))
-    assert sections == {"baseplate", "topborder", "accent"}
+    assert sections == {"plate.base", "plate.topborder", "portrait.accent"}
+
+    # Portrait backgrounds (the "(Simple)"/"(Ornate)" job plates) route to the
+    # Portraits sheet's Background section.
+    bg_tags = li._adventure_plate_source_section_tags({"decorations": "@PORTRAIT.BACKGROUND"})
+    assert li._adventure_plate_sections_from_labels(sorted(bg_tags)) == {"portrait.background"}
+
+    # Row section keys are sheet-qualified so the two sheets' "Accent" sections
+    # do not collide.
+    assert li._adventure_plate_row_section_key("Portraits", "Background") == "portrait.background"
+    assert li._adventure_plate_row_section_key("Portraits", "Accent") == "portrait.accent"
+    assert li._adventure_plate_row_section_key("Adventurer Plate", "Accent") == "plate.accent"
+    assert li._adventure_plate_row_section_key("Adventurer Plate", "Pattern Overlay") == "plate.pattern"
 
     labels = [
-        f"{li._ADVENTURE_PLATE_SECTION_TAG_PREFIX}baseplate",
+        f"{li._ADVENTURE_PLATE_SECTION_TAG_PREFIX}plate.base",
         "Turali Travel Agency",
     ]
     assert li._candidate_match_labels(labels) == ["Turali Travel Agency"]
@@ -524,17 +558,17 @@ def test_filter_adventure_plate_hits_by_sections_and_multi_hit_allowance():
     hits = [
         ("Adventurer Plate", 77, "checkbox"),
         ("Adventurer Plate", 302, "checkbox"),
-        ("Adventurer Plate", 516, "checkbox"),
+        ("Portraits", 516, "checkbox"),
     ]
     row_sections = {
-        ("Adventurer Plate", 77, "checkbox"): "baseplate",
-        ("Adventurer Plate", 302, "checkbox"): "topborder",
-        ("Adventurer Plate", 516, "checkbox"): "accent",
+        ("Adventurer Plate", 77, "checkbox"): "plate.base",
+        ("Adventurer Plate", 302, "checkbox"): "plate.topborder",
+        ("Portraits", 516, "checkbox"): "portrait.accent",
     }
     labels = [
         "Turali Travel Agency",
-        f"{li._ADVENTURE_PLATE_SECTION_TAG_PREFIX}baseplate",
-        f"{li._ADVENTURE_PLATE_SECTION_TAG_PREFIX}accent",
+        f"{li._ADVENTURE_PLATE_SECTION_TAG_PREFIX}plate.base",
+        f"{li._ADVENTURE_PLATE_SECTION_TAG_PREFIX}portrait.accent",
     ]
 
     filtered = li._filter_adventure_plate_hits_by_sections(
@@ -545,7 +579,7 @@ def test_filter_adventure_plate_hits_by_sections_and_multi_hit_allowance():
     )
     assert filtered == [
         ("Adventurer Plate", 77, "checkbox"),
-        ("Adventurer Plate", 516, "checkbox"),
+        ("Portraits", 516, "checkbox"),
     ]
     assert li._allows_multi_hit_candidate(
         bucket="character/adventure-plate",
