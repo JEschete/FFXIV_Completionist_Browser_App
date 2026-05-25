@@ -97,6 +97,29 @@ from launch import (
 )
 
 ICON_PATH = ROOT / "assets" / "icon.png"
+MAX_PERSISTED_INGEST_LOGS_PER_TYPE = 10
+
+
+def _path_mtime_sort_key(path: Path) -> tuple[int, str]:
+    try:
+        return path.stat().st_mtime_ns, path.name.casefold()
+    except OSError:
+        return 0, path.name.casefold()
+
+
+def _prune_files_by_pattern(directory: Path, *, pattern: str, keep: int) -> None:
+    if keep < 1:
+        return
+    try:
+        files = [path for path in directory.glob(pattern) if path.is_file()]
+    except OSError:
+        return
+    files.sort(key=_path_mtime_sort_key, reverse=True)
+    for stale_path in files[keep:]:
+        try:
+            stale_path.unlink()
+        except OSError:
+            continue
 
 
 # ---------------------------------------------------------------------------
@@ -1048,6 +1071,11 @@ class MainWindow(QMainWindow):
             stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
             log_path = log_dir / f"ingest_{stamp}.log"
             ingest_log_fh = log_path.open("w", encoding="utf-8")
+            _prune_files_by_pattern(
+                log_dir,
+                pattern="ingest_*.log",
+                keep=MAX_PERSISTED_INGEST_LOGS_PER_TYPE,
+            )
         except OSError as e:
             self._log(f"Could not open ingest log file under {log_dir}: {e}")
 

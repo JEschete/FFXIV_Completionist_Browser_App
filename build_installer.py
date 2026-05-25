@@ -68,7 +68,7 @@ INCLUDE_DIRS: dict[str, dict] = {
         "include_only": {"place_official_worksheet_here"},
     },
     "scripts": {
-        "include_only": {"prep_xlsx_to_sqlite.py"},
+        "include_only": {"prep_xlsx_to_sqlite.py", "report_desktop_collisions.py"},
     },
     "assets": {
         "include_only": {"icon.png", "icon.ico"},

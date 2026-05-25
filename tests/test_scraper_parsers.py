@@ -199,7 +199,7 @@ def test_parse_achievements_multipage_with_error(monkeypatch):
 
 def test_parse_collection_with_tooltip(monkeypatch):
     tip_url = probe.urljoin(BASE, "tooltip/m1")
-    minion_html = f'<div class="minion__list_icon" data-tooltip_href="tooltip/m1"></div>'
+    minion_html = '<div class="minion__list_icon" data-tooltip_href="tooltip/m1"></div>'
     tip_html = (
         '<div class="minion__header__label">Wind-up Cursor</div>'
         '<div class="minion__text">A tiny minion.</div>'

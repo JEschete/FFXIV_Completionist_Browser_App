@@ -177,3 +177,57 @@ def test_existing_progress_still_creates_transition_report(conn, character_id, m
     finally:
         with main_mod.CHAR_IMPORT_RUNS_LOCK:
             main_mod.CHAR_IMPORT_RUNS.pop(import_run_id, None)
+
+
+def test_write_import_history_keeps_latest_ten(monkeypatch, tmp_path):
+    history_dir = tmp_path / "import_history"
+    monkeypatch.setattr(main_mod, "CHAR_IMPORT_HISTORY_DIR", history_dir)
+
+    for idx in range(12):
+        run_id = f"run-{idx:02d}"
+        out = main_mod._write_import_history(run_id, {"run_id": run_id, "changes": []})
+        assert out is not None
+
+    files = [p for p in history_dir.glob("*.json") if p.is_file()]
+    stems = {p.stem for p in files}
+    assert len(files) == main_mod.MAX_PERSISTED_LOG_FILES_PER_TYPE
+    assert "run-00" not in stems
+    assert "run-01" not in stems
+    assert "run-11" in stems
+
+
+def test_write_unmatched_report_keeps_latest_ten(monkeypatch, tmp_path):
+    unmatched_dir = tmp_path / "unmatched"
+    monkeypatch.setattr(main_mod, "CHAR_IMPORT_UNMATCHED_DIR", unmatched_dir)
+
+    summary = li.ImportSummary(
+        character_id=1,
+        character_name="Test Character",
+        source_path="completion.json",
+        run_id=1,
+        total_candidates=1,
+        matched_candidates=0,
+        unmatched_candidates=1,
+        rows_applied=0,
+        rows_skipped_already_done=0,
+        unmatched_items=[
+            {
+                "bucket": "quest",
+                "label": "Missing Quest",
+                "source_id": "42",
+                "source_state": "done",
+                "reason": "not_found_in_workbook",
+            }
+        ],
+    )
+
+    for idx in range(12):
+        out = main_mod._write_unmatched_report(f"run-{idx:02d}", summary)
+        assert out is not None
+
+    files = [p for p in unmatched_dir.glob("*.json") if p.is_file()]
+    stems = {p.stem for p in files}
+    assert len(files) == main_mod.MAX_PERSISTED_LOG_FILES_PER_TYPE
+    assert "run-00" not in stems
+    assert "run-01" not in stems
+    assert "run-11" in stems
