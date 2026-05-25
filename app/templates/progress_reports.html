@@ -7,7 +7,7 @@
     <h1>Progress Reports</h1>
     <p class="page-sub">
       Review detected progression changes around ingest/import/session boundaries.
-      Resolve each item as done, excluded, or todo.
+      Resolve each item as done, excluded, or todo. Accepted items are removed from this audit list.
     </p>
   </div>
 </div>
@@ -52,6 +52,18 @@
 <section class="probe-card report-card">
   <h2>Review Items for {{ report_selected_character.name }}</h2>
   {% if report_review_items %}
+  <form method="post" action="/progress-reports/resolve-bulk" class="report-bulk-form">
+    <input type="hidden" name="character_id" value="{{ report_selected_character_id }}" />
+    <input type="hidden" name="only_unresolved" value="1" />
+    <input type="hidden" name="next_url" value="/progress-reports?character_id={{ report_selected_character_id }}{% if report_show_advanced %}&show_advanced=1{% endif %}" />
+    <label for="bulk-resolution">Bulk action</label>
+    <select id="bulk-resolution" name="resolution">
+      <option value="done">done (accept all visible)</option>
+      <option value="excluded">excluded (revert all visible)</option>
+      <option value="todo">todo (reopen all visible)</option>
+    </select>
+    <button type="submit" class="btn-mini">Apply Bulk Resolution</button>
+  </form>
   <div class="table-wrap report-table-wrap">
     <table class="data-table report-table">
       <thead>
@@ -103,7 +115,7 @@
     </table>
   </div>
   {% else %}
-  <p class="page-sub">No review items for this character in the latest report.</p>
+  <p class="page-sub">No unresolved review items for this character in the latest report.</p>
   {% endif %}
 </section>
 

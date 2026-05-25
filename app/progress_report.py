@@ -419,6 +419,8 @@ def count_unresolved_review_items(
 def review_items_for_character(
     report_doc: dict[str, Any],
     character_id: int,
+    *,
+    include_resolved: bool = False,
 ) -> list[dict[str, Any]]:
     review_items = report_doc.get("review_items")
     if not isinstance(review_items, list):
@@ -433,8 +435,11 @@ def review_items_for_character(
             continue
         if item_character_id != int(character_id):
             continue
+        resolution = _normalize_review_resolution(item.get("resolution"))
+        if not include_resolved and resolution["status"] != "todo":
+            continue
         clone = dict(item)
-        clone["resolution"] = _normalize_review_resolution(item.get("resolution"))
+        clone["resolution"] = resolution
         out.append(clone)
     return out
 

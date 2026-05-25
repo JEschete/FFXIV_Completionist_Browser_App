@@ -92,7 +92,7 @@ def test_initial_import_skips_transition_report(conn, character_id, monkeypatch,
             main_mod.CHAR_IMPORT_RUNS.pop(import_run_id, None)
 
 
-def test_existing_progress_still_creates_transition_report(conn, character_id, monkeypatch, tmp_path):
+def test_existing_progress_desktop_import_skips_transition_report(conn, character_id, monkeypatch, tmp_path):
     connection, run_id = conn
     char = db.get_character(connection, character_id)
     assert char is not None
@@ -157,6 +157,99 @@ def test_existing_progress_still_creates_transition_report(conn, character_id, m
         main_mod._run_character_import_job(
             import_run_id,
             import_type="desktop-app",
+            character_id=character_id,
+            source_path=source_path,
+            clear_existing=False,
+            lodestone_level_mode="keep-highest",
+        )
+
+        with main_mod.CHAR_IMPORT_RUNS_LOCK:
+            run = dict(main_mod.CHAR_IMPORT_RUNS[import_run_id])
+
+        assert run.get("status") == "completed", run
+        assert run.get("progress_report_path") is None
+        summary = run.get("summary")
+        assert isinstance(summary, dict)
+        counts = summary.get("existing_progress_before_import")
+        assert isinstance(counts, dict)
+        assert int(counts.get("total") or 0) > 0
+        assert called["reports"] == 0
+    finally:
+        with main_mod.CHAR_IMPORT_RUNS_LOCK:
+            main_mod.CHAR_IMPORT_RUNS.pop(import_run_id, None)
+
+
+def test_existing_progress_lodestone_still_creates_transition_report(
+    conn,
+    character_id,
+    monkeypatch,
+    tmp_path,
+):
+    connection, run_id = conn
+    char = db.get_character(connection, character_id)
+    assert char is not None
+
+    db.set_row_state(connection, character_id, run_id, "Side Stuff", 5, "done")
+
+    report_path = tmp_path / "between.json"
+    called = {"reports": 0}
+
+    def fake_create_between_run_report(*args, **kwargs):
+        called["reports"] += 1
+        return (
+            {
+                "summary": {
+                    "characters_changed": 1,
+                    "review_unresolved": 1,
+                }
+            },
+            report_path,
+        )
+
+    def fake_import_lodestone_payload(
+        conn,
+        *,
+        character_id: int,
+        payload_path: Path,
+        clear_existing: bool,
+        level_merge_mode: str,
+        progress,
+    ):
+        db.set_row_state(conn, character_id, run_id, "Side Stuff", 4, "done")
+        progress("fake lodestone import applied")
+        return li.ImportSummary(
+            character_id=character_id,
+            character_name=str(char["name"]),
+            source_path=str(payload_path),
+            run_id=run_id,
+            total_candidates=1,
+            matched_candidates=1,
+            unmatched_candidates=0,
+            rows_applied=1,
+            rows_skipped_already_done=0,
+            unmatched_items=[],
+        )
+
+    monkeypatch.setattr(
+        main_mod.progress_report,
+        "create_between_run_report",
+        fake_create_between_run_report,
+    )
+    monkeypatch.setattr(
+        main_mod.lodestone_import,
+        "import_lodestone_payload",
+        fake_import_lodestone_payload,
+    )
+
+    import_run_id = "test-repeat-lodestone-import"
+    _seed_run_entry(import_run_id, character_id)
+    source_path = tmp_path / "payload.json"
+    source_path.write_text("{}", encoding="utf-8")
+
+    try:
+        main_mod._run_character_import_job(
+            import_run_id,
+            import_type="lodestone-json",
             character_id=character_id,
             source_path=source_path,
             clear_existing=False,

@@ -1645,6 +1645,18 @@ def _run_character_import_job(
                 "Initial import detected (no prior explicit progress): "
                 f"skipped diff report and reset baseline to {baseline_path}",
             )
+        elif import_type == "desktop-app":
+            baseline_path = _save_session_baseline_snapshot(
+                conn,
+                run_id_db,
+                source="desktop-app-import-no-report",
+                run_token=run_token_after,
+            )
+            _append_character_import_run_log(
+                run_id,
+                "Desktop import: skipped progress report audit generation and "
+                f"reset baseline to {baseline_path}",
+            )
         else:
             between_doc, between_path = progress_report.create_between_run_report(
                 conn,
@@ -3685,6 +3697,118 @@ def character_delete(request: Request, character_id: int = Form(...)):
     return resp
 
 
+def _progress_report_destination(next_url: str) -> str:
+    candidate = str(next_url or "").strip()
+    return candidate if candidate.startswith("/") else "/progress-reports"
+
+
+def _is_truthy_form_flag(raw: str | None) -> bool:
+    return str(raw or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _find_report_review_item(
+    report_doc: dict[str, Any],
+    *,
+    item_id: str,
+) -> dict[str, Any] | None:
+    review_items = report_doc.get("review_items")
+    if not isinstance(review_items, list):
+        return None
+    for item in review_items:
+        if isinstance(item, dict) and str(item.get("id") or "") == item_id:
+            return item
+    return None
+
+
+def _apply_report_item_resolution_to_progress(
+    conn,
+    *,
+    run_id: int,
+    target_item: dict[str, Any],
+    resolution: str,
+    starting_class_cache: dict[int, str | None],
+) -> str | None:
+    normalized_resolution = str(resolution or "todo").strip().lower()
+    if normalized_resolution == "todo":
+        return None
+
+    character_id = int(target_item.get("character_id") or 0)
+    sheet_name = str(target_item.get("sheet_name") or "")
+    row_index = int(target_item.get("row_index") or 0)
+    row_type = str(target_item.get("row_type") or "checkbox")
+    desired = target_item.get("after") if normalized_resolution == "done" else target_item.get("before")
+    if not isinstance(desired, dict):
+        raise ValueError("Report item snapshot data is missing.")
+
+    desired_state = str(desired.get("state") or "todo").strip().lower()
+    desired_value = desired.get("value")
+    if desired_state not in {"done", "todo", "excluded"}:
+        desired_state = "todo"
+
+    node_exists = conn.execute(
+        """
+        SELECT 1 FROM nodes
+        WHERE run_id = ? AND sheet_name = ? AND row_index = ?
+        LIMIT 1
+        """,
+        (run_id, sheet_name, row_index),
+    ).fetchone()
+    if node_exists is None:
+        raise ValueError("Target row no longer exists in the current workbook.")
+
+    if character_id not in starting_class_cache:
+        character = db.get_character(conn, character_id)
+        if character is None:
+            raise ValueError("Target character no longer exists.")
+        starting_class_cache[character_id] = character["starting_class"]
+    starting_class = starting_class_cache[character_id]
+
+    if row_type == "value":
+        if desired_state == "excluded":
+            db.set_row_state(
+                conn,
+                character_id,
+                run_id,
+                sheet_name,
+                row_index,
+                "excluded",
+                starting_class=starting_class,
+            )
+            return "excluded"
+        if isinstance(desired_value, (int, float)):
+            db.set_row_value(
+                conn,
+                character_id,
+                run_id,
+                sheet_name,
+                row_index,
+                float(desired_value),
+                starting_class=starting_class,
+            )
+            return desired_state
+        db.set_row_state(
+            conn,
+            character_id,
+            run_id,
+            sheet_name,
+            row_index,
+            desired_state,
+            starting_class=starting_class,
+        )
+        return desired_state
+
+    db.set_row_state(
+        conn,
+        character_id,
+        run_id,
+        sheet_name,
+        row_index,
+        desired_state,
+        starting_class=starting_class,
+    )
+    return desired_state
+
+
 @app.get("/progress-reports", response_class=HTMLResponse)
 def progress_reports_page(
     request: Request,
@@ -3778,12 +3902,11 @@ def progress_reports_page(
 
 @app.post("/progress-reports/resolve")
 def progress_report_resolve_item(
-    request: Request,
     item_id: str = Form(...),
     resolution: str = Form("todo"),
     next_url: str = Form("/progress-reports"),
 ):
-    destination = next_url if next_url.startswith("/") else "/progress-reports"
+    destination = _progress_report_destination(next_url)
     normalized_resolution = str(resolution or "todo").strip().lower()
     if normalized_resolution not in progress_report.RESOLUTION_VALUES:
         return RedirectResponse(
@@ -3798,13 +3921,7 @@ def progress_report_resolve_item(
             status_code=303,
         )
 
-    review_items = report_doc.get("review_items")
-    target_item: dict[str, Any] | None = None
-    if isinstance(review_items, list):
-        for item in review_items:
-            if isinstance(item, dict) and str(item.get("id") or "") == item_id:
-                target_item = item
-                break
+    target_item = _find_report_review_item(report_doc, item_id=item_id)
     if target_item is None:
         return RedirectResponse(
             f"{destination}?error={quote('Could not find that report item.')}",
@@ -3813,89 +3930,18 @@ def progress_report_resolve_item(
 
     applied_state: str | None = None
     if normalized_resolution != "todo":
-        character_id = int(target_item.get("character_id") or 0)
-        sheet_name = str(target_item.get("sheet_name") or "")
-        row_index = int(target_item.get("row_index") or 0)
-        row_type = str(target_item.get("row_type") or "checkbox")
-        desired = target_item.get("after") if normalized_resolution == "done" else target_item.get("before")
-        if not isinstance(desired, dict):
-            return RedirectResponse(
-                f"{destination}?error={quote('Report item snapshot data is missing.')}",
-                status_code=303,
-            )
-
-        desired_state = str(desired.get("state") or "todo").strip().lower()
-        desired_value = desired.get("value")
-        if desired_state not in {"done", "todo", "excluded"}:
-            desired_state = "todo"
-
         conn = db.get_connection()
         try:
             run_id = db.latest_run_id(conn)
             if run_id is None:
                 raise ValueError("No ingest run found.")
-
-            node_exists = conn.execute(
-                """
-                SELECT 1 FROM nodes
-                WHERE run_id = ? AND sheet_name = ? AND row_index = ?
-                LIMIT 1
-                """,
-                (run_id, sheet_name, row_index),
-            ).fetchone()
-            if node_exists is None:
-                raise ValueError("Target row no longer exists in the current workbook.")
-
-            character = db.get_character(conn, character_id)
-            if character is None:
-                raise ValueError("Target character no longer exists.")
-            starting_class = character["starting_class"]
-
-            if row_type == "value":
-                if desired_state == "excluded":
-                    db.set_row_state(
-                        conn,
-                        character_id,
-                        run_id,
-                        sheet_name,
-                        row_index,
-                        "excluded",
-                        starting_class=starting_class,
-                    )
-                    applied_state = "excluded"
-                elif isinstance(desired_value, (int, float)):
-                    db.set_row_value(
-                        conn,
-                        character_id,
-                        run_id,
-                        sheet_name,
-                        row_index,
-                        float(desired_value),
-                        starting_class=starting_class,
-                    )
-                    applied_state = desired_state
-                else:
-                    db.set_row_state(
-                        conn,
-                        character_id,
-                        run_id,
-                        sheet_name,
-                        row_index,
-                        desired_state,
-                        starting_class=starting_class,
-                    )
-                    applied_state = desired_state
-            else:
-                db.set_row_state(
-                    conn,
-                    character_id,
-                    run_id,
-                    sheet_name,
-                    row_index,
-                    desired_state,
-                    starting_class=starting_class,
-                )
-                applied_state = desired_state
+            applied_state = _apply_report_item_resolution_to_progress(
+                conn,
+                run_id=run_id,
+                target_item=target_item,
+                resolution=normalized_resolution,
+                starting_class_cache={},
+            )
 
             _, current_run_token = _latest_run_identity(conn)
             _save_session_baseline_snapshot(
@@ -3923,6 +3969,112 @@ def progress_report_resolve_item(
         applied_state=applied_state,
     )
     if updated is None:
+        return RedirectResponse(
+            f"{destination}?error={quote('Could not update report resolution state.')}",
+            status_code=303,
+        )
+
+    report_path_raw = report_doc.get("report_path")
+    report_path = Path(str(report_path_raw)) if isinstance(report_path_raw, str) and report_path_raw else None
+    progress_report.save_report_document(report_doc, report_path=report_path)
+    return RedirectResponse(destination, status_code=303)
+
+
+@app.post("/progress-reports/resolve-bulk")
+def progress_report_resolve_bulk(
+    character_id: int = Form(...),
+    resolution: str = Form("done"),
+    only_unresolved: str = Form("1"),
+    next_url: str = Form("/progress-reports"),
+):
+    destination = _progress_report_destination(next_url)
+    normalized_resolution = str(resolution or "todo").strip().lower()
+    if normalized_resolution not in progress_report.RESOLUTION_VALUES:
+        return RedirectResponse(
+            f"{destination}?error={quote('Invalid resolution state.')}",
+            status_code=303,
+        )
+
+    report_doc = _load_latest_progress_report()
+    if not isinstance(report_doc, dict):
+        return RedirectResponse(
+            f"{destination}?error={quote('No progress report found to resolve.')}",
+            status_code=303,
+        )
+
+    target_items = progress_report.review_items_for_character(
+        report_doc,
+        character_id,
+        include_resolved=True,
+    )
+    if _is_truthy_form_flag(only_unresolved):
+        target_items = [
+            item
+            for item in target_items
+            if str((item.get("resolution") or {}).get("status") or "todo").strip().lower() == "todo"
+        ]
+
+    if not target_items:
+        return RedirectResponse(destination, status_code=303)
+
+    applied_states: dict[str, str | None] = {}
+    any_progress_updates = False
+
+    if normalized_resolution != "todo":
+        conn = db.get_connection()
+        try:
+            run_id = db.latest_run_id(conn)
+            if run_id is None:
+                raise ValueError("No ingest run found.")
+
+            starting_class_cache: dict[int, str | None] = {}
+            for item in target_items:
+                item_id = str(item.get("id") or "")
+                current_status = str((item.get("resolution") or {}).get("status") or "todo").strip().lower()
+                if item_id and current_status == normalized_resolution:
+                    continue
+                applied_states[item_id] = _apply_report_item_resolution_to_progress(
+                    conn,
+                    run_id=run_id,
+                    target_item=item,
+                    resolution=normalized_resolution,
+                    starting_class_cache=starting_class_cache,
+                )
+                any_progress_updates = True
+
+            if any_progress_updates:
+                _, current_run_token = _latest_run_identity(conn)
+                _save_session_baseline_snapshot(
+                    conn,
+                    run_id,
+                    source="report_resolution_bulk",
+                    run_token=current_run_token,
+                )
+        except Exception as exc:
+            conn.close()
+            return RedirectResponse(
+                f"{destination}?error={quote(str(exc))}",
+                status_code=303,
+            )
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    updated_count = 0
+    for item in target_items:
+        item_id = str(item.get("id") or "")
+        updated = progress_report.set_review_item_resolution(
+            report_doc,
+            item_id=item_id,
+            status=normalized_resolution,
+            applied_state=applied_states.get(item_id),
+        )
+        if updated is not None:
+            updated_count += 1
+
+    if updated_count <= 0:
         return RedirectResponse(
             f"{destination}?error={quote('Could not update report resolution state.')}",
             status_code=303,

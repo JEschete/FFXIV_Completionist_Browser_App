@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 
+from app import progress_report
+
 
 def test_health(client):
     resp = client.get("/health")
@@ -152,3 +154,53 @@ def test_progress_report_resolution_route(client):
         follow_redirects=False,
     )
     assert resolve_resp.status_code == 303
+
+    latest = progress_report.load_latest_report()
+    assert isinstance(latest, dict)
+
+    character_id = int(items[0]["character_id"])
+    visible_items = progress_report.review_items_for_character(latest, character_id)
+    assert all(str(item.get("id") or "") != item_id for item in visible_items)
+
+    page_resp = client.get("/progress-reports", params={"character_id": str(character_id)})
+    assert page_resp.status_code == 200
+    assert item_id not in page_resp.text
+
+
+def test_progress_report_bulk_resolution_route(client):
+    client.post("/api/toggle", data={"sheet_name": "Side Stuff", "row_index": "5"})
+    report_resp = client.get(
+        "/api/progress/between-run-report",
+        params={"persist": "true"},
+    )
+    assert report_resp.status_code == 200
+    report_doc = report_resp.json()
+
+    items = report_doc.get("review_items")
+    assert isinstance(items, list)
+    assert items, "expected at least one review item after a toggle"
+
+    character_id = int(items[0]["character_id"])
+    bulk_resp = client.post(
+        "/progress-reports/resolve-bulk",
+        data={
+            "character_id": str(character_id),
+            "resolution": "done",
+            "only_unresolved": "1",
+            "next_url": f"/progress-reports?character_id={character_id}",
+        },
+        follow_redirects=False,
+    )
+    assert bulk_resp.status_code == 303
+
+    latest = progress_report.load_latest_report()
+    assert isinstance(latest, dict)
+    unresolved = progress_report.count_unresolved_review_items(
+        latest,
+        character_id=character_id,
+    )
+    assert unresolved == 0
+
+    page_resp = client.get("/progress-reports", params={"character_id": str(character_id)})
+    assert page_resp.status_code == 200
+    assert "No unresolved review items for this character" in page_resp.text
