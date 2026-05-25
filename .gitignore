@@ -87,6 +87,7 @@ data/lodestone_probe/import_history/
 data/lodestone_probe/unmatched/
 data/lodestone_probe/*_auth_*.json
 data/logs/progress_reports/between_run*
+data/logs/
 UserDataTesting/
 
 # Downloaded character avatars
