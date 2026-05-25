@@ -88,7 +88,16 @@ def _norm_label(value: str) -> str:
 
 def _strip_marker_prefixes(value: str) -> str:
     # Lodestone sometimes prefixes quest names with icon glyphs or bullets.
-    return re.sub(r"^[^A-Za-z0-9'\"]+", "", value).strip()
+    text = value.strip()
+    while text and not (text[0].isalnum() or text[0] in {"'", '"'}):
+        text = text[1:]
+    return text.strip()
+
+
+_QUEST_LABEL_RENAMES_BY_NORM = {
+    _norm_label("Crossing Paths"): "Crossroads",
+    _norm_label("Hither and Yarns"): "Hither and Yams",
+}
 
 
 def _quest_label_aliases(raw: str) -> set[str]:
@@ -120,6 +129,10 @@ def _quest_label_aliases(raw: str) -> set[str]:
     cleaned = _strip_marker_prefixes(value)
     if cleaned:
         aliases.add(cleaned)
+
+    renamed = _QUEST_LABEL_RENAMES_BY_NORM.get(_norm_label(cleaned or value))
+    if renamed:
+        aliases.add(renamed)
 
     return {a for a in aliases if a}
 
@@ -224,6 +237,7 @@ def collect_candidates(payload: dict[str, Any]) -> dict[str, set[str]]:
 # contain the literal word "quest" in the sheet title.
 _QUEST_LIKE_SHEET_TOKENS = (
     "quest",
+    "leves",
     "primals",
     "bahamut",
     "the crystal tower",
@@ -265,14 +279,386 @@ _QUEST_LIKE_SHEET_TOKENS_NORM = tuple(
     sorted({norm for token in _QUEST_LIKE_SHEET_TOKENS if (norm := _norm_label(token))})
 )
 
+_SHEET_BUCKET_OVERRIDES: dict[str, frozenset[str]] = {
+    _norm_label("Adventurer Plate"): frozenset({"character/adventure-plate"}),
+    _norm_label("Alchemy Log"): frozenset({"logs/crafting-log/alchemist"}),
+    _norm_label("Armorcrafting Log"): frozenset({"logs/crafting-log/armorer"}),
+    _norm_label("Blacksmithing Log"): frozenset({"logs/crafting-log/blacksmith"}),
+    _norm_label("Bozja - Aetherytes"): frozenset({"duty/exploratory-missions/bozja/aetherytes"}),
+    _norm_label("Bozja - Duties"): frozenset({"duty/exploratory-missions/bozja/duties"}),
+    _norm_label("Bozja - Events"): frozenset({"duty/exploratory-missions/bozja/events"}),
+    _norm_label("Bozja - Lost Actions"): frozenset({"duty/exploratory-missions/bozja/lost-actions"}),
+    _norm_label("Bozja - Resistance Rank"): frozenset({
+        "duty/exploratory-missions/bozja/resistance-rank",
+        "duty/exploratory-missions/bozja/resistance-honors",
+    }),
+    _norm_label("Botanist Logs"): frozenset({
+        "logs/gathering/gathering-log/harvesting",
+        "logs/gathering/gathering-log/logging",
+    }),
+    _norm_label("Carpentry Log"): frozenset({"logs/crafting-log/carpenter"}),
+    _norm_label("Culinary Log"): frozenset({"logs/crafting-log/culinarian"}),
+    _norm_label("Goldsmithing Log"): frozenset({"logs/crafting-log/goldsmith"}),
+    _norm_label("Leatherworking Log"): frozenset({"logs/crafting-log/leatherworker"}),
+    _norm_label("Miner Logs"): frozenset({
+        "logs/gathering/gathering-log/mining",
+        "logs/gathering/gathering-log/quarrying",
+    }),
+    _norm_label("Shared Craft Log"): frozenset({"logs/crafting-log/shared"}),
+    _norm_label("Weaving Log"): frozenset({"logs/crafting-log/weaver"}),
+    _norm_label("Triple Triad Opponents"): frozenset({"character/gold-saucer/triple-triad-opponents"}),
+    _norm_label("Dungeons"): frozenset({"duty/duty-raid-finder/dungeon"}),
+    _norm_label("Trials"): frozenset({"duty/duty-raid-finder/trial"}),
+    _norm_label("Raids"): frozenset({"duty/duty-raid-finder/raid"}),
+    _norm_label("Guildhests"): frozenset({"duty/duty-raid-finder/guildhests"}),
+    _norm_label("Hall of the Novice"): frozenset({"duty/hall-of-the-novice"}),
+    _norm_label("Island Sanctuary - Animals"): frozenset({"duty/island-sanctuary/animals"}),
+    _norm_label("Island Sanctuary - Buildings"): frozenset({"duty/island-sanctuary/buildings"}),
+    _norm_label("Island Sanctuary - Crafting"): frozenset({"duty/island-sanctuary/crafting"}),
+    _norm_label("Island Sanctuary - Isleventory"): frozenset({"duty/island-sanctuary/isleventory"}),
+    _norm_label("Island Sanctuary - Rank"): frozenset({"duty/island-sanctuary/rank"}),
+    _norm_label("Mount Speed"): frozenset({"travel/mount-speed"}),
+    _norm_label("Porters"): frozenset({"travel/porters"}),
+    _norm_label("Aetherytes"): frozenset({"travel/aetherytes"}),
+    _norm_label("Sightseeing Logs"): frozenset({"logs/sightseeing-log"}),
+    _norm_label("Fishing Logs"): frozenset({"logs/gathering/fishing-log"}),
+    _norm_label("Fish Guide"): frozenset({"logs/gathering/fishing-guide"}),
+}
+
+
+def _guildhests_bucket_from_section(section_label: str | None) -> str | None:
+    section = str(section_label or "").strip()
+    if not section:
+        return None
+    slug = re.sub(r"\s+", "-", _norm_label(section)).strip("-")
+    if not slug:
+        return None
+    return f"duty/duty-raid-finder/guildhests/{slug}"
+
+
+_ADVENTURE_PLATE_SECTION_TAG_PREFIX = "@ADVPSEC."
+_QUEST_PATH_TOKEN_TAG_PREFIX = "@QPATH."
+
+_INTERNAL_SOURCE_LABEL_PREFIXES = (
+    _ADVENTURE_PLATE_SECTION_TAG_PREFIX,
+    _QUEST_PATH_TOKEN_TAG_PREFIX,
+)
+
+_QUEST_PATH_STOP_TOKENS = {
+    "duty",
+    "quest",
+    "json",
+    "index",
+    "_index",
+}
+
+_STARTING_CLASS_CITY_BY_KEY = {
+    "lancer": "gridania",
+    "archer": "gridania",
+    "conjurer": "gridania",
+    "marauder": "limsa",
+    "arcanist": "limsa",
+    "gladiator": "uldah",
+    "pugilist": "uldah",
+    "thaumaturge": "uldah",
+}
+
+_STARTING_CITY_SOURCE_TOKENS = {
+    "gridania": {"gridania", "gridanian", "gridaniansidequests"},
+    "limsa": {"limsa", "lominsa", "limsalominsa", "lominsan", "lominsansidequests"},
+    "uldah": {"uldah", "uldahn", "uldahnsidequests"},
+}
+
+_ADVENTURE_PLATE_DECORATION_SECTION_KEYS = {
+    "PLATE.BASE": "baseplate",
+    "PLATE.BACKING": "backing",
+    "PLATE.TOP_BORDER": "topborder",
+    "PLATE.BOTTOM_BORDER": "bottomborder",
+    "PLATE.ACCENT": "accent",
+    "PLATE.FRAME": "plateframe",
+    "PLATE.PORTRAIT_FRAME": "portraitframe",
+    "PLATE.PATTERN_OVERLAY": "patternoverlay",
+    "PLATE.OVERLAY": "patternoverlay",
+    # Workbook "Accent" and "Portrait Frame" rows can represent both
+    # plate and portrait decoration tokens.
+    "PORTRAIT.ACCENT": "accent",
+    "PORTRAIT.FRAME": "portraitframe",
+    "PORTRAIT.PORTRAIT_FRAME": "portraitframe",
+}
+
+
+def _adventure_plate_section_key(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    key = _norm_lookup_key(text)
+    if not key:
+        return None
+    aliases = {
+        "base": "baseplate",
+        "baseplate": "baseplate",
+        "backing": "backing",
+        "top": "topborder",
+        "topborder": "topborder",
+        "bottom": "bottomborder",
+        "bottomborder": "bottomborder",
+        "accent": "accent",
+        "frame": "plateframe",
+        "plateframe": "plateframe",
+        "portraitframe": "portraitframe",
+        "pattern": "patternoverlay",
+        "patternoverlay": "patternoverlay",
+    }
+    return aliases.get(key, key)
+
+
+def _adventure_plate_source_section_tags(item: dict[str, Any]) -> set[str]:
+    decorations = item.get("decorations")
+    if isinstance(decorations, str):
+        tokens = [decorations]
+    elif isinstance(decorations, list):
+        tokens = [value for value in decorations if isinstance(value, str)]
+    else:
+        tokens = []
+
+    out: set[str] = set()
+    for token in tokens:
+        cleaned = token.strip().lstrip("@")
+        if not cleaned:
+            continue
+        normalized = cleaned.upper().replace("-", "_").replace(" ", "_")
+        section_key = _ADVENTURE_PLATE_DECORATION_SECTION_KEYS.get(normalized)
+        if section_key:
+            out.add(f"{_ADVENTURE_PLATE_SECTION_TAG_PREFIX}{section_key}")
+    return out
+
+
+def _adventure_plate_sections_from_labels(labels: list[str] | tuple[str, ...]) -> set[str]:
+    out: set[str] = set()
+    prefix = _ADVENTURE_PLATE_SECTION_TAG_PREFIX.casefold()
+    for raw in labels:
+        value = str(raw or "").strip()
+        if not value:
+            continue
+        if not value.casefold().startswith(prefix):
+            continue
+        suffix = value[len(_ADVENTURE_PLATE_SECTION_TAG_PREFIX):]
+        section_key = _adventure_plate_section_key(suffix)
+        if section_key:
+            out.add(section_key)
+    return out
+
+
+def _quest_source_path_token_tags(relative_path: str) -> set[str]:
+    path = str(relative_path or "").replace("\\", "/").casefold().strip("/")
+    if not path.startswith("duty/quest/"):
+        return set()
+
+    parts = [part for part in path.split("/") if part]
+    raw_tokens: set[str] = set()
+
+    for part in parts:
+        stem = part[:-5] if part.endswith(".json") else part
+        if not stem:
+            continue
+        raw_tokens.add(stem)
+        for piece in re.split(r"[-_]+", stem):
+            piece = piece.strip()
+            if piece:
+                raw_tokens.add(piece)
+
+    tokens: set[str] = set()
+    for token in raw_tokens:
+        norm = _norm_lookup_key(token)
+        if not norm or norm in _QUEST_PATH_STOP_TOKENS:
+            continue
+        tokens.add(norm)
+
+    return {f"{_QUEST_PATH_TOKEN_TAG_PREFIX}{token}" for token in tokens}
+
+
+def _quest_path_tokens_from_labels(labels: list[str] | tuple[str, ...]) -> set[str]:
+    out: set[str] = set()
+    prefix = _QUEST_PATH_TOKEN_TAG_PREFIX.casefold()
+    for raw in labels:
+        value = str(raw or "").strip()
+        if not value.casefold().startswith(prefix):
+            continue
+        token = _norm_lookup_key(value[len(_QUEST_PATH_TOKEN_TAG_PREFIX):])
+        if token:
+            out.add(token)
+    return out
+
+
+def _completion_payload_starting_class(payload: dict[str, Any]) -> str | None:
+    value = payload.get("starting-class")
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    return text
+
+
+def _starting_city_for_class(starting_class: str | None) -> str | None:
+    key = _norm_lookup_key(str(starting_class or ""))
+    if not key:
+        return None
+    return _STARTING_CLASS_CITY_BY_KEY.get(key)
+
+
+def _is_internal_source_label(label: str) -> bool:
+    value = str(label or "").strip()
+    if not value:
+        return False
+    value_cf = value.casefold()
+    return any(value_cf.startswith(prefix.casefold()) for prefix in _INTERNAL_SOURCE_LABEL_PREFIXES)
+
+
+def _candidate_match_labels(labels: list[str] | tuple[str, ...]) -> list[str]:
+    filtered = [
+        str(label).strip()
+        for label in labels
+        if isinstance(label, str) and str(label).strip() and not _is_internal_source_label(label)
+    ]
+    if filtered:
+        return filtered
+    return [str(label).strip() for label in labels if isinstance(label, str) and str(label).strip()]
+
+
+def _hall_of_the_novice_role_key(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    key = _norm_lookup_key(text)
+    if not key:
+        return None
+    if key in {"tank", "healer", "dps"}:
+        return key
+    if "dps" in key or key in {"melee", "ranged", "caster", "damage", "damagedealer"}:
+        return "dps"
+    return None
+
+
+def _hall_of_the_novice_bucket_from_role(value: Any) -> str | None:
+    role_key = _hall_of_the_novice_role_key(value)
+    if not role_key:
+        return None
+    return f"duty/hall-of-the-novice/{role_key}"
+
+
+def _row_buckets_for_sheet(
+    sheet_name: str,
+    section_label: str | None,
+    row_json_obj: dict[str, Any] | None = None,
+) -> set[str]:
+    buckets = set(_sheet_buckets(sheet_name))
+    sheet_norm = _norm_label(sheet_name)
+    if sheet_norm == _norm_label("Guildhests"):
+        class_bucket = _guildhests_bucket_from_section(section_label)
+        if class_bucket:
+            buckets.add(class_bucket)
+    if sheet_norm == _norm_label("Hall of the Novice"):
+        role_value: Any = section_label
+        if isinstance(row_json_obj, dict):
+            role_value = row_json_obj.get("class") or row_json_obj.get("role") or role_value
+        role_bucket = _hall_of_the_novice_bucket_from_role(role_value)
+        if role_bucket:
+            buckets.add(role_bucket)
+    if sheet_norm == _norm_label("Island Sanctuary - Crafting"):
+        section_key = _norm_lookup_key(str(section_label or ""))
+        if section_key in {"tools", "feed", "restraints"}:
+            buckets.add(f"duty/island-sanctuary/crafting/{section_key}")
+    if sheet_norm == _norm_label("Island Sanctuary - Isleventory"):
+        section_key = _norm_lookup_key(str(section_label or ""))
+        section_aliases = {
+            "materials": "materials",
+            "gardeningstarters": "gardening-starters",
+            "produce": "produce",
+        }
+        suffix = section_aliases.get(section_key)
+        if suffix:
+            buckets.add(f"duty/island-sanctuary/isleventory/{suffix}")
+    if sheet_norm == _norm_label("Collection"):
+        buckets.add("duty/collection")
+        section_key = _norm_lookup_key(str(section_label or ""))
+        portable_aliases = {
+            "portablearchive": "portable-archive",
+            "thecopiedfactory": "the-copied-factory",
+            "thepuppetsbunker": "the-puppets-bunker",
+            "konoggsmessages": "konoggs-messages",
+        }
+        portable_suffix = portable_aliases.get(section_key)
+        if portable_suffix:
+            buckets.add("duty/collection/portable-archive")
+            if portable_suffix != "portable-archive":
+                buckets.add(f"duty/collection/portable-archive/{portable_suffix}")
+    return buckets
+
+
+def _aetheryte_type_key(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    norm = _norm_label(text)
+    if "crystal" in norm:
+        return "crystal"
+    if "shard" in norm:
+        return "shard"
+    if text.startswith("@"):
+        token = text.split(".")[-1]
+        token_key = _norm_lookup_key(token)
+        if token_key:
+            return token_key
+    return _norm_lookup_key(text)
+
+
+def _aetheryte_zone_key(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.upper().startswith("@PLACE."):
+        text = text[7:].replace("_", " ")
+    return _norm_lookup_key(text)
+
+
+def _aetheryte_signature(*, zone: Any, aeth_type: Any, name: Any) -> str | None:
+    zone_key = _aetheryte_zone_key(zone)
+    type_key = _aetheryte_type_key(aeth_type)
+    name_key = _norm_lookup_key(str(name or ""))
+    if not zone_key or not type_key or not name_key:
+        return None
+    return f"@AETHSIG.{zone_key}.{type_key}.{name_key}"
+
+
+def _aetheryte_source_signatures(item: dict[str, Any]) -> set[str]:
+    out: set[str] = set()
+    zone_value = item.get("zone")
+    type_value = item.get("type")
+    for field in ("name_en", "title_en", "name", "title"):
+        value = item.get(field)
+        if not isinstance(value, str):
+            continue
+        signature = _aetheryte_signature(zone=zone_value, aeth_type=type_value, name=value)
+        if signature:
+            out.add(signature)
+    return out
+
 
 def _sheet_buckets(sheet_name: str) -> set[str]:
     name_norm = _norm_label(sheet_name)
+    override = _SHEET_BUCKET_OVERRIDES.get(name_norm)
+    if override:
+        return set(override)
+
     out: set[str] = set()
 
-    if any(token in name_norm for token in _QUEST_LIKE_SHEET_TOKENS_NORM):
+    is_achievement_sheet = "achievement" in name_norm or "achiev" in name_norm
+    # Achievement sheets should not also be indexed as generic quest sheets,
+    # even when their title contains the word "quest".
+    if any(token in name_norm for token in _QUEST_LIKE_SHEET_TOKENS_NORM) and not is_achievement_sheet:
         out.add("quest")
-    if "achievement" in name_norm or "achiev" in name_norm:
+    if is_achievement_sheet:
         out.add("achievement")
     if "minion" in name_norm:
         out.add("minion")
@@ -463,6 +849,9 @@ def _partial_match_hits(
         norm = _norm_label(alias)
         if len(norm) < 8:
             continue
+        if bucket == "achievement" and re.search(r"\b(?:\d{1,2}|i|ii|iii|iv|v|vi|vii|viii|ix|x)$", norm):
+            # Avoid cross-tier collisions like "... II" -> "... I".
+            continue
         if bucket == "quest" and " " not in norm:
             # Single-token quest names can fuzzy-collide with job labels
             # (e.g. "Unbreaker" -> "Gunbreaker"). Keep quest fuzzy matching
@@ -493,6 +882,10 @@ def _index_labels_for_bucket(
             "orchestrion": "orchestrion_roll",
         }
         field = field_by_bucket.get(bucket)
+        if field is None and bucket.startswith("duty/duty-raid-finder/guildhests/"):
+            field = "dungeon"
+        if field is None and bucket.startswith("duty/hall-of-the-novice/"):
+            field = "quest"
         if isinstance(field, str):
             value = row_json_obj.get(field)
             if isinstance(value, str):
@@ -507,6 +900,22 @@ def _index_labels_for_bucket(
                             part = part.strip()
                             if part:
                                 labels.add(part)
+
+        if bucket == "travel/aetherytes" or bucket.startswith("travel/aetherytes/"):
+            zone_name = row_json_obj.get("zone_name")
+            type_name = row_json_obj.get("type")
+            location_name = row_json_obj.get("location_name")
+            signature_by_location = _aetheryte_signature(
+                zone=zone_name,
+                aeth_type=type_name,
+                name=location_name,
+            )
+            if signature_by_location:
+                labels.add(signature_by_location)
+            if isinstance(location_name, str):
+                text = location_name.strip()
+                if text:
+                    labels.add(text)
     return labels
 
 
@@ -769,7 +1178,7 @@ def import_lodestone_payload(
 
     rows = conn.execute(
         """
-                SELECT n.sheet_name, n.row_index, n.label, n.row_type, n.row_json
+            SELECT n.sheet_name, n.row_index, n.section_label, n.label, n.row_type, n.row_json
         FROM nodes n
         JOIN sheets s ON s.run_id = n.run_id AND s.sheet_name = n.sheet_name
         WHERE n.run_id = ?
@@ -785,6 +1194,7 @@ def import_lodestone_payload(
 
     for row in rows:
         sheet_name = row["sheet_name"]
+        section_label = str(row["section_label"] or "")
         label = (row["label"] or "").strip()
         if not label:
             continue
@@ -798,7 +1208,11 @@ def import_lodestone_payload(
                     row_json_obj = decoded
             except json.JSONDecodeError:
                 row_json_obj = None
-        for bucket in _sheet_buckets(sheet_name):
+        for bucket in _row_buckets_for_sheet(
+            sheet_name,
+            section_label,
+            row_json_obj=row_json_obj,
+        ):
             for idx_label in _index_labels_for_bucket(
                 bucket=bucket,
                 node_label=label,
@@ -1016,6 +1430,20 @@ _IGNORED_UNTRACKED_BUCKETS = {
     "duty/squadron/stats",
 }
 
+# Buckets with no reliable workbook destination should be skipped entirely to
+# avoid cross-sheet label collisions from broad fallback matching.
+_QUARANTINED_BUCKET_PREFIXES = (
+    "duty/squadron/command-missions",
+    "duty/trust/",
+)
+
+
+def _is_quarantined_bucket(bucket: str) -> bool:
+    value = str(bucket or "").strip().casefold()
+    if not value:
+        return False
+    return any(value.startswith(prefix) for prefix in _QUARANTINED_BUCKET_PREFIXES)
+
 _POSITIONAL_VALUE_BUCKETS = {
     "classes-jobs",
     "desynthesis",
@@ -1061,6 +1489,19 @@ def _path_group_key(parts: list[str]) -> str | None:
         return None
 
     if segments[:3] == ["character", "blue-mage", "log"] and len(segments) >= 4:
+        return "/".join(segments[:4])
+
+    # Keep subgroup segment for categories that are partitioned by a meaningful
+    # fourth component (sub-log or job path) so ids remain scoped.
+    keep_four_prefixes = {
+        ("duty", "exploratory-missions", "bozja"),
+        ("logs", "gathering", "gathering-log"),
+        ("duty", "duty-raid-finder", "guildhests"),
+        ("duty", "island-sanctuary", "crafting"),
+        ("duty", "island-sanctuary", "isleventory"),
+        ("duty", "collection", "portable-archive"),
+    }
+    if tuple(segments[:3]) in keep_four_prefixes and len(segments) >= 4:
         return "/".join(segments[:4])
 
     key = "/".join(segments[:3])
@@ -1259,6 +1700,12 @@ def _build_source_label_index(resource_root_str: str) -> dict[str, dict[str, tup
                     continue
                 label_set = bucket_index.setdefault(id_key, set())
                 label_set.update(labels)
+                if bucket.startswith("character/adventure-plate"):
+                    label_set.update(_adventure_plate_source_section_tags(item))
+                if bucket == "quest":
+                    label_set.update(_quest_source_path_token_tags(relative))
+                if bucket.startswith("travel/aetherytes/"):
+                    label_set.update(_aetheryte_source_signatures(item))
                 if refs:
                     refs_by_source.setdefault((bucket, id_key), set()).update(refs)
             continue
@@ -1277,6 +1724,12 @@ def _build_source_label_index(resource_root_str: str) -> dict[str, dict[str, tup
                     continue
                 label_set = bucket_index.setdefault(id_key, set())
                 label_set.update(labels)
+                if bucket.startswith("character/adventure-plate"):
+                    label_set.update(_adventure_plate_source_section_tags(item))
+                if bucket == "quest":
+                    label_set.update(_quest_source_path_token_tags(relative))
+                if bucket.startswith("travel/aetherytes/"):
+                    label_set.update(_aetheryte_source_signatures(item))
                 if refs:
                     refs_by_source.setdefault((bucket, id_key), set()).update(refs)
 
@@ -1474,13 +1927,98 @@ def _bucket_tail(bucket: str) -> str:
 # Some desktop buckets are semantically tied to a specific workbook sheet and
 # should never resolve through the broad section-global fallback.
 _BUCKET_ALLOWED_SHEETS_PREFIXES: tuple[tuple[str, frozenset[str]], ...] = (
+    ("logs/crafting-log/alchemist", frozenset({"Alchemy Log"})),
+    ("logs/crafting-log/armorer", frozenset({"Armorcrafting Log"})),
+    ("logs/crafting-log/blacksmith", frozenset({"Blacksmithing Log"})),
+    ("logs/crafting-log/carpenter", frozenset({"Carpentry Log"})),
+    ("logs/crafting-log/culinarian", frozenset({"Culinary Log"})),
+    ("logs/crafting-log/goldsmith", frozenset({"Goldsmithing Log"})),
+    ("logs/crafting-log/leatherworker", frozenset({"Leatherworking Log"})),
+    ("logs/crafting-log/shared", frozenset({"Shared Craft Log"})),
+    ("logs/crafting-log/weaver", frozenset({"Weaving Log"})),
+    ("character/gold-saucer/triple-triad-opponents", frozenset({"Triple Triad Opponents"})),
+    ("duty/duty-raid-finder/dungeon", frozenset({"Dungeons"})),
+    ("duty/duty-raid-finder/trial", frozenset({"Trials"})),
+    ("duty/duty-raid-finder/raid", frozenset({"Raids"})),
+    ("duty/duty-raid-finder/guildhests", frozenset({"Guildhests"})),
+    ("duty/duty-raid-finder/v-and-c-dungeons", frozenset({"V&C Dungeon Finder"})),
+    ("duty/hall-of-the-novice", frozenset({"Hall of the Novice"})),
+    ("duty/island-sanctuary/animals", frozenset({"Island Sanctuary - Animals"})),
+    ("duty/island-sanctuary/buildings", frozenset({"Island Sanctuary - Buildings"})),
+    ("duty/island-sanctuary/crafting", frozenset({"Island Sanctuary - Crafting"})),
+    ("duty/island-sanctuary/isleventory", frozenset({"Island Sanctuary - Isleventory"})),
+    ("duty/island-sanctuary/rank", frozenset({"Island Sanctuary - Rank"})),
+    (
+        "duty/exploratory-missions/bozja/aetherytes",
+        frozenset({"Bozja - Aetherytes"}),
+    ),
+    (
+        "duty/exploratory-missions/bozja/duties",
+        frozenset({"Bozja - Duties"}),
+    ),
+    (
+        "duty/exploratory-missions/bozja/events",
+        frozenset({"Bozja - Events"}),
+    ),
+    (
+        "duty/exploratory-missions/bozja/lost-actions",
+        frozenset({"Bozja - Lost Actions"}),
+    ),
+    (
+        "duty/exploratory-missions/bozja/resistance-rank",
+        frozenset({"Bozja - Resistance Rank"}),
+    ),
+    (
+        "duty/exploratory-missions/bozja/resistance-honors",
+        frozenset({"Bozja - Resistance Rank"}),
+    ),
+    (
+        "logs/gathering/gathering-log/mining",
+        frozenset({"Miner Logs"}),
+    ),
+    (
+        "logs/gathering/gathering-log/quarrying",
+        frozenset({"Miner Logs"}),
+    ),
+    (
+        "logs/gathering/gathering-log/logging",
+        frozenset({"Botanist Logs"}),
+    ),
+    (
+        "logs/gathering/gathering-log/harvesting",
+        frozenset({"Botanist Logs"}),
+    ),
+    ("logs/sightseeing-log/", frozenset({"Sightseeing Logs"})),
+    ("logs/gathering/fishing-log", frozenset({"Fishing Logs"})),
+    ("logs/gathering/fishing-guide", frozenset({"Fish Guide"})),
+    ("travel/mount-speed/", frozenset({"Mount Speed"})),
+    ("travel/porters/", frozenset({"Porters"})),
+    ("travel/aetherytes/", frozenset({"Aetherytes"})),
+    ("duty/collection", frozenset({"Collection"})),
+    ("character/adventure-plate", frozenset({"Adventurer Plate"})),
     ("character/adventure-plate/", frozenset({"Adventurer Plate"})),
+    ("character/companion/barding", frozenset({"Bardings"})),
+    ("character/relic-gear/resplendent-tools", frozenset({"Relic Tools"})),
 )
 
 # Some freeform desktop buckets can contain labels that collide with tracked
 # collectible names; keep them from inflating those logs.
 _BUCKET_DISALLOWED_SHEETS: dict[str, frozenset[str]] = {
-    "custom": frozenset({"Minions"}),
+    "custom": frozenset({
+        "Minions",
+        "Dungeons",
+        "Trials",
+        "Raids",
+        "Guildhests",
+        "V&C Dungeon Finder",
+    }),
+    "quest": frozenset({
+        "Dungeons",
+        "Trials",
+        "Raids",
+        "Guildhests",
+        "V&C Dungeon Finder",
+    }),
 }
 
 
@@ -1819,6 +2357,389 @@ def _dedupe_hits(hits: list[tuple[str, int, str]] | None) -> list[tuple[str, int
     return out
 
 
+def _filter_adventure_plate_hits_by_sections(
+    *,
+    bucket: str,
+    source_labels: list[str] | tuple[str, ...],
+    hits: list[tuple[str, int, str]] | None,
+    row_sections: dict[tuple[str, int, str], str],
+) -> list[tuple[str, int, str]] | None:
+    if not hits:
+        return hits
+    if not str(bucket or "").startswith("character/adventure-plate"):
+        return hits
+
+    source_sections = _adventure_plate_sections_from_labels(source_labels)
+    if not source_sections:
+        return hits
+
+    filtered = [
+        entry
+        for entry in hits
+        if row_sections.get((str(entry[0]), int(entry[1]), str(entry[2]))) in source_sections
+    ]
+    # Fall back to original hits if section metadata unexpectedly fails to map.
+    return filtered or hits
+
+
+def _row_text_tokens(value: Any) -> set[str]:
+    text = str(value or "").strip()
+    if not text:
+        return set()
+    out: set[str] = set()
+    compact = _norm_lookup_key(text)
+    if compact:
+        out.add(compact)
+    for token in _norm_label(text).split():
+        t = token.strip()
+        if t:
+            out.add(t)
+    return out
+
+
+def _hit_tokens(
+    entry: tuple[str, int, str],
+    row_context: dict[tuple[str, int, str], dict[str, Any]],
+) -> set[str]:
+    data = row_context.get((str(entry[0]), int(entry[1]), str(entry[2])), {})
+    out: set[str] = set()
+    out.update(_row_text_tokens(data.get("sheet_name")))
+    out.update(_row_text_tokens(data.get("section_label")))
+    out.update(_row_text_tokens(data.get("label")))
+    row_json_obj = data.get("row_json_obj")
+    if isinstance(row_json_obj, dict):
+        for field in (
+            "quest",
+            "npc",
+            "unlocks",
+            "unlocked_by",
+            "trial",
+            "dungeon",
+            "item",
+            "type",
+            "building",
+            "requires",
+        ):
+            value = row_json_obj.get(field)
+            if isinstance(value, str):
+                out.update(_row_text_tokens(value))
+    return out
+
+
+def _filter_quest_hits_by_source_tokens(
+    *,
+    bucket: str,
+    source_labels: list[str] | tuple[str, ...],
+    hits: list[tuple[str, int, str]] | None,
+    row_context: dict[tuple[str, int, str], dict[str, Any]],
+    starting_class: str | None,
+) -> list[tuple[str, int, str]] | None:
+    if not hits or bucket != "quest":
+        return hits
+
+    source_tokens = _quest_path_tokens_from_labels(source_labels)
+    if source_tokens:
+        generic_tokens = {
+            "duty",
+            "quest",
+            "sidequests",
+            "levequests",
+            "mainscenario",
+            "otherquests",
+            "main",
+            "scenario",
+            "quests",
+            "the",
+            "la",
+            "noscea",
+            "leves",
+            "seventhumbraleramainscenarioquests",
+        }
+        meaningful_tokens = {token for token in source_tokens if token not in generic_tokens}
+        if meaningful_tokens:
+            scored: list[tuple[tuple[str, int, str], int]] = []
+            best_score = 0
+            for entry in hits:
+                overlap = _hit_tokens(entry, row_context).intersection(meaningful_tokens)
+                score = len(overlap)
+                if score <= 0:
+                    continue
+                scored.append((entry, score))
+                if score > best_score:
+                    best_score = score
+
+            if scored and best_score > 0:
+                hits = [entry for entry, score in scored if score == best_score]
+
+    # Starting class is a tiebreaker only after source-path filtering. This
+    # keeps city-specific source paths (e.g. Limsa/Ul'dah variants) pinned to
+    # their own rows so excluded states can be applied correctly.
+    if hits and len(hits) > 1:
+        city_key = _starting_city_for_class(starting_class)
+        city_tokens = _STARTING_CITY_SOURCE_TOKENS.get(city_key, set()) if city_key else set()
+        if city_tokens:
+            city_filtered = [
+                entry
+                for entry in hits
+                if _hit_tokens(entry, row_context).intersection(city_tokens)
+            ]
+            if city_filtered:
+                hits = city_filtered
+
+    return hits
+
+
+def _filter_hits_by_unlock_field(
+    *,
+    bucket: str,
+    match_labels: list[str],
+    hits: list[tuple[str, int, str]] | None,
+    row_context: dict[tuple[str, int, str], dict[str, Any]],
+) -> list[tuple[str, int, str]] | None:
+    if not hits:
+        return hits
+    if bucket != "quest" and not bucket.startswith("duty/collection"):
+        return hits
+    if not match_labels:
+        return hits
+
+    label_norm = _norm_lookup_key(match_labels[0])
+    if not label_norm:
+        return hits
+
+    filtered: list[tuple[str, int, str]] = []
+    for entry in hits:
+        data = row_context.get((str(entry[0]), int(entry[1]), str(entry[2])), {})
+        row_json_obj = data.get("row_json_obj")
+        if not isinstance(row_json_obj, dict):
+            continue
+        for field in ("unlocked_by", "unlocks"):
+            value = row_json_obj.get(field)
+            if isinstance(value, str) and _norm_lookup_key(value) == label_norm:
+                filtered.append(entry)
+                break
+    return filtered or hits
+
+
+def _filter_fate_hits(
+    *,
+    bucket: str,
+    hits: list[tuple[str, int, str]] | None,
+) -> list[tuple[str, int, str]] | None:
+    if not hits or not bucket.startswith("duty/fate/"):
+        return hits
+    filtered = [entry for entry in hits if "fate" in str(entry[0]).casefold()]
+    return filtered or hits
+
+
+def _filter_gathering_log_hits_by_type(
+    *,
+    bucket: str,
+    hits: list[tuple[str, int, str]] | None,
+    row_context: dict[tuple[str, int, str], dict[str, Any]],
+) -> list[tuple[str, int, str]] | None:
+    if not hits or not bucket.startswith("logs/gathering/gathering-log/"):
+        return hits
+
+    expected_type = {
+        "logging": "logging",
+        "harvesting": "harvesting",
+        "mining": "mining",
+        "quarrying": "quarrying",
+    }.get(_bucket_tail(bucket))
+    if not expected_type:
+        return hits
+
+    filtered: list[tuple[str, int, str]] = []
+    for entry in hits:
+        data = row_context.get((str(entry[0]), int(entry[1]), str(entry[2])), {})
+        row_json_obj = data.get("row_json_obj")
+        if not isinstance(row_json_obj, dict):
+            continue
+        row_type = _norm_lookup_key(str(row_json_obj.get("type") or ""))
+        if row_type == expected_type:
+            filtered.append(entry)
+    return filtered or hits
+
+
+def _filter_crafting_log_hits(
+    *,
+    bucket: str,
+    match_labels: Sequence[str],
+    hits: list[tuple[str, int, str]] | None,
+    row_context: dict[tuple[str, int, str], dict[str, Any]],
+) -> list[tuple[str, int, str]] | None:
+    if not hits or not bucket.startswith("logs/crafting-log/"):
+        return hits
+
+    alias_norms = {
+        _norm_label(str(label))
+        for label in (match_labels or [])
+        if str(label).strip()
+    }
+    alias_lookup_norms = {
+        _norm_lookup_key(str(label))
+        for label in (match_labels or [])
+        if str(label).strip()
+    }
+    if not alias_norms and not alias_lookup_norms:
+        return hits
+
+    filtered: list[tuple[str, int, str]] = []
+    for entry in hits:
+        data = row_context.get((str(entry[0]), int(entry[1]), str(entry[2])), {})
+        label_text = str(data.get("label") or "") if isinstance(data, dict) else ""
+        row_json_obj = data.get("row_json_obj") if isinstance(data, dict) else None
+        item_text = ""
+        if isinstance(row_json_obj, dict):
+            item_text = str(row_json_obj.get("item") or "")
+
+        candidates_norm = {_norm_label(label_text), _norm_label(item_text)}
+        candidates_lookup = {_norm_lookup_key(label_text), _norm_lookup_key(item_text)}
+
+        if candidates_norm.intersection(alias_norms) or candidates_lookup.intersection(alias_lookup_norms):
+            filtered.append(entry)
+
+    # If only ingredient-side text matched, treat it as unresolved instead of faning out.
+    return filtered
+
+
+def _select_progression_hit(
+    *,
+    bucket: str,
+    match_labels: list[str],
+    hits: list[tuple[str, int, str]] | None,
+) -> list[tuple[str, int, str]] | None:
+    if not hits:
+        return hits
+    if bucket != "achievement":
+        return hits
+    if not match_labels:
+        return hits
+
+    source_label = match_labels[0]
+    m = re.search(r"\b(\d{1,2}|I|II|III|IV|V|VI|VII|VIII|IX|X)$", source_label.strip(), flags=re.IGNORECASE)
+    if not m:
+        return hits
+
+    token = m.group(1).upper()
+    if token.isdigit():
+        index = int(token)
+    else:
+        index = _ROMAN_MAP.get(token)
+    if not index or index <= 0:
+        return hits
+
+    ordered = sorted(hits, key=lambda entry: int(entry[1]))
+    if index > len(ordered):
+        return hits
+    return [ordered[index - 1]]
+
+
+def _collapse_duplicate_signature_hits(
+    *,
+    bucket: str,
+    hits: list[tuple[str, int, str]] | None,
+    row_context: dict[tuple[str, int, str], dict[str, Any]],
+) -> list[tuple[str, int, str]] | None:
+    if not hits or len(hits) <= 1:
+        return hits
+    if bucket == "duty/island-sanctuary/buildings":
+        return hits
+
+    out: list[tuple[str, int, str]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for entry in sorted(hits, key=lambda item: (str(item[0]), int(item[1]), str(item[2]))):
+        data = row_context.get((str(entry[0]), int(entry[1]), str(entry[2])), {})
+        row_json_obj = data.get("row_json_obj") if isinstance(data, dict) else None
+        if isinstance(row_json_obj, dict):
+            row_json_sig = json.dumps(row_json_obj, sort_keys=True, ensure_ascii=True)
+        else:
+            row_json_sig = "{}"
+        sig = (
+            str(data.get("sheet_name") or entry[0]),
+            str(data.get("section_label") or ""),
+            str(data.get("label") or ""),
+            row_json_sig,
+        )
+        if sig in seen:
+            continue
+        seen.add(sig)
+        out.append(entry)
+
+    return out or hits
+
+
+def _filter_island_sanctuary_hits(
+    *,
+    bucket: str,
+    hits: list[tuple[str, int, str]] | None,
+    source_state: str,
+    source_value: float | None,
+) -> list[tuple[str, int, str]] | None:
+    if not hits or not bucket.startswith("duty/island-sanctuary/"):
+        return hits
+
+    bucket_sheet = {
+        "duty/island-sanctuary/animals": "Island Sanctuary - Animals",
+        "duty/island-sanctuary/buildings": "Island Sanctuary - Buildings",
+        "duty/island-sanctuary/crafting": "Island Sanctuary - Crafting",
+        "duty/island-sanctuary/isleventory": "Island Sanctuary - Isleventory",
+        "duty/island-sanctuary/rank": "Island Sanctuary - Rank",
+    }.get(bucket)
+
+    filtered = hits
+    if bucket_sheet:
+        filtered = [entry for entry in hits if str(entry[0]) == bucket_sheet]
+
+    if bucket == "duty/island-sanctuary/buildings" and source_state == "value":
+        count = int(max(0, round(float(source_value or 0.0))))
+        if count <= 0:
+            return []
+        filtered = sorted(filtered, key=lambda entry: int(entry[1]))[:count]
+
+    return filtered
+
+
+def _allows_multi_hit_candidate(
+    *,
+    bucket: str,
+    source_labels: list[str] | tuple[str, ...],
+    match_labels: list[str] | None = None,
+    hits: list[tuple[str, int, str]] | None = None,
+    row_context: dict[tuple[str, int, str], dict[str, Any]] | None = None,
+) -> bool:
+    bucket_value = str(bucket or "")
+    if bucket_value.startswith("character/adventure-plate"):
+        return bool(_adventure_plate_sections_from_labels(source_labels))
+
+    if bucket_value == "duty/island-sanctuary/buildings":
+        return bool(hits)
+
+    if (bucket_value == "quest" or bucket_value.startswith("duty/collection")) and hits and row_context:
+        labels = match_labels or _candidate_match_labels(source_labels)
+        if not labels:
+            return False
+        label_norm = _norm_lookup_key(labels[0])
+        if not label_norm:
+            return False
+        for entry in hits:
+            data = row_context.get((str(entry[0]), int(entry[1]), str(entry[2])), {})
+            row_json_obj = data.get("row_json_obj")
+            if not isinstance(row_json_obj, dict):
+                return False
+            unlocked_by = row_json_obj.get("unlocked_by")
+            unlocks = row_json_obj.get("unlocks")
+            if not (
+                (isinstance(unlocked_by, str) and _norm_lookup_key(unlocked_by) == label_norm)
+                or (isinstance(unlocks, str) and _norm_lookup_key(unlocks) == label_norm)
+            ):
+                return False
+        return True
+
+    return False
+
+
 def _partial_match_hits_generic(
     aliases: list[str],
     norm_index: dict[str, list[tuple[str, int, str]]],
@@ -2059,6 +2980,13 @@ def import_desktop_completion(
 
     log(f"Loading desktop completion payload: {completion_path}")
     payload = load_completion_payload(completion_path)
+    payload_starting_class = _completion_payload_starting_class(payload)
+    effective_starting_class = payload_starting_class or character["starting_class"]
+    if payload_starting_class and payload_starting_class != character["starting_class"]:
+        log(
+            "Using starting class from completion payload: "
+            f"{payload_starting_class} (character default: {character['starting_class']})"
+        )
 
     resource_root = resolve_resource_root()
     if resource_root is None:
@@ -2223,6 +3151,8 @@ def import_desktop_completion(
     # Society reputation ranks are keyed by (tribe, rank) because rank names
     # repeat across every allied society.
     society_idx: dict[tuple[str, str], list[tuple[str, int, str]]] = {}
+    adventure_plate_row_sections: dict[tuple[str, int, str], str] = {}
+    row_context: dict[tuple[str, int, str], dict[str, Any]] = {}
 
     for row in rows:
         sheet_name = row["sheet_name"]
@@ -2242,6 +3172,18 @@ def import_desktop_completion(
 
         entry = (sheet_name, int(row["row_index"]), row["row_type"])
         section_label = str(row["section_label"] or "")
+
+        row_context[entry] = {
+            "sheet_name": sheet_name,
+            "section_label": section_label,
+            "label": label,
+            "row_json_obj": row_json_obj,
+        }
+
+        if sheet_name == "Adventurer Plate":
+            section_key = _adventure_plate_section_key(section_label)
+            if section_key:
+                adventure_plate_row_sections[entry] = section_key
 
         if sheet_name == "Shared FATE":
             section_key = _norm_lookup_key(section_label)
@@ -2303,7 +3245,11 @@ def import_desktop_completion(
                 global_norm_idx.setdefault(norm, []).append(entry)
                 section_norm.setdefault(norm, []).append(entry)
 
-        for bucket in _sheet_buckets(sheet_name):
+        for bucket in _row_buckets_for_sheet(
+            sheet_name,
+            section_label,
+            row_json_obj=row_json_obj,
+        ):
             for idx_label in _index_labels_for_bucket(
                 bucket=bucket,
                 node_label=label,
@@ -2374,6 +3320,7 @@ def import_desktop_completion(
     row_actions: dict[tuple[str, int], dict[str, Any]] = {}
     matched_candidates = 0
     ignored_untracked = 0
+    ambiguous_candidates = 0
 
     for candidate in candidates:
         bucket = str(candidate.get("bucket") or "")
@@ -2391,8 +3338,14 @@ def import_desktop_completion(
             for label in candidate.get("labels", [])
             if isinstance(label, str) and str(label).strip()
         ]
+        match_labels = _candidate_match_labels(labels)
+
+        if _is_quarantined_bucket(bucket):
+            ignored_untracked += 1
+            continue
+
         bucket_tail = _bucket_tail(bucket)
-        if not labels and bucket_tail not in _POSITIONAL_VALUE_BUCKETS:
+        if not match_labels and bucket_tail not in _POSITIONAL_VALUE_BUCKETS:
             unmatched_items.append({
                 "bucket": bucket,
                 "label": f"id:{candidate.get('source_id')}",
@@ -2408,7 +3361,7 @@ def import_desktop_completion(
             # Prefer explicit label matching when available. This is robust to
             # source-order drift between desktop app versions and workbook row
             # order. If labels are unavailable, preserve positional fallback.
-            for source_label in labels:
+            for source_label in match_labels:
                 for alias in _classes_jobs_label_aliases(source_label):
                     norm = _norm_label(alias)
                     if not norm:
@@ -2430,7 +3383,7 @@ def import_desktop_completion(
             hits = positional_sheet_idx[bucket_tail].get(source_id)
         elif bucket_tail == "societal-relations":
             # Keyed by (tribe, rank); the source name token carries both.
-            for source_label in labels:
+            for source_label in match_labels:
                 parsed = _parse_society_rank(source_label)
                 if not parsed:
                     continue
@@ -2442,7 +3395,7 @@ def import_desktop_completion(
             hits = blue_mage_idx.get((bucket, source_id))
 
         if not hits and bucket.startswith("logs/hunting/"):
-            for source_label in labels:
+            for source_label in match_labels:
                 parsed = _parse_hunting_source_label(source_label)
                 if not parsed:
                     continue
@@ -2451,7 +3404,7 @@ def import_desktop_completion(
                     break
 
         if not hits and bucket.startswith("travel/shared-fate/"):
-            for source_label in labels:
+            for source_label in match_labels:
                 parsed = _parse_place_rank(source_label)
                 if not parsed:
                     continue
@@ -2463,7 +3416,7 @@ def import_desktop_completion(
         if not hits and bucket.startswith("travel/aether-currents/"):
             zone_key = _aether_zone_from_path(source_path_parts)
             if zone_key:
-                for source_label in labels:
+                for source_label in match_labels:
                     current_value = _parse_current_index(source_label)
                     if current_value is None:
                         continue
@@ -2483,7 +3436,7 @@ def import_desktop_completion(
         aliases: list[str] = []
         if not hits and bucket_tail not in _EXCLUSIVE_MATCH_BUCKET_TAILS:
             seen_aliases: set[str] = set()
-            for source_label in labels:
+            for source_label in match_labels:
                 for base_alias in _candidate_aliases(bucket, source_label):
                     if is_sectionless:
                         ordered_aliases = [base_alias]
@@ -2499,8 +3452,17 @@ def import_desktop_completion(
                         seen_aliases.add(key)
                         aliases.append(alias)
 
-            bucket_exact = exact_idx.get(bucket, {})
-            bucket_norm = norm_idx.get(bucket, {})
+            bucket_exact: dict[str, list[tuple[str, int, str]]] = {}
+            bucket_norm: dict[str, list[tuple[str, int, str]]] = {}
+            bucket_norm_keys: list[str] = []
+            for bucket_key in _bucket_lookup_chain(bucket):
+                candidate_exact = exact_idx.get(bucket_key)
+                candidate_norm = norm_idx.get(bucket_key)
+                if candidate_exact or candidate_norm:
+                    bucket_exact = candidate_exact or {}
+                    bucket_norm = candidate_norm or {}
+                    bucket_norm_keys = norm_keys_idx.get(bucket_key, [])
+                    break
 
             for alias in aliases:
                 hits = bucket_exact.get(alias.casefold())
@@ -2516,7 +3478,7 @@ def import_desktop_completion(
                     bucket=bucket,
                     aliases=aliases,
                     bucket_norm=bucket_norm,
-                    bucket_norm_keys=norm_keys_idx.get(bucket, []),
+                    bucket_norm_keys=bucket_norm_keys,
                 )
 
             # Cross-sheet (global) fallback is scoped to the source item's own
@@ -2565,16 +3527,108 @@ def import_desktop_completion(
                     )
 
             # Custom items must map to a single unambiguous row.
-            if is_sectionless and (_dedupe_hits(hits) or []) and len(_dedupe_hits(hits)) != 1:
-                hits = None
+            if is_sectionless:
+                deduped_sectionless = _dedupe_hits(hits) or []
+                if deduped_sectionless and len(deduped_sectionless) != 1:
+                    hits = None
 
         hits = _dedupe_hits(_filter_hits_for_bucket(bucket, hits))
+        hits = _dedupe_hits(
+            _filter_island_sanctuary_hits(
+                bucket=bucket,
+                hits=hits,
+                source_state=source_state,
+                source_value=source_value,
+            )
+        )
+        hits = _dedupe_hits(
+            _filter_adventure_plate_hits_by_sections(
+                bucket=bucket,
+                source_labels=labels,
+                hits=hits,
+                row_sections=adventure_plate_row_sections,
+            )
+        )
+        hits = _dedupe_hits(
+            _filter_fate_hits(
+                bucket=bucket,
+                hits=hits,
+            )
+        )
+        hits = _dedupe_hits(
+            _filter_gathering_log_hits_by_type(
+                bucket=bucket,
+                hits=hits,
+                row_context=row_context,
+            )
+        )
+        hits = _dedupe_hits(
+            _filter_crafting_log_hits(
+                bucket=bucket,
+                match_labels=match_labels,
+                hits=hits,
+                row_context=row_context,
+            )
+        )
+        hits = _dedupe_hits(
+            _filter_quest_hits_by_source_tokens(
+                bucket=bucket,
+                source_labels=labels,
+                hits=hits,
+                row_context=row_context,
+                starting_class=effective_starting_class,
+            )
+        )
+        hits = _dedupe_hits(
+            _filter_hits_by_unlock_field(
+                bucket=bucket,
+                match_labels=match_labels,
+                hits=hits,
+                row_context=row_context,
+            )
+        )
+        hits = _dedupe_hits(
+            _select_progression_hit(
+                bucket=bucket,
+                match_labels=match_labels,
+                hits=hits,
+            )
+        )
+        hits = _dedupe_hits(
+            _collapse_duplicate_signature_hits(
+                bucket=bucket,
+                hits=hits,
+                row_context=row_context,
+            )
+        )
+
+        if hits and len(hits) > 1 and not _allows_multi_hit_candidate(
+            bucket=bucket,
+            source_labels=labels,
+            match_labels=match_labels,
+            hits=hits,
+            row_context=row_context,
+        ):
+            ambiguous_candidates += 1
+            primary_label = match_labels[0] if match_labels else f"id:{candidate.get('source_id')}"
+            unmatched_item = {
+                "bucket": bucket,
+                "label": primary_label,
+                "source_id": candidate.get("source_id"),
+                "source_state": source_state,
+                "reason": "ambiguous_multi_hit",
+                "attempted_aliases": aliases[:6],
+                "hit_count": len(hits),
+                "hit_sheets": sorted({str(entry[0]) for entry in hits})[:8],
+            }
+            unmatched_items.append(unmatched_item)
+            continue
 
         if not hits:
             if bucket in _IGNORED_UNTRACKED_BUCKETS:
                 ignored_untracked += 1
                 continue
-            primary_label = labels[0]
+            primary_label = match_labels[0] if match_labels else f"id:{candidate.get('source_id')}"
             reason, reason_extra = _unmatched_reason(
                 bucket=bucket,
                 raw_label=primary_label,
@@ -2595,23 +3649,34 @@ def import_desktop_completion(
             continue
 
         matched_candidates += 1
+        apply_state = source_state
+        apply_value = source_value
+        if bucket == "duty/island-sanctuary/buildings" and source_state == "value" and source_value:
+            # Building completion values represent completed-slot count.
+            apply_state = "done"
+            apply_value = None
         for sheet_name, row_index, row_type in hits:
             _merge_row_action(
                 row_actions,
                 (sheet_name, row_index),
                 row_type=row_type,
-                state=source_state,
-                value=source_value,
+                state=apply_state,
+                value=apply_value,
             )
 
     log(
         f"Matched {matched_candidates}/{total_candidates} candidates; "
         f"resolved to {len(row_actions)} workbook rows"
     )
+    if ambiguous_candidates:
+        log(
+            f"Skipped {ambiguous_candidates} ambiguous candidates "
+            "(multiple row hits after bucket filtering)"
+        )
 
     rows_applied = 0
     rows_skipped = 0
-    starting_class = character["starting_class"]
+    starting_class = effective_starting_class
 
     with progress_io.batch(conn, character_id):
         ordered_targets = sorted(row_actions.items(), key=lambda item: (item[0][0], item[0][1]))

@@ -21,12 +21,19 @@ def test_norm_label():
 def test_strip_marker_prefixes():
     assert li._strip_marker_prefixes("» A Quest") == "A Quest"
     assert li._strip_marker_prefixes("'Quoted'") == "'Quoted'"
+    assert li._strip_marker_prefixes("Α Test of Wιll") == "Α Test of Wιll"
 
 
 def test_quest_label_aliases():
     aliases = li._quest_label_aliases("Abalathian Sidequests (A Cropper's Duty)")
     assert "A Cropper's Duty" in aliases
     assert any("Abalathian" in a for a in aliases)
+
+    renamed = li._quest_label_aliases("Hither and Yarns")
+    assert "Hither and Yams" in renamed
+
+    renamed2 = li._quest_label_aliases("Crossing Paths")
+    assert "Crossroads" in renamed2
 
 
 def test_add_candidate_filters():
@@ -60,8 +67,22 @@ def test_collect_candidates():
 
 def test_sheet_buckets():
     assert "quest" in li._sheet_buckets("Story Quests")
+    assert li._sheet_buckets("Fishing Leves") == {"quest"}
+    assert li._sheet_buckets("Carpentry Leves") == {"quest"}
     assert "minion" in li._sheet_buckets("Minion Guide")
     assert li._sheet_buckets("Triple Triad Cards") == {"tripletriad"}
+    assert li._sheet_buckets("Quests Achievements") == {"achievement"}
+    assert li._sheet_buckets("Goldsmithing Log") == {"logs/crafting-log/goldsmith"}
+    assert li._sheet_buckets("Mount Speed") == {"travel/mount-speed"}
+    assert li._sheet_buckets("Bozja - Duties") == {"duty/exploratory-missions/bozja/duties"}
+    assert li._sheet_buckets("Miner Logs") == {
+        "logs/gathering/gathering-log/mining",
+        "logs/gathering/gathering-log/quarrying",
+    }
+    assert li._sheet_buckets("Triple Triad Opponents") == {
+        "character/gold-saucer/triple-triad-opponents"
+    }
+    assert li._sheet_buckets("Hall of the Novice") == {"duty/hall-of-the-novice"}
     assert li._sheet_buckets("Random Sheet") == set()
 
 
@@ -156,7 +177,89 @@ def test_path_group_key_and_bucket_from_path():
     assert li._completion_bucket_from_path(
         ("overall", "character", "adventure-plate", "minion", "348")
     ) == "character/adventure-plate/minion"
+    assert li._path_group_key(
+        [
+            "overall",
+            "duty",
+            "exploratory-missions",
+            "bozja",
+            "resistance-rank",
+            "x1",
+        ]
+    ) == "duty/exploratory-missions/bozja/resistance-rank"
+    assert li._path_group_key(
+        [
+            "overall",
+            "logs",
+            "gathering",
+            "gathering-log",
+            "mining",
+            "level",
+            "x9",
+        ]
+    ) == "logs/gathering/gathering-log/mining"
+    assert li._path_group_key(
+        [
+            "overall",
+            "duty",
+            "duty-raid-finder",
+            "guildhests",
+            "archer",
+            "43",
+        ]
+    ) == "duty/duty-raid-finder/guildhests/archer"
+    assert li._path_group_key(
+        [
+            "overall",
+            "duty",
+            "hall-of-the-novice",
+            "tank",
+            "7",
+        ]
+    ) == "duty/hall-of-the-novice/tank"
+    assert li._path_group_key(
+        [
+            "overall",
+            "duty",
+            "island-sanctuary",
+            "crafting",
+            "tools",
+            "12",
+        ]
+    ) == "duty/island-sanctuary/crafting/tools"
+    assert li._path_group_key(
+        [
+            "overall",
+            "duty",
+            "island-sanctuary",
+            "isleventory",
+            "materials",
+            "19",
+        ]
+    ) == "duty/island-sanctuary/isleventory/materials"
+    assert li._path_group_key(
+        [
+            "overall",
+            "duty",
+            "collection",
+            "portable-archive",
+            "the-copied-factory",
+            "9",
+        ]
+    ) == "duty/collection/portable-archive/the-copied-factory"
+    assert li._completion_bucket_from_path(
+        ("overall", "duty", "collection", "portable-archive", "the-puppets-bunker", "10")
+    ) == "duty/collection/portable-archive/the-puppets-bunker"
     assert li._path_group_key(["overall", "custom", "x100"]) == "custom"
+
+
+def test_completion_payload_starting_class_helpers():
+    payload = {"starting-class": "Archer"}
+    assert li._completion_payload_starting_class(payload) == "Archer"
+    assert li._starting_city_for_class("Archer") == "gridania"
+    assert li._starting_city_for_class("Marauder") == "limsa"
+    assert li._starting_city_for_class("Thaumaturge") == "uldah"
+    assert li._starting_city_for_class(None) is None
 
 
 def test_bucket_lookup_chain_and_lookup():
@@ -196,6 +299,135 @@ def test_misc_string_helpers():
     assert li._norm_lookup_key("A'b-C!") == "abc"
     assert li._bucket_tail("a/b/classes-jobs") == "classes-jobs"
     assert li._bucket_tail("") == ""
+
+
+def test_guildhests_bucket_helpers():
+    assert li._guildhests_bucket_from_section("Dark Knight") == "duty/duty-raid-finder/guildhests/dark-knight"
+    assert li._guildhests_bucket_from_section("") is None
+    assert "duty/duty-raid-finder/guildhests/archer" in li._row_buckets_for_sheet("Guildhests", "Archer")
+
+
+def test_hall_of_the_novice_role_helpers():
+    assert li._hall_of_the_novice_role_key("Tank") == "tank"
+    assert li._hall_of_the_novice_role_key("Damage Dealer") == "dps"
+    assert li._hall_of_the_novice_bucket_from_role("Healer") == "duty/hall-of-the-novice/healer"
+    buckets = li._row_buckets_for_sheet(
+        "Hall of the Novice",
+        "Hall Of The Novice",
+        row_json_obj={"class": "DPS"},
+    )
+    assert "duty/hall-of-the-novice/dps" in buckets
+
+    craft_buckets = li._row_buckets_for_sheet(
+        "Island Sanctuary - Crafting",
+        "Tools",
+        row_json_obj={"item": "Islekeep's Shovel"},
+    )
+    assert "duty/island-sanctuary/crafting" in craft_buckets
+    assert "duty/island-sanctuary/crafting/tools" in craft_buckets
+
+    isleventory_buckets = li._row_buckets_for_sheet(
+        "Island Sanctuary - Isleventory",
+        "Gardening Starters",
+        row_json_obj={"item": "Island Runner Bean Seeds"},
+    )
+    assert "duty/island-sanctuary/isleventory" in isleventory_buckets
+    assert "duty/island-sanctuary/isleventory/gardening-starters" in isleventory_buckets
+
+    collection_buckets = li._row_buckets_for_sheet(
+        "Collection",
+        "The Copied Factory",
+        row_json_obj={"entry": "Memory of a Damaged Machine"},
+    )
+    assert "duty/collection" in collection_buckets
+    assert "duty/collection/portable-archive" in collection_buckets
+    assert "duty/collection/portable-archive/the-copied-factory" in collection_buckets
+
+    collection_top_buckets = li._row_buckets_for_sheet(
+        "Collection",
+        "Portable Archive",
+        row_json_obj={"entry": "Portable Archive"},
+    )
+    assert "duty/collection" in collection_top_buckets
+    assert "duty/collection/portable-archive" in collection_top_buckets
+
+
+def test_adventure_plate_section_tag_helpers():
+    tags = li._adventure_plate_source_section_tags(
+        {
+            "decorations": [
+                "@PLATE.BASE",
+                "@PLATE.TOP_BORDER",
+                "@PORTRAIT.ACCENT",
+            ]
+        }
+    )
+    assert f"{li._ADVENTURE_PLATE_SECTION_TAG_PREFIX}baseplate" in tags
+    assert f"{li._ADVENTURE_PLATE_SECTION_TAG_PREFIX}topborder" in tags
+    assert f"{li._ADVENTURE_PLATE_SECTION_TAG_PREFIX}accent" in tags
+
+    sections = li._adventure_plate_sections_from_labels(sorted(tags))
+    assert sections == {"baseplate", "topborder", "accent"}
+
+    labels = [
+        f"{li._ADVENTURE_PLATE_SECTION_TAG_PREFIX}baseplate",
+        "Turali Travel Agency",
+    ]
+    assert li._candidate_match_labels(labels) == ["Turali Travel Agency"]
+
+
+def test_index_labels_for_bucket_guildhests_and_aetherytes():
+    guild_labels = li._index_labels_for_bucket(
+        bucket="duty/duty-raid-finder/guildhests/archer",
+        node_label="10",
+        row_json_obj={"dungeon": "Basic Training: Enemy Parties"},
+    )
+    assert "Basic Training: Enemy Parties" in guild_labels
+
+    novice_labels = li._index_labels_for_bucket(
+        bucket="duty/hall-of-the-novice/tank",
+        node_label="Tank",
+        row_json_obj={"quest": "Avoid Area of Effect Attacks"},
+    )
+    assert "Avoid Area of Effect Attacks" in novice_labels
+
+    aeth_labels = li._index_labels_for_bucket(
+        bucket="travel/aetherytes/the-far-east",
+        node_label="Kugane",
+        row_json_obj={
+            "zone_name": "Kugane",
+            "type": "Crystal",
+            "location_name": "Kugane",
+        },
+    )
+    assert any(label.startswith("@AETHSIG.") for label in aeth_labels)
+
+    aeth_parent_labels = li._index_labels_for_bucket(
+        bucket="travel/aetherytes",
+        node_label="Kugane",
+        row_json_obj={
+            "zone_name": "Kugane",
+            "type": "Crystal",
+            "location_name": "Kugane",
+        },
+    )
+    assert any(label.startswith("@AETHSIG.") for label in aeth_parent_labels)
+
+
+def test_aetheryte_source_signatures():
+    item = {
+        "name_en": "Kugane",
+        "type": "@TYPE.AETHERYTE.CRYSTAL",
+        "zone": "@PLACE.KUGANE",
+    }
+    signatures = li._aetheryte_source_signatures(item)
+    assert "@AETHSIG.kugane.crystal.kugane" in signatures
+
+
+def test_is_quarantined_bucket():
+    assert li._is_quarantined_bucket("duty/squadron/command-missions")
+    assert li._is_quarantined_bucket("duty/trust/dt")
+    assert not li._is_quarantined_bucket("duty/exploratory-missions/bozja/duties")
 
 
 def test_parse_place_rank_and_current():
@@ -246,8 +478,368 @@ def test_filter_hits_for_bucket_scopes_adventure_plate():
     filtered_custom = li._filter_hits_for_bucket("custom", custom_hits)
     assert filtered_custom == [("Story Quests", 11, "checkbox")]
 
+    duty_hits = [
+        ("Trials", 52, "checkbox"),
+        ("Story Quests", 900, "checkbox"),
+    ]
+    assert li._filter_hits_for_bucket("quest", duty_hits) == [
+        ("Story Quests", 900, "checkbox")
+    ]
+    assert li._filter_hits_for_bucket("custom", duty_hits) == [
+        ("Story Quests", 900, "checkbox")
+    ]
+
     untouched = li._filter_hits_for_bucket("character/relic-gear/lucis-tools", hits)
     assert untouched == hits
+
+    crafting_hits = [
+        ("Goldsmithing Log", 1, "checkbox"),
+        ("Blacksmithing Log", 2, "checkbox"),
+    ]
+    assert li._filter_hits_for_bucket(
+        "logs/crafting-log/goldsmith",
+        crafting_hits,
+    ) == [("Goldsmithing Log", 1, "checkbox")]
+
+    mount_speed_hits = [
+        ("Mount Speed", 10, "checkbox"),
+        ("Aether Currents", 10, "checkbox"),
+    ]
+    assert li._filter_hits_for_bucket(
+        "travel/mount-speed/la-noscea",
+        mount_speed_hits,
+    ) == [("Mount Speed", 10, "checkbox")]
+
+    opponents_hits = [
+        ("Triple Triad Cards", 10, "checkbox"),
+        ("Triple Triad Opponents", 10, "checkbox"),
+    ]
+    assert li._filter_hits_for_bucket(
+        "character/gold-saucer/triple-triad-opponents",
+        opponents_hits,
+    ) == [("Triple Triad Opponents", 10, "checkbox")]
+
+
+def test_filter_adventure_plate_hits_by_sections_and_multi_hit_allowance():
+    hits = [
+        ("Adventurer Plate", 77, "checkbox"),
+        ("Adventurer Plate", 302, "checkbox"),
+        ("Adventurer Plate", 516, "checkbox"),
+    ]
+    row_sections = {
+        ("Adventurer Plate", 77, "checkbox"): "baseplate",
+        ("Adventurer Plate", 302, "checkbox"): "topborder",
+        ("Adventurer Plate", 516, "checkbox"): "accent",
+    }
+    labels = [
+        "Turali Travel Agency",
+        f"{li._ADVENTURE_PLATE_SECTION_TAG_PREFIX}baseplate",
+        f"{li._ADVENTURE_PLATE_SECTION_TAG_PREFIX}accent",
+    ]
+
+    filtered = li._filter_adventure_plate_hits_by_sections(
+        bucket="character/adventure-plate",
+        source_labels=labels,
+        hits=hits,
+        row_sections=row_sections,
+    )
+    assert filtered == [
+        ("Adventurer Plate", 77, "checkbox"),
+        ("Adventurer Plate", 516, "checkbox"),
+    ]
+    assert li._allows_multi_hit_candidate(
+        bucket="character/adventure-plate",
+        source_labels=labels,
+    )
+    assert not li._allows_multi_hit_candidate(
+        bucket="quest",
+        source_labels=labels,
+    )
+
+
+def test_quest_source_path_tags_and_filters():
+    tags = li._quest_source_path_token_tags(
+        "duty/quest/sidequests/gridanian-sidequests/gridania.json"
+    )
+    labels = ["An Ill-conceived Venture", *sorted(tags)]
+    tokens = li._quest_path_tokens_from_labels(labels)
+    assert "gridania" in tokens
+    assert "gridaniansidequests" in tokens
+
+    hits = [
+        ("Gridanian Sidequests", 21, "checkbox"),
+        ("Lominsan Sidequests", 26, "checkbox"),
+        ("Ul'dahn Sidequests", 24, "checkbox"),
+    ]
+    row_context = {
+        ("Gridanian Sidequests", 21, "checkbox"): {
+            "sheet_name": "Gridanian Sidequests",
+            "section_label": "Gridania Quests",
+            "label": "An Ill-conceived Venture",
+            "row_json_obj": {"quest": "An Ill-conceived Venture", "npc": "Troubled Adventurer"},
+        },
+        ("Lominsan Sidequests", 26, "checkbox"): {
+            "sheet_name": "Lominsan Sidequests",
+            "section_label": "Limsa Lominsa Quests",
+            "label": "An Ill-conceived Venture",
+            "row_json_obj": {"quest": "An Ill-conceived Venture", "npc": "Troubled Adventurer"},
+        },
+        ("Ul'dahn Sidequests", 24, "checkbox"): {
+            "sheet_name": "Ul'dahn Sidequests",
+            "section_label": "Ul'Dah Quests",
+            "label": "An Ill-conceived Venture",
+            "row_json_obj": {"quest": "An Ill-conceived Venture", "npc": "Troubled Adventurer"},
+        },
+    }
+
+    filtered = li._filter_quest_hits_by_source_tokens(
+        bucket="quest",
+        source_labels=labels,
+        hits=hits,
+        row_context=row_context,
+        starting_class="Archer",
+    )
+    assert filtered == [("Gridanian Sidequests", 21, "checkbox")]
+
+
+def test_quest_source_path_city_token_beats_starting_class_tiebreaker():
+    labels = [
+        "An Ill-conceived Venture",
+        f"{li._QUEST_PATH_TOKEN_TAG_PREFIX}limsa",
+        f"{li._QUEST_PATH_TOKEN_TAG_PREFIX}lominsa",
+        f"{li._QUEST_PATH_TOKEN_TAG_PREFIX}lominsansidequests",
+    ]
+    hits = [
+        ("Gridanian Sidequests", 21, "checkbox"),
+        ("Lominsan Sidequests", 26, "checkbox"),
+        ("Ul'dahn Sidequests", 24, "checkbox"),
+    ]
+    row_context = {
+        ("Gridanian Sidequests", 21, "checkbox"): {
+            "sheet_name": "Gridanian Sidequests",
+            "section_label": "Gridania Quests",
+            "label": "An Ill-conceived Venture",
+            "row_json_obj": {"quest": "An Ill-conceived Venture"},
+        },
+        ("Lominsan Sidequests", 26, "checkbox"): {
+            "sheet_name": "Lominsan Sidequests",
+            "section_label": "Limsa Lominsa Quests",
+            "label": "An Ill-conceived Venture",
+            "row_json_obj": {"quest": "An Ill-conceived Venture"},
+        },
+        ("Ul'dahn Sidequests", 24, "checkbox"): {
+            "sheet_name": "Ul'dahn Sidequests",
+            "section_label": "Ul'Dah Quests",
+            "label": "An Ill-conceived Venture",
+            "row_json_obj": {"quest": "An Ill-conceived Venture"},
+        },
+    }
+
+    filtered = li._filter_quest_hits_by_source_tokens(
+        bucket="quest",
+        source_labels=labels,
+        hits=hits,
+        row_context=row_context,
+        starting_class="Archer",
+    )
+    assert filtered == [("Lominsan Sidequests", 26, "checkbox")]
+
+
+def test_quest_starting_class_tiebreaker_for_generic_source_path_tokens():
+    labels = [
+        "Call of the Sea",
+        f"{li._QUEST_PATH_TOKEN_TAG_PREFIX}main",
+        f"{li._QUEST_PATH_TOKEN_TAG_PREFIX}mainscenario",
+        f"{li._QUEST_PATH_TOKEN_TAG_PREFIX}quests",
+    ]
+    hits = [
+        ("Gridanian Sidequests", 21, "checkbox"),
+        ("Lominsan Sidequests", 26, "checkbox"),
+        ("Ul'dahn Sidequests", 24, "checkbox"),
+    ]
+    row_context = {
+        ("Gridanian Sidequests", 21, "checkbox"): {
+            "sheet_name": "Gridanian Sidequests",
+            "section_label": "Gridania Quests",
+            "label": "Call of the Sea",
+            "row_json_obj": {"quest": "Call of the Sea"},
+        },
+        ("Lominsan Sidequests", 26, "checkbox"): {
+            "sheet_name": "Lominsan Sidequests",
+            "section_label": "Limsa Lominsa Quests",
+            "label": "Call of the Sea",
+            "row_json_obj": {"quest": "Call of the Sea"},
+        },
+        ("Ul'dahn Sidequests", 24, "checkbox"): {
+            "sheet_name": "Ul'dahn Sidequests",
+            "section_label": "Ul'Dah Quests",
+            "label": "Call of the Sea",
+            "row_json_obj": {"quest": "Call of the Sea"},
+        },
+    }
+
+    filtered = li._filter_quest_hits_by_source_tokens(
+        bucket="quest",
+        source_labels=labels,
+        hits=hits,
+        row_context=row_context,
+        starting_class="Archer",
+    )
+    assert filtered == [("Gridanian Sidequests", 21, "checkbox")]
+
+
+def test_quest_source_path_filter_ignores_generic_tokens():
+    labels = [
+        "Blood in the Water",
+        f"{li._QUEST_PATH_TOKEN_TAG_PREFIX}company",
+        f"{li._QUEST_PATH_TOKEN_TAG_PREFIX}companyleves",
+        f"{li._QUEST_PATH_TOKEN_TAG_PREFIX}immortal",
+        f"{li._QUEST_PATH_TOKEN_TAG_PREFIX}flames",
+        f"{li._QUEST_PATH_TOKEN_TAG_PREFIX}levequests",
+        f"{li._QUEST_PATH_TOKEN_TAG_PREFIX}leves",
+    ]
+    hits = [
+        ("Company Leves", 49, "checkbox"),
+        ("Fishing Leves", 92, "checkbox"),
+    ]
+    row_context = {
+        ("Company Leves", 49, "checkbox"): {
+            "sheet_name": "Company Leves",
+            "section_label": "Immortal Flames Levequests",
+            "label": "Blood in the Water",
+            "row_json_obj": {"name": "Blood in the Water", "type": "Equity"},
+        },
+        ("Fishing Leves", 92, "checkbox"): {
+            "sheet_name": "Fishing Leves",
+            "section_label": "Kugane",
+            "label": "Blood in the Water",
+            "row_json_obj": {"name": "Blood in the Water", "type": "Concord"},
+        },
+    }
+
+    filtered = li._filter_quest_hits_by_source_tokens(
+        bucket="quest",
+        source_labels=labels,
+        hits=hits,
+        row_context=row_context,
+        starting_class=None,
+    )
+    assert filtered == [("Company Leves", 49, "checkbox")]
+
+
+def test_quest_source_path_filter_prefers_highest_token_overlap():
+    labels = [
+        "Simply the Hest",
+        f"{li._QUEST_PATH_TOKEN_TAG_PREFIX}uldahnsidequests",
+        f"{li._QUEST_PATH_TOKEN_TAG_PREFIX}western",
+        f"{li._QUEST_PATH_TOKEN_TAG_PREFIX}westernthanalan",
+        f"{li._QUEST_PATH_TOKEN_TAG_PREFIX}thanalan",
+    ]
+    hits = [
+        ("Lominsan Sidequests", 69, "checkbox"),
+        ("Ul'dahn Sidequests", 44, "checkbox"),
+    ]
+    row_context = {
+        ("Lominsan Sidequests", 69, "checkbox"): {
+            "sheet_name": "Lominsan Sidequests",
+            "section_label": "Western La Noscea Quests",
+            "label": "Simply the Hest",
+            "row_json_obj": {"quest": "Simply the Hest"},
+        },
+        ("Ul'dahn Sidequests", 44, "checkbox"): {
+            "sheet_name": "Ul'dahn Sidequests",
+            "section_label": "Western Thanalan Quests",
+            "label": "Simply the Hest",
+            "row_json_obj": {"quest": "Simply the Hest"},
+        },
+    }
+
+    filtered = li._filter_quest_hits_by_source_tokens(
+        bucket="quest",
+        source_labels=labels,
+        hits=hits,
+        row_context=row_context,
+        starting_class="Archer",
+    )
+    assert filtered == [("Ul'dahn Sidequests", 44, "checkbox")]
+
+
+def test_island_sanctuary_and_gathering_filters():
+    island_hits = [
+        ("Island Sanctuary - Buildings", 37, "checkbox"),
+        ("Island Sanctuary - Buildings", 38, "checkbox"),
+        ("Island Sanctuary - Buildings", 39, "checkbox"),
+        ("Island Sanctuary - Buildings", 40, "checkbox"),
+    ]
+    island_filtered = li._filter_island_sanctuary_hits(
+        bucket="duty/island-sanctuary/buildings",
+        hits=island_hits,
+        source_state="value",
+        source_value=2.0,
+    )
+    assert island_filtered == [
+        ("Island Sanctuary - Buildings", 37, "checkbox"),
+        ("Island Sanctuary - Buildings", 38, "checkbox"),
+    ]
+
+    gathering_hits = [
+        ("Botanist Logs", 115, "checkbox"),
+        ("Botanist Logs", 523, "checkbox"),
+    ]
+    row_context = {
+        ("Botanist Logs", 115, "checkbox"): {
+            "sheet_name": "Botanist Logs",
+            "section_label": "Levels 46-50",
+            "label": "Dark Matter Cluster",
+            "row_json_obj": {"type": "Logging"},
+        },
+        ("Botanist Logs", 523, "checkbox"): {
+            "sheet_name": "Botanist Logs",
+            "section_label": "Levels 46-50",
+            "label": "Dark Matter Cluster",
+            "row_json_obj": {"type": "Harvesting"},
+        },
+    }
+    filtered_logging = li._filter_gathering_log_hits_by_type(
+        bucket="logs/gathering/gathering-log/logging",
+        hits=gathering_hits,
+        row_context=row_context,
+    )
+    assert filtered_logging == [("Botanist Logs", 115, "checkbox")]
+
+    crafting_hits = [
+        ("Culinary Log", 4, "checkbox"),
+        ("Culinary Log", 5, "checkbox"),
+    ]
+    crafting_row_context = {
+        ("Culinary Log", 4, "checkbox"): {
+            "sheet_name": "Culinary Log",
+            "section_label": "Levels 81-85",
+            "label": "Dark Rye Flour",
+            "row_json_obj": {"item": "Dark Rye Flour", "mat_1": "Rye Flour"},
+        },
+        ("Culinary Log", 5, "checkbox"): {
+            "sheet_name": "Culinary Log",
+            "section_label": "Levels 81-85",
+            "label": "Rye Bread",
+            "row_json_obj": {"item": "Rye Bread", "mat_1": "Dark Rye Flour"},
+        },
+    }
+    filtered_crafting = li._filter_crafting_log_hits(
+        bucket="logs/crafting-log/culinarian",
+        match_labels=["Dark Rye Flour"],
+        hits=crafting_hits,
+        row_context=crafting_row_context,
+    )
+    assert filtered_crafting == [("Culinary Log", 4, "checkbox")]
+
+    ingredient_only = li._filter_crafting_log_hits(
+        bucket="logs/crafting-log/culinarian",
+        match_labels=["Dark Rye Flour"],
+        hits=[("Culinary Log", 5, "checkbox")],
+        row_context=crafting_row_context,
+    )
+    assert ingredient_only == []
 
 
 def test_aether_zone_from_path():
@@ -422,6 +1014,49 @@ def test_import_desktop_completion(conn, character_id, tmp_path, monkeypatch):
     assert summary.rows_applied == 2
     assert db.effective_state(connection, character_id, run_id, "Story Quests", 4) == "done"
     assert db.effective_state(connection, character_id, run_id, "Story Quests", 5) == "done"
+
+
+def test_import_desktop_completion_skips_ambiguous_multi_hit(
+    conn,
+    character_id,
+    tmp_path,
+    monkeypatch,
+):
+    connection, run_id = conn
+    from app import db
+
+    monkeypatch.setattr(li, "resolve_resource_root", lambda: tmp_path)
+
+    payload = {
+        "overall": {"custom": {"x100": "Y"}},
+        "custom": {"x100": {"name": "Quest Beta"}},
+    }
+    path = tmp_path / "completion.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    original_filter = li._filter_hits_for_bucket
+
+    def force_ambiguous(bucket: str, hits):
+        filtered = original_filter(bucket, hits)
+        if bucket == "custom" and filtered:
+            return [
+                ("Story Quests", 4, "checkbox"),
+                ("Side Stuff", 5, "checkbox"),
+            ]
+        return filtered
+
+    monkeypatch.setattr(li, "_filter_hits_for_bucket", force_ambiguous)
+
+    summary = li.import_desktop_completion(
+        connection,
+        character_id=character_id,
+        completion_path=path,
+    )
+
+    assert summary.matched_candidates == 0
+    assert summary.unmatched_candidates == 1
+    assert summary.unmatched_items[0]["reason"] == "ambiguous_multi_hit"
+    assert db.effective_state(connection, character_id, run_id, "Story Quests", 4) == "todo"
 
 
 def test_import_desktop_completion_classes_jobs_prefers_label_match(

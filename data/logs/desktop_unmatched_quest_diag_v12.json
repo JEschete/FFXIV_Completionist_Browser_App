@@ -1,0 +1,952 @@
+{
+  "character": {
+    "id": 2,
+    "name": "Juno Mars"
+  },
+  "summary": {
+    "total_candidates": 17124,
+    "matched_candidates": 16678,
+    "unmatched_candidates": 400
+  },
+  "quest_unmatched_count": 58,
+  "quest_unmatched_reason_counts": {
+    "not_found_in_workbook": 55,
+    "quest_wrapper_unresolved": 3
+  },
+  "quest_unmatched": [
+    {
+      "label": "Crossing Paths",
+      "source_id": "69156",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/main-scenario/shadowbringers-main-scenario-quests/69156",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.main",
+        "@QPATH.mainscenario",
+        "@QPATH.quests",
+        "@QPATH.scenario",
+        "@QPATH.shadowbringers",
+        "@QPATH.shadowbringersmainscenarioquests",
+        "Crossing Paths"
+      ]
+    },
+    {
+      "label": "Hither and Yarns",
+      "source_id": "69982",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/main-scenario/endwalker-main-scenario-quests/69982",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.endwalker",
+        "@QPATH.endwalkermainscenarioquests",
+        "@QPATH.main",
+        "@QPATH.mainscenario",
+        "@QPATH.quests",
+        "@QPATH.scenario",
+        "Hither and Yarns"
+      ]
+    },
+    {
+      "label": "\u0391 Test of W\u03b9ll",
+      "source_id": "69991",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/main-scenario/endwalker-main-scenario-quests/69991",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.endwalker",
+        "@QPATH.endwalkermainscenarioquests",
+        "@QPATH.main",
+        "@QPATH.mainscenario",
+        "@QPATH.quests",
+        "@QPATH.scenario",
+        "\u0391 Test of W\u03b9ll"
+      ]
+    },
+    {
+      "label": "First Impressions Last",
+      "source_id": "67313",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/sidequests/dravanian-sidequests/the-dravanian-forelands/67313",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.dravanian",
+        "@QPATH.dravaniansidequests",
+        "@QPATH.forelands",
+        "@QPATH.sidequests",
+        "@QPATH.the",
+        "@QPATH.thedravanianforelands",
+        "First Impressions Last"
+      ]
+    },
+    {
+      "label": "Reach for the Stalls",
+      "source_id": "70763",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/seasonal-events/starlight-celebration-events/70763",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.celebration",
+        "@QPATH.events",
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quests",
+        "@QPATH.seasonal",
+        "@QPATH.seasonalevents",
+        "@QPATH.starlight"
+      ]
+    },
+    {
+      "label": "So You Want to Be a Rogue",
+      "source_id": "65637",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/65637",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "So You Want to Be a Rogue"
+      ]
+    },
+    {
+      "label": "So You Want to Be a Gladiator",
+      "source_id": "65713",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/65713",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "So You Want to Be a Gladiator"
+      ]
+    },
+    {
+      "label": "So You Want to Be a Pugilist",
+      "source_id": "65714",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/65714",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "So You Want to Be a Pugilist"
+      ]
+    },
+    {
+      "label": "So You Want to Be a Marauder",
+      "source_id": "65715",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/65715",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "So You Want to Be a Marauder"
+      ]
+    },
+    {
+      "label": "So You Want to Be a Lancer",
+      "source_id": "65716",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/65716",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "So You Want to Be a Lancer"
+      ]
+    },
+    {
+      "label": "So You Want to Be an Archer",
+      "source_id": "65717",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/65717",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "So You Want to Be an Archer"
+      ]
+    },
+    {
+      "label": "So You Want to Be a Conjurer",
+      "source_id": "65718",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/65718",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "So You Want to Be a Conjurer"
+      ]
+    },
+    {
+      "label": "So You Want to Be a Thaumaturge",
+      "source_id": "65719",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/65719",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "So You Want to Be a Thaumaturge"
+      ]
+    },
+    {
+      "label": "So You Want to Be a Carpenter",
+      "source_id": "65720",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/65720",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "So You Want to Be a Carpenter"
+      ]
+    },
+    {
+      "label": "So You Want to Be a Blacksmith",
+      "source_id": "65721",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/65721",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "So You Want to Be a Blacksmith"
+      ]
+    },
+    {
+      "label": "So You Want to Be an Armorer",
+      "source_id": "65722",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/65722",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "So You Want to Be an Armorer"
+      ]
+    },
+    {
+      "label": "So You Want to Be a Goldsmith",
+      "source_id": "65723",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/65723",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "So You Want to Be a Goldsmith"
+      ]
+    },
+    {
+      "label": "So You Want to Be a Leatherworker",
+      "source_id": "65724",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/65724",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "So You Want to Be a Leatherworker"
+      ]
+    },
+    {
+      "label": "So You Want to Be a Weaver",
+      "source_id": "65725",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/65725",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "So You Want to Be a Weaver"
+      ]
+    },
+    {
+      "label": "So You Want to Be an Alchemist",
+      "source_id": "65726",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/65726",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "So You Want to Be an Alchemist"
+      ]
+    },
+    {
+      "label": "So You Want to Be a Culinarian",
+      "source_id": "65727",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/65727",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "So You Want to Be a Culinarian"
+      ]
+    },
+    {
+      "label": "So You Want to Be a Miner",
+      "source_id": "65728",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/65728",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "So You Want to Be a Miner"
+      ]
+    },
+    {
+      "label": "So You Want to Be a Botanist",
+      "source_id": "65729",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/65729",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "So You Want to Be a Botanist"
+      ]
+    },
+    {
+      "label": "Triple Triad Trial",
+      "source_id": "65973",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/65973",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Triple Triad Trial"
+      ]
+    },
+    {
+      "label": "So You Want to Be an Arcanist",
+      "source_id": "65987",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/65987",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "So You Want to Be an Arcanist"
+      ]
+    },
+    {
+      "label": "Scratch It Rich",
+      "source_id": "66024",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/66024",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Scratch It Rich"
+      ]
+    },
+    {
+      "label": "Hitting the Cactpot",
+      "source_id": "66025",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/66025",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Hitting the Cactpot"
+      ]
+    },
+    {
+      "label": "So You Want to Be a Fisher",
+      "source_id": "66670",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/66670",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "So You Want to Be a Fisher"
+      ]
+    },
+    {
+      "label": "The Favors of the House",
+      "source_id": "67635",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/67635",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "The Favors of the House"
+      ]
+    },
+    {
+      "label": "Leves of Ishgard",
+      "source_id": "67642",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/67642",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Leves of Ishgard"
+      ]
+    },
+    {
+      "label": "Sights of the North",
+      "source_id": "67643",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/67643",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Sights of the North"
+      ]
+    },
+    {
+      "label": "So You Want to Be a Machinist",
+      "source_id": "67645",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/67645",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "So You Want to Be a Machinist"
+      ]
+    },
+    {
+      "label": "A Dark Spectacle",
+      "source_id": "67646",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/67646",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "A Dark Spectacle"
+      ]
+    },
+    {
+      "label": "What's Your Sign",
+      "source_id": "67659",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/67659",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "What's Your Sign"
+      ]
+    },
+    {
+      "label": "What Lies Beneath",
+      "source_id": "67923",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/67923",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "What Lies Beneath"
+      ]
+    },
+    {
+      "label": "Squadron and Commander (Twin Adder)",
+      "source_id": "67925",
+      "reason": "quest_wrapper_unresolved",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/67925",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Squadron and Commander (Twin Adder)"
+      ]
+    },
+    {
+      "label": "Squadron and Commander (Maelstrom)",
+      "source_id": "67926",
+      "reason": "quest_wrapper_unresolved",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/67926",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Squadron and Commander (Maelstrom)"
+      ]
+    },
+    {
+      "label": "Squadron and Commander (Immortal Flames)",
+      "source_id": "67927",
+      "reason": "quest_wrapper_unresolved",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/67927",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Squadron and Commander (Immortal Flames)"
+      ]
+    },
+    {
+      "label": "Sights of Crimson and Dawn",
+      "source_id": "68456",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/68456",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Sights of Crimson and Dawn"
+      ]
+    },
+    {
+      "label": "Leves of Kugane",
+      "source_id": "68457",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/68457",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Leves of Kugane"
+      ]
+    },
+    {
+      "label": "Reach Long and Prosper",
+      "source_id": "68477",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/68477",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Reach Long and Prosper"
+      ]
+    },
+    {
+      "label": "Plucking the Heartstrings",
+      "source_id": "68555",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/68555",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Plucking the Heartstrings"
+      ]
+    },
+    {
+      "label": "Recall of Duty",
+      "source_id": "68624",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/68624",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Recall of Duty"
+      ]
+    },
+    {
+      "label": "Leves of the Crystarium",
+      "source_id": "69138",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/69138",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Leves of the Crystarium"
+      ]
+    },
+    {
+      "label": "The Boutique Always Wins",
+      "source_id": "69139",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/69139",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "The Boutique Always Wins"
+      ]
+    },
+    {
+      "label": "Sights of the First",
+      "source_id": "69140",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/69140",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Sights of the First"
+      ]
+    },
+    {
+      "label": "Memories Rekindled",
+      "source_id": "69295",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/69295",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Memories Rekindled"
+      ]
+    },
+    {
+      "label": "Memoirs from the Front",
+      "source_id": "69478",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/69478",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Memoirs from the Front"
+      ]
+    },
+    {
+      "label": "Open and Inviting",
+      "source_id": "69566",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/69566",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Open and Inviting"
+      ]
+    },
+    {
+      "label": "A Message from Konogg",
+      "source_id": "69580",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/69580",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "A Message from Konogg"
+      ]
+    },
+    {
+      "label": "Dwarves of a Beard",
+      "source_id": "69581",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/69581",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Dwarves of a Beard"
+      ]
+    },
+    {
+      "label": "Strange Glagg",
+      "source_id": "69582",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/69582",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Strange Glagg"
+      ]
+    },
+    {
+      "label": "Dwarves of a Beard Freshened",
+      "source_id": "69583",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/69583",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Dwarves of a Beard Freshened"
+      ]
+    },
+    {
+      "label": "Leves of Old Sharlayan",
+      "source_id": "69706",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/69706",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Leves of Old Sharlayan"
+      ]
+    },
+    {
+      "label": "Sights of the End",
+      "source_id": "69710",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/69710",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Sights of the End"
+      ]
+    },
+    {
+      "label": "Expanding House of Splendors",
+      "source_id": "69711",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/69711",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Expanding House of Splendors"
+      ]
+    },
+    {
+      "label": "Seeing the Cieldalaes",
+      "source_id": "70180",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/70180",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "Seeing the Cieldalaes"
+      ]
+    },
+    {
+      "label": "An Odd Job",
+      "source_id": "70187",
+      "reason": "not_found_in_workbook",
+      "mapped_bucket": null,
+      "source_path": "overall/duty/quest/other-quests/quasi-quests/70187",
+      "source_bucket": "quest",
+      "source_labels": [
+        "@QPATH.other",
+        "@QPATH.otherquests",
+        "@QPATH.quasi",
+        "@QPATH.quasiquests",
+        "@QPATH.quests",
+        "An Odd Job"
+      ]
+    }
+  ]
+}
