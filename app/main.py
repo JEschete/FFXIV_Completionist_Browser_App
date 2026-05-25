@@ -2653,6 +2653,11 @@ async def settings_value_caps_save(request: Request):
             overrides[key] = cap
 
     db.save_value_cap_overrides(overrides)
+    conn = db.get_connection()
+    try:
+        db.clear_progress_rollups(conn)
+    finally:
+        conn.close()
     return RedirectResponse("/settings?saved=Max%20level%20caps%20updated", status_code=303)
 
 

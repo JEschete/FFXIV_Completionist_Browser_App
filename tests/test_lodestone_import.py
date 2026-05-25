@@ -83,6 +83,8 @@ def test_alias_generators():
 def test_candidate_aliases_dispatch():
     assert any("Card" in a for a in li._candidate_aliases("tripletriad", "Dodo"))
     assert li._candidate_aliases("minion", "Wind-up Cursor") == ["Wind-up Cursor"]
+    lucis = li._candidate_aliases("character/relic-gear/lucis-tools", "Halcyon")
+    assert "Halcyon Rod" in lucis
 
 
 def test_index_labels_for_bucket_splits_quest_pairs():
@@ -151,6 +153,9 @@ def test_normalize_numeric_id():
 def test_path_group_key_and_bucket_from_path():
     assert li._completion_bucket_from_path(("overall", "logs", "orchestrion-list", "x1")) == "orchestrion"
     assert li._completion_bucket_from_path(("overall", "duty", "quest", "5")) == "quest"
+    assert li._completion_bucket_from_path(
+        ("overall", "character", "adventure-plate", "minion", "348")
+    ) == "character/adventure-plate/minion"
     assert li._path_group_key(["overall", "custom", "x100"]) == "custom"
 
 
@@ -177,8 +182,14 @@ def test_inline_source_index_and_merge():
 
 
 def test_extract_labels():
+    # Only an item's canonical name fields are used for matching. Secondary
+    # descriptive fields (mob_en, npc_en, description_en, ...) are deliberately
+    # ignored: they are generic prose that collides with unrelated rows in the
+    # cross-sheet fallback. Every resolvable resource item carries a primary
+    # name field, so this loses no recall.
     labels = li._extract_labels({"name_en": "Foo", "mob_en": "Bar", "ignored": 5})
-    assert "Foo" in labels and "Bar" in labels
+    assert "Foo" in labels
+    assert "Bar" not in labels
 
 
 def test_misc_string_helpers():
@@ -196,6 +207,49 @@ def test_parse_place_rank_and_current():
     assert li._parse_current_index("nonsense") is None
 
 
+def test_classes_jobs_label_aliases():
+    aliases = li._classes_jobs_label_aliases("Scholar / Arcanist")
+    assert "Scholar / Arcanist" in aliases
+    assert "Scholar" in aliases
+    assert "Arcanist" in aliases
+
+    blue_aliases = li._classes_jobs_label_aliases("Blue Mage (Limited Job)")
+    assert "Blue Mage" in blue_aliases
+    assert "Blue Mage (Limited Job)" in blue_aliases
+
+
+def test_parse_hunting_labels():
+    assert li._parse_hunting_source_label("@CLASS_JOB.GLA 14") == ("gladiator", 14)
+    assert li._parse_hunting_source_label("@SOCIETY.ADDER 01") == ("twinadder", 1)
+    assert li._parse_hunting_source_label("invalid") is None
+
+    assert li._parse_hunting_workbook_label("Gladiator 14") == ("gladiator", 14)
+    assert li._parse_hunting_workbook_label("Twin Adder 01") == ("twinadder", 1)
+    assert li._parse_hunting_workbook_label("not-a-rank") is None
+
+
+def test_filter_hits_for_bucket_scopes_adventure_plate():
+    hits = [
+        ("Adventurer Plate", 100, "checkbox"),
+        ("Minions", 3, "checkbox"),
+    ]
+    filtered = li._filter_hits_for_bucket("character/adventure-plate/class-job", hits)
+    assert filtered == [("Adventurer Plate", 100, "checkbox")]
+
+    filtered_minion = li._filter_hits_for_bucket("character/adventure-plate/minion", hits)
+    assert filtered_minion == [("Adventurer Plate", 100, "checkbox")]
+
+    custom_hits = [
+        ("Minions", 10, "checkbox"),
+        ("Story Quests", 11, "checkbox"),
+    ]
+    filtered_custom = li._filter_hits_for_bucket("custom", custom_hits)
+    assert filtered_custom == [("Story Quests", 11, "checkbox")]
+
+    untouched = li._filter_hits_for_bucket("character/relic-gear/lucis-tools", hits)
+    assert untouched == hits
+
+
 def test_aether_zone_from_path():
     # zone label sits three positions after the "travel" segment
     parts = ("travel", "aether-currents", "endwalker", "the-sea-of-clouds", "x1")
@@ -210,6 +264,28 @@ def test_dedupe_hits_and_partial_generic():
     hits = li._partial_match_hits_generic(["Quest Alpha Longg"], idx, cutoff=0.8)
     assert hits == [("Story Quests", 3, "checkbox")]
     assert li._partial_match_hits_generic(["x"], {}) is None
+
+
+def test_partial_match_hits_quest_multiword_still_allowed():
+    idx = {li._norm_label("School of Hard Knocks"): [("Story Quests", 9, "checkbox")]}
+    hits = li._partial_match_hits(
+        bucket="quest",
+        aliases=["School of Hard Nocks"],
+        bucket_norm=idx,
+        bucket_norm_keys=list(idx.keys()),
+    )
+    assert hits == [("Story Quests", 9, "checkbox")]
+
+
+def test_partial_match_hits_quest_blocks_single_word_job_collision():
+    idx = {li._norm_label("Gunbreaker"): [("Relic Weapons", 557, "checkbox")]}
+    hits = li._partial_match_hits(
+        bucket="quest",
+        aliases=["Unbreaker"],
+        bucket_norm=idx,
+        bucket_norm_keys=list(idx.keys()),
+    )
+    assert hits is None
 
 
 def test_format_exception():
@@ -346,6 +422,65 @@ def test_import_desktop_completion(conn, character_id, tmp_path, monkeypatch):
     assert summary.rows_applied == 2
     assert db.effective_state(connection, character_id, run_id, "Story Quests", 4) == "done"
     assert db.effective_state(connection, character_id, run_id, "Story Quests", 5) == "done"
+
+
+def test_import_desktop_completion_classes_jobs_prefers_label_match(
+    conn,
+    character_id,
+    tmp_path,
+    monkeypatch,
+):
+    connection, run_id = conn
+
+    monkeypatch.setattr(li, "resolve_resource_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        li,
+        "_build_source_label_index",
+        lambda _root: {
+            "character/character/classes-jobs": {
+                # Intentionally swapped source ids to ensure import does not
+                # rely on positional order when labels are available.
+                "0": ("Warrior / Marauder",),
+                "1": ("Paladin / Gladiator",),
+            }
+        },
+    )
+
+    payload = {
+        "overall": {
+            "character": {
+                "character": {
+                    "classes--jobs": {
+                        "0": "10",
+                        "1": "20",
+                    }
+                }
+            }
+        }
+    }
+    path = tmp_path / "completion.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    summary = li.import_desktop_completion(
+        connection,
+        character_id=character_id,
+        completion_path=path,
+    )
+    assert summary.matched_candidates == 2
+
+    values = connection.execute(
+        """
+        SELECT row_index, progress_percent
+        FROM character_progress
+        WHERE character_id = ? AND run_id = ? AND sheet_name = 'Classes-Jobs'
+          AND row_index IN (3, 4)
+        ORDER BY row_index
+        """,
+        (character_id, run_id),
+    ).fetchall()
+    by_row = {int(row["row_index"]): float(row["progress_percent"]) for row in values}
+    assert by_row[3] == 20.0  # Paladin
+    assert by_row[4] == 10.0  # Warrior
 
 
 def test_reset_character_progress(conn, character_id):

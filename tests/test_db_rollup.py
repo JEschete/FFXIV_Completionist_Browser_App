@@ -105,6 +105,30 @@ def test_value_row_toggle_excluded_preserves_percent(conn, character_id):
     assert db.toggle_excluded(connection, character_id, run_id, "Classes-Jobs", 3) == "done"
 
 
+def test_value_rows_contribute_weighted_levels(conn, character_id):
+    connection, run_id = conn
+    roll = db.sheet_rollups(connection, run_id, character_id)["Classes-Jobs"]
+    assert roll == {"done": 190, "excluded": 0, "total": 200, "countable": 200}
+    assert db.pct(roll) == 95.0
+
+
+def test_value_cap_override_invalidates_cached_rollup(conn, character_id):
+    connection, run_id = conn
+    cap_row = db.classes_jobs_cap_rows(connection, run_id)[0]
+    override_key = cap_row["cap_key"]
+
+    try:
+        db.save_value_cap_overrides({override_key: 80})
+        db.clear_progress_rollups(connection)
+
+        roll = db.sheet_rollups(connection, run_id, character_id)["Classes-Jobs"]
+        assert roll == {"done": 180, "excluded": 0, "total": 180, "countable": 180}
+        assert db.pct(roll) == 100.0
+    finally:
+        db.save_value_cap_overrides({})
+        db.clear_progress_rollups(connection)
+
+
 def test_class_overlay_path(conn, character_id):
     connection, run_id = conn
     # Inject a class-specific override for Thing Three (row 5) and check the

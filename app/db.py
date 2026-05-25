@@ -156,6 +156,91 @@ def value_row_cap(
     )
 
 
+def _coerce_float(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _value_row_amount(row: sqlite3.Row) -> float:
+    """Return the numeric level carried by a value row.
+
+    The live override wins, otherwise fall back to the workbook baseline stored
+    in the row JSON (for example Classes-Jobs current_level).
+    """
+    progress = row["progress_percent"]
+    if progress is not None:
+        return _coerce_float(progress)
+
+    try:
+        payload = json.loads(row["row_json"] or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+
+    if isinstance(payload, dict):
+        for key in ("current_level", "level", "value", "progress"):
+            if key in payload:
+                return _coerce_float(payload.get(key))
+        for value in payload.values():
+            amount = _coerce_float(value)
+            if amount:
+                return amount
+    return 0.0
+
+
+def _trackable_row_rollup(row: sqlite3.Row) -> dict[str, int]:
+    sheet_name = str(row["sheet_name"])
+    row_type = str(row["row_type"] or "checkbox")
+    eff = str(row["eff"] or "todo")
+
+    if row_type == "value":
+        cap = int(round(resolve_value_cap(sheet_name, row["section_label"], row["label"])))
+        amount = min(float(cap), max(0.0, _value_row_amount(row)))
+        done = 0 if eff == "excluded" else min(cap, max(0, int(round(amount))))
+        excluded = cap if eff == "excluded" else 0
+        return {
+            "done": done,
+            "excluded": excluded,
+            "total": cap,
+            "countable": cap - excluded,
+        }
+
+    done = 1 if eff == "done" else 0
+    excluded = 1 if eff == "excluded" else 0
+    return {
+        "done": done,
+        "excluded": excluded,
+        "total": 1,
+        "countable": 1 - excluded,
+    }
+
+
+def _collect_rollups(rows: list[sqlite3.Row]) -> dict[str, dict[str, int]]:
+    out: dict[str, dict[str, int]] = {}
+    for row in rows:
+        sheet_name = str(row["sheet_name"])
+        roll = out.setdefault(sheet_name, _empty_roll())
+        row_roll = _trackable_row_rollup(row)
+        for key in roll:
+            roll[key] += int(row_roll[key])
+    return out
+
+
+def _row_rollup_delta(
+    row: sqlite3.Row | None,
+    *,
+    eff: str,
+    progress_percent: float | None,
+) -> dict[str, int]:
+    if row is None:
+        return _empty_roll()
+    temp = dict(row)
+    temp["eff"] = eff
+    temp["progress_percent"] = progress_percent
+    return _trackable_row_rollup(temp)  # type: ignore[arg-type]
+
+
 def classes_jobs_cap_rows(conn: sqlite3.Connection, run_id: int) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
@@ -245,6 +330,11 @@ def get_connection() -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(ROLLUP_SCHEMA)  # idempotent; bootstraps on first connect
     return conn
+
+
+def clear_progress_rollups(conn: sqlite3.Connection) -> None:
+    conn.execute("DELETE FROM progress_rollup")
+    conn.commit()
 
 
 def now() -> str:
@@ -383,25 +473,31 @@ def _ensure_rollup_seeded(
     if seen:
         return
     eff, join, jparams = _state_clauses(starting_class)
-    conn.execute(
+    rows = conn.execute(
         f"""
-        INSERT INTO progress_rollup (character_id, run_id, sheet_name, done, excluded, total)
-        SELECT ?, ?, sheet_name,
-               SUM(CASE WHEN eff = 'done' THEN 1 ELSE 0 END),
-               SUM(CASE WHEN eff = 'excluded' THEN 1 ELSE 0 END),
-               COUNT(*)
-        FROM (
-            SELECT n.sheet_name, {eff} AS eff
-            FROM nodes n
-            LEFT JOIN character_progress p
-              ON p.character_id = ? AND p.run_id = n.run_id
-             AND p.sheet_name = n.sheet_name AND p.row_index = n.row_index
-            {join}
-            WHERE n.run_id = ? AND n.row_type IN ('checkbox', 'value')
-        )
-        GROUP BY sheet_name
+        SELECT n.sheet_name, n.row_type, n.section_label, n.label, n.row_json,
+               p.progress_percent,
+               {eff} AS eff
+        FROM nodes n
+        LEFT JOIN character_progress p
+          ON p.character_id = ? AND p.run_id = n.run_id
+         AND p.sheet_name = n.sheet_name AND p.row_index = n.row_index
+        {join}
+        WHERE n.run_id = ? AND n.row_type IN ('checkbox', 'value')
+        ORDER BY n.sheet_name, n.row_index
         """,
-        (character_id, run_id, character_id, *jparams, run_id),
+        (character_id, *jparams, run_id),
+    ).fetchall()
+    rollups = _collect_rollups(rows)
+    conn.executemany(
+        """
+        INSERT INTO progress_rollup (character_id, run_id, sheet_name, done, excluded, total)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        [
+            (character_id, run_id, sheet_name, roll["done"], roll["excluded"], roll["total"])
+            for sheet_name, roll in rollups.items()
+        ],
     )
 
 
@@ -435,7 +531,8 @@ def set_row_state(
     eff, join, jparams = _state_clauses(starting_class)
     prev = conn.execute(
         f"""
-        SELECT {eff} AS eff
+                SELECT n.sheet_name, n.row_type, n.section_label, n.label, n.row_json,
+                             {eff} AS eff, p.progress_percent
         FROM nodes n
         LEFT JOIN character_progress p
           ON p.character_id = ? AND p.run_id = n.run_id
@@ -445,7 +542,8 @@ def set_row_state(
         """,
         (character_id, *jparams, run_id, sheet_name, row_index),
     ).fetchone()
-    old_eff = prev["eff"] if prev else "todo"
+    old_row = prev
+    old_roll = _trackable_row_rollup(prev) if prev else _empty_roll()
 
     # a write that equals the baseline is stored anyway so toggles are explicit.
     # progress_percent is preserved across writes that don't supply one — so
@@ -463,19 +561,32 @@ def set_row_state(
         (character_id, run_id, sheet_name, row_index, state, progress_percent, now()),
     )
 
-    # apply +/- delta to the cached rollup; total never moves (per-row count)
-    if old_eff != state:
-        d_done = (1 if state == "done" else 0) - (1 if old_eff == "done" else 0)
-        d_excl = (1 if state == "excluded" else 0) - (1 if old_eff == "excluded" else 0)
-        if d_done or d_excl:
-            conn.execute(
-                """
-                UPDATE progress_rollup
-                SET done = done + ?, excluded = excluded + ?
-                WHERE character_id = ? AND run_id = ? AND sheet_name = ?
-                """,
-                (d_done, d_excl, character_id, run_id, sheet_name),
-            )
+    new_row = dict(old_row) if old_row is not None else {
+        "sheet_name": sheet_name,
+        "row_type": "checkbox",
+        "section_label": None,
+        "label": None,
+        "row_json": "{}",
+    }
+    new_row["eff"] = state
+    if progress_percent is not None:
+        new_row["progress_percent"] = progress_percent
+    elif old_row is not None:
+        new_row["progress_percent"] = old_row["progress_percent"]
+
+    new_roll = _trackable_row_rollup(new_row)  # type: ignore[arg-type]
+    d_done = new_roll["done"] - old_roll["done"]
+    d_excl = new_roll["excluded"] - old_roll["excluded"]
+    d_total = new_roll["total"] - old_roll["total"]
+    if d_done or d_excl or d_total:
+        conn.execute(
+            """
+            UPDATE progress_rollup
+            SET done = done + ?, excluded = excluded + ?, total = total + ?
+            WHERE character_id = ? AND run_id = ? AND sheet_name = ?
+            """,
+            (d_done, d_excl, d_total, character_id, run_id, sheet_name),
+        )
 
     # Write through to the per-character JSON sidecar after the DB upsert.
     # progress_io owns the sparse / tiered-identity / atomic-write logic so
@@ -520,7 +631,8 @@ def clear_row_override(
     eff, join, jparams = _state_clauses(starting_class)
     prev = conn.execute(
         f"""
-        SELECT {eff} AS eff
+                SELECT n.sheet_name, n.row_type, n.section_label, n.label, n.row_json,
+                             {eff} AS eff, p.progress_percent
         FROM nodes n
         LEFT JOIN character_progress p
           ON p.character_id = ? AND p.run_id = n.run_id
@@ -530,7 +642,8 @@ def clear_row_override(
         """,
         (character_id, *jparams, run_id, sheet_name, row_index),
     ).fetchone()
-    old_eff = prev["eff"] if prev else "todo"
+    old_row = prev
+    old_roll = _trackable_row_rollup(prev) if prev else _empty_roll()
 
     cur = conn.execute(
         """
@@ -543,7 +656,8 @@ def clear_row_override(
 
     now_eff_row = conn.execute(
         f"""
-        SELECT {eff} AS eff
+                SELECT n.sheet_name, n.row_type, n.section_label, n.label, n.row_json,
+                             {eff} AS eff, p.progress_percent
         FROM nodes n
         LEFT JOIN character_progress p
           ON p.character_id = ? AND p.run_id = n.run_id
@@ -553,20 +667,20 @@ def clear_row_override(
         """,
         (character_id, *jparams, run_id, sheet_name, row_index),
     ).fetchone()
-    new_eff = now_eff_row["eff"] if now_eff_row else "todo"
+    new_roll = _trackable_row_rollup(now_eff_row) if now_eff_row else _empty_roll()
 
-    if old_eff != new_eff:
-        d_done = (1 if new_eff == "done" else 0) - (1 if old_eff == "done" else 0)
-        d_excl = (1 if new_eff == "excluded" else 0) - (1 if old_eff == "excluded" else 0)
-        if d_done or d_excl:
-            conn.execute(
-                """
-                UPDATE progress_rollup
-                SET done = done + ?, excluded = excluded + ?
-                WHERE character_id = ? AND run_id = ? AND sheet_name = ?
-                """,
-                (d_done, d_excl, character_id, run_id, sheet_name),
-            )
+    d_done = new_roll["done"] - old_roll["done"]
+    d_excl = new_roll["excluded"] - old_roll["excluded"]
+    d_total = new_roll["total"] - old_roll["total"]
+    if d_done or d_excl or d_total:
+        conn.execute(
+            """
+            UPDATE progress_rollup
+            SET done = done + ?, excluded = excluded + ?, total = total + ?
+            WHERE character_id = ? AND run_id = ? AND sheet_name = ?
+            """,
+            (d_done, d_excl, d_total, character_id, run_id, sheet_name),
+        )
 
     try:
         if removed:
@@ -891,7 +1005,10 @@ def _section_trackable_rollups(
     eff, join, jparams = _state_clauses(starting_class)
     rows = conn.execute(
         f"""
-        SELECT n.row_index, {eff} AS eff
+                SELECT n.sheet_name, n.row_type, n.section_label, n.label, n.row_json,
+                             p.progress_percent,
+                             {eff} AS eff,
+                             n.row_index
         FROM nodes n
         LEFT JOIN character_progress p
           ON p.character_id = ? AND p.run_id = n.run_id
@@ -918,15 +1035,9 @@ def _section_trackable_rollups(
         if roll is None:
             continue
 
-        roll["total"] += 1
-        eff_state = str(row["eff"] or "todo")
-        if eff_state == "done":
-            roll["done"] += 1
-        elif eff_state == "excluded":
-            roll["excluded"] += 1
-
-    for roll in rollups.values():
-        roll["countable"] = roll["total"] - roll["excluded"]
+        row_roll = _trackable_row_rollup(row)
+        for key in roll:
+            roll[key] += int(row_roll[key])
     return rollups
 
 
@@ -959,32 +1070,20 @@ def _sheet_rollups_live(
     eff, join, jparams = _state_clauses(starting_class)
     rows = conn.execute(
         f"""
-        SELECT sheet_name,
-               SUM(CASE WHEN eff = 'done' THEN 1 ELSE 0 END) AS done,
-               SUM(CASE WHEN eff = 'excluded' THEN 1 ELSE 0 END) AS excluded,
-               COUNT(*) AS total
-        FROM (
-            SELECT n.sheet_name, {eff} AS eff
-            FROM nodes n
-            LEFT JOIN character_progress p
-              ON p.character_id = ? AND p.run_id = n.run_id
-             AND p.sheet_name = n.sheet_name AND p.row_index = n.row_index
-            {join}
-            WHERE n.run_id = ? AND n.row_type IN ('checkbox', 'value')
-        )
-        GROUP BY sheet_name
+        SELECT n.sheet_name, n.row_type, n.section_label, n.label, n.row_json,
+               p.progress_percent,
+               {eff} AS eff
+        FROM nodes n
+        LEFT JOIN character_progress p
+          ON p.character_id = ? AND p.run_id = n.run_id
+         AND p.sheet_name = n.sheet_name AND p.row_index = n.row_index
+        {join}
+        WHERE n.run_id = ? AND n.row_type IN ('checkbox', 'value')
+        ORDER BY n.sheet_name, n.row_index
         """,
         (character_id, *jparams, run_id),
     ).fetchall()
-    return {
-        r["sheet_name"]: {
-            "done": r["done"],
-            "excluded": r["excluded"],
-            "total": r["total"],
-            "countable": r["total"] - r["excluded"],
-        }
-        for r in rows
-    }
+    return _collect_rollups(rows)
 
 
 def sheet_rollups(
@@ -1263,7 +1362,10 @@ def _label_prefix_trackable_rollups(
     eff, join, jparams = _state_clauses(starting_class)
     rows = conn.execute(
         f"""
-        SELECT n.label, {eff} AS eff
+                SELECT n.sheet_name, n.row_type, n.section_label, n.label, n.row_json,
+                             p.progress_percent,
+                             {eff} AS eff,
+                             n.row_index
         FROM nodes n
         LEFT JOIN character_progress p
           ON p.character_id = ? AND p.run_id = n.run_id
@@ -1290,15 +1392,9 @@ def _label_prefix_trackable_rollups(
             continue
 
         roll = rollups[matched_prefix]
-        roll["total"] += 1
-        eff_state = str(row["eff"] or "todo")
-        if eff_state == "done":
-            roll["done"] += 1
-        elif eff_state == "excluded":
-            roll["excluded"] += 1
-
-    for roll in rollups.values():
-        roll["countable"] = roll["total"] - roll["excluded"]
+        row_roll = _trackable_row_rollup(row)
+        for key in roll:
+            roll[key] += int(row_roll[key])
     return rollups
 
 

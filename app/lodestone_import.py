@@ -424,6 +424,17 @@ def _candidate_aliases(bucket: str, raw_label: str) -> list[str]:
         aliases = _achievement_label_aliases(raw_label)
     elif bucket == "orchestrion":
         aliases = _orchestrion_label_aliases(raw_label)
+    elif bucket == "character/relic-gear/lucis-tools":
+        value = raw_label.strip()
+        aliases = {value}
+        # Desktop source names the fisher Lucis chain as "Halcyon*" while the
+        # workbook rows include "Halcyon Rod*".
+        if value.casefold() == "halcyon":
+            aliases.add("Halcyon Rod")
+        elif value.casefold() == "halcyon supra":
+            aliases.add("Halcyon Rod Supra")
+        elif value.casefold() == "halcyon lucis":
+            aliases.add("Halcyon Rod Lucis")
     else:
         aliases = {raw_label}
 
@@ -444,7 +455,7 @@ def _partial_match_hits(
         return None
 
     # Conservative by default; only rescue near-typo misses.
-    cutoff = 0.9 if bucket == "quest" else 0.93
+    cutoff = 0.95 if bucket == "quest" else 0.93
     if bucket == "tripletriad":
         cutoff = 0.85
 
@@ -452,8 +463,15 @@ def _partial_match_hits(
         norm = _norm_label(alias)
         if len(norm) < 8:
             continue
+        if bucket == "quest" and " " not in norm:
+            # Single-token quest names can fuzzy-collide with job labels
+            # (e.g. "Unbreaker" -> "Gunbreaker"). Keep quest fuzzy matching
+            # to phrase-like labels where typo rescue is useful.
+            continue
         close = difflib.get_close_matches(norm, bucket_norm_keys, n=1, cutoff=cutoff)
         if close:
+            if bucket == "quest" and " " not in close[0]:
+                continue
             hits = bucket_norm.get(close[0])
             if hits:
                 return hits
@@ -1161,22 +1179,21 @@ def _extract_labels(item: dict[str, Any]) -> list[str]:
         if text and text not in labels and len(text) <= 180:
             labels.append(text)
 
+    # Match ONLY on an item's canonical name. Every resolvable resource item
+    # carries one of these primary fields, so this loses no recall — while
+    # dropping secondary descriptive fields (description_en, npc_en, unlock_en,
+    # mob_en, zone_en, source_en, ...). Those secondary fields are generic
+    # prose ("Return", "Mother Miounne", "Successfully complete 5 dungeons")
+    # that previously leaked into the alias pool and caused one source id to
+    # collide with dozens of unrelated workbook rows in the global fallback.
+    # Note: shared-fate / aether-current tasks store their @PLACE / @TRAVEL
+    # tokens in the primary ``name`` field, so their special-case handlers are
+    # unaffected.
     primary_fields = ("name_en", "title_en", "name", "title")
     for field in primary_fields:
         value = item.get(field)
         if isinstance(value, str):
             add_text(value)
-
-    # Many desktop datasets use domain-specific English fields such as
-    # mob_en, zone_en, source_en, etc.
-    for field, value in item.items():
-        if field in primary_fields:
-            continue
-        if not isinstance(value, str):
-            continue
-        if not field.casefold().endswith("_en"):
-            continue
-        add_text(value)
 
     return labels
 
@@ -1268,6 +1285,15 @@ def _build_source_label_index(resource_root_str: str) -> dict[str, dict[str, tup
     for (source_bucket, source_id), refs in refs_by_source.items():
         source_labels = index.get(source_bucket, {}).get(source_id)
         if source_labels is None:
+            continue
+        # Only resolve symbolic references for items that have no real name of
+        # their own -- i.e. their label is a token like "@PLACE.X". Items that
+        # already carry a human-readable name (achievements, quests, ranks) must
+        # NOT absorb their chain neighbours' names: cNext/cPrev links would
+        # otherwise merge a whole achievement series ("To the Dungeons I..VI")
+        # into one label set whose first sorted alias ("...I") then steals every
+        # tier's match, leaving II-VI unmatched.
+        if not all(str(label).startswith("@") for label in source_labels):
             continue
         for prefix, ref_id in refs:
             target_bucket = _REFERENCE_BUCKET_BY_PREFIX.get(prefix)
@@ -1426,7 +1452,10 @@ def _completion_bucket_from_path(path_parts: tuple[str, ...]) -> str | None:
         return "quest"
     if "/mount-guide/" in joined or "/character/mount/" in joined:
         return "mount"
-    if "/minion-guide/" in joined or "/character/minion/" in joined or "/adventure-plate/minion/" in joined:
+    # Adventure Plate minion paths are semantically separate from the Minions
+    # log and must keep their scoped bucket so hit filtering can pin them to
+    # the Adventurer Plate sheet.
+    if "/minion-guide/" in joined or "/character/minion/" in joined:
         return "minion"
     return _path_group_key([str(part) for part in path_parts])
 
@@ -1440,6 +1469,53 @@ def _bucket_tail(bucket: str) -> str:
     if not value:
         return ""
     return value.rsplit("/", 1)[-1]
+
+
+# Some desktop buckets are semantically tied to a specific workbook sheet and
+# should never resolve through the broad section-global fallback.
+_BUCKET_ALLOWED_SHEETS_PREFIXES: tuple[tuple[str, frozenset[str]], ...] = (
+    ("character/adventure-plate/", frozenset({"Adventurer Plate"})),
+)
+
+# Some freeform desktop buckets can contain labels that collide with tracked
+# collectible names; keep them from inflating those logs.
+_BUCKET_DISALLOWED_SHEETS: dict[str, frozenset[str]] = {
+    "custom": frozenset({"Minions"}),
+}
+
+
+def _filter_hits_for_bucket(
+    bucket: str,
+    hits: list[tuple[str, int, str]] | None,
+) -> list[tuple[str, int, str]] | None:
+    if not hits:
+        return hits
+
+    bucket_norm = str(bucket or "").strip().casefold()
+    allowed_sheets: frozenset[str] | None = None
+    for prefix, sheets in _BUCKET_ALLOWED_SHEETS_PREFIXES:
+        if bucket_norm.startswith(prefix):
+            allowed_sheets = sheets
+            break
+
+    if not allowed_sheets:
+        filtered = hits
+    else:
+        filtered = [
+            entry
+            for entry in hits
+            if str(entry[0]) in allowed_sheets
+        ]
+
+    disallowed_sheets = _BUCKET_DISALLOWED_SHEETS.get(bucket_norm)
+    if disallowed_sheets:
+        filtered = [
+            entry
+            for entry in filtered
+            if str(entry[0]) not in disallowed_sheets
+        ]
+
+    return filtered or None
 
 
 def _parse_place_rank(label: str) -> tuple[str, int] | None:
@@ -1486,6 +1562,167 @@ def _aether_zone_from_path(path_parts: tuple[str, ...]) -> str | None:
             zone_raw = parts[idx + 3].replace("-", " ").replace("_", " ")
             return _norm_lookup_key(zone_raw)
     return None
+
+
+# Source society tokens are spelled slightly differently from the workbook's
+# tribe section headers; normalise the known divergences.
+_SOCIETY_TOKEN_ALIASES = {
+    "sylphs": "sylph",
+}
+
+_SOCIETY_RANK_RE = re.compile(
+    r"^@SOCIETY\.([A-Z0-9_']+)\s*-\s*REPUTATION\.([A-Z0-9_']+)$",
+    flags=re.IGNORECASE,
+)
+
+
+def _parse_society_rank(label: str) -> tuple[str, str] | None:
+    """Parse a societal-relations name token into (tribe_key, rank_key).
+
+    e.g. "@SOCIETY.AMALJAA - REPUTATION.NEUTRAL" -> ("amaljaa", "neutral").
+    Reputation rank names repeat across every allied society, so these entries
+    must be keyed by (tribe, rank) rather than matched by label alone.
+    """
+    m = _SOCIETY_RANK_RE.match(label.strip())
+    if not m:
+        return None
+    tribe = _norm_lookup_key(m.group(1).replace("_", " "))
+    rank = _norm_lookup_key(m.group(2).replace("_", " "))
+    if not tribe or not rank:
+        return None
+    tribe = _SOCIETY_TOKEN_ALIASES.get(tribe, tribe)
+    return tribe, rank
+
+
+_HUNTING_CLASS_TOKEN_ALIASES = {
+    "gla": "gladiator",
+    "mrd": "marauder",
+    "pgl": "pugilist",
+    "lnc": "lancer",
+    "arc": "archer",
+    "thm": "thaumaturge",
+    "cnj": "conjurer",
+    "rog": "rogue",
+    "acn": "arcanist",
+}
+
+_HUNTING_SOCIETY_TOKEN_ALIASES = {
+    "adder": "twinadder",
+    "twinadder": "twinadder",
+    "orderofthetwinadder": "twinadder",
+    "flames": "immortalflames",
+    "immortalflames": "immortalflames",
+    "maelstrom": "maelstrom",
+    "themaelstrom": "maelstrom",
+}
+
+_HUNTING_SOURCE_TOKEN_RE = re.compile(
+    r"^@(CLASS_JOB|SOCIETY)\.([A-Z0-9_']+)\s+(\d+)$",
+    flags=re.IGNORECASE,
+)
+
+_HUNTING_WORKBOOK_LABEL_RE = re.compile(r"^([A-Za-z'\-\s]+)\s+(\d+)$")
+
+
+def _classes_jobs_label_aliases(raw: str) -> list[str]:
+    """Generate robust label aliases for Classes-Jobs matching.
+
+    Workbook and desktop resources occasionally diverge in display formatting
+    (e.g. "Scholar" vs "Scholar / Arcanist", or "Blue Mage" vs
+    "Blue Mage (Limited Job)").
+    """
+    value = str(raw or "").strip()
+    if not value:
+        return []
+
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def add(candidate: str) -> None:
+        text = candidate.strip()
+        if not text:
+            return
+        key = text.casefold()
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(text)
+
+    add(value)
+
+    without_suffix = re.sub(r"\s*\([^)]*\)\s*$", "", value).strip()
+    if without_suffix and without_suffix.casefold() != value.casefold():
+        add(without_suffix)
+
+    # Add split aliases for dual labels like "Scholar / Arcanist".
+    for part in re.split(r"\s*/\s*", without_suffix or value):
+        if part.strip():
+            add(part)
+
+    # Blue Mage is commonly labelled with/without the limited-job suffix.
+    if without_suffix and "blue mage" in without_suffix.casefold():
+        add(f"{without_suffix} (Limited Job)")
+
+    return out
+
+
+def _parse_hunting_source_label(label: str) -> tuple[str, int] | None:
+    """Parse tokenized hunting source labels into (family_key, rank).
+
+    Examples:
+      - "@CLASS_JOB.GLA 14" -> ("gladiator", 14)
+      - "@SOCIETY.ADDER 01" -> ("twinadder", 1)
+    """
+    m = _HUNTING_SOURCE_TOKEN_RE.match(label.strip())
+    if not m:
+        return None
+
+    token_type = m.group(1).casefold()
+    token = _norm_lookup_key(m.group(2).replace("_", " "))
+    if not token:
+        return None
+
+    if token_type == "class_job":
+        family = _HUNTING_CLASS_TOKEN_ALIASES.get(token, token)
+    else:
+        family = _HUNTING_SOCIETY_TOKEN_ALIASES.get(token, token)
+
+    if not family:
+        return None
+
+    return family, int(m.group(3))
+
+
+def _parse_hunting_workbook_label(label: str) -> tuple[str, int] | None:
+    """Parse workbook hunting labels like "Gladiator 14"."""
+    m = _HUNTING_WORKBOOK_LABEL_RE.match(label.strip())
+    if not m:
+        return None
+    family = _norm_lookup_key(m.group(1))
+    if not family:
+        return None
+    return family, int(m.group(2))
+
+
+# bucket_tail -> workbook sheet whose trackable rows line up 1:1, in order,
+# with the source's ordered positional list. Matched positionally because the
+# labels cannot be matched reliably: GC rank rows are labelled by seal-cap
+# entitlement rather than rank name; companion skills repeat names across the
+# Defender/Attacker/Healer roles (the source disambiguates with "(1)/(2)/..."
+# suffixes the workbook lacks); companion ranks are bare numbers that collide
+# with other rank ladders.
+_POSITIONAL_SHEET_BUCKETS = {
+    "grand-company-rank": "Grand Company Ranks",
+    "companion-skills": "Companion Skills",
+    "companion-rank": "Companion Rank",
+}
+
+# Buckets matched only by a dedicated positional/keyed handler. If that handler
+# does not resolve, the candidate is left unmatched rather than falling through
+# to generic label matching -- their source labels are either generic (rank
+# names repeated across groups), numbered duplicates, or cross-reference
+# -polluted, so a generic match would mark the wrong row.
+_EXCLUSIVE_MATCH_BUCKET_TAILS = set(_POSITIONAL_SHEET_BUCKETS) | {"societal-relations"}
 
 
 def _build_blue_mage_log_position_index(
@@ -1749,6 +1986,57 @@ def load_completion_payload(path: Path) -> dict[str, Any]:
     return data
 
 
+# The desktop app and this workbook share the same five top-level menu
+# sections. Anchoring the cross-sheet (global) match fallback to the source
+# item's section prevents a generic name from leaking across sections (e.g. a
+# Duty quest marking a Logs row complete).
+_COMPLETION_TOP_SECTIONS = ("character", "duty", "logs", "travel", "social")
+
+_TOP_MENU_SHEET_TO_SECTION = {
+    "Character Menu": "character",
+    "Duty Menu": "duty",
+    "Logs Menu": "logs",
+    "Travel Menu": "travel",
+    "Social Menu": "social",
+}
+
+
+def _completion_top_section(path_parts: tuple[str, ...] | list[str]) -> str | None:
+    """Return the top-level section (character/duty/...) a completion path
+    belongs to, e.g. ('overall', 'duty', 'quest', ...) -> 'duty'."""
+    for part in path_parts:
+        p = str(part).strip().casefold()
+        if p in _COMPLETION_TOP_SECTIONS:
+            return p
+    return None
+
+
+def _build_sheet_section_map(
+    conn: sqlite3.Connection, run_id: int
+) -> dict[str, str | None]:
+    """Map every sheet to its top-level menu section by walking parent_sheet
+    up to one of the five top menus."""
+    parent: dict[str, str | None] = {}
+    for row in conn.execute(
+        "SELECT sheet_name, parent_sheet FROM sheets WHERE run_id = ?",
+        (run_id,),
+    ):
+        parent[row["sheet_name"]] = row["parent_sheet"]
+
+    def resolve(sheet: str) -> str | None:
+        seen: set[str] = set()
+        cur: str | None = sheet
+        while cur and cur not in seen:
+            seen.add(cur)
+            section = _TOP_MENU_SHEET_TO_SECTION.get(cur)
+            if section:
+                return section
+            cur = parent.get(cur)
+        return None
+
+    return {sheet: resolve(sheet) for sheet in parent}
+
+
 def import_desktop_completion(
     conn: sqlite3.Connection,
     *,
@@ -1908,15 +2196,33 @@ def import_desktop_completion(
         (run_id,),
     ).fetchall()
 
+    sheet_section_map = _build_sheet_section_map(conn, run_id)
+
     exact_idx: dict[str, dict[str, list[tuple[str, int, str]]]] = {}
     norm_idx: dict[str, dict[str, list[tuple[str, int, str]]]] = {}
+    # Global (cross-sheet) indexes, both unscoped and partitioned by top-level
+    # section. A source item whose section is known consults only its own
+    # section to avoid cross-section bleed; items with no resolvable section
+    # (e.g. user "custom" entries) fall back to the unscoped index.
     global_exact_idx: dict[str, list[tuple[str, int, str]]] = {}
     global_norm_idx: dict[str, list[tuple[str, int, str]]] = {}
+    global_exact_by_section: dict[str | None, dict[str, list[tuple[str, int, str]]]] = {}
+    global_norm_by_section: dict[str | None, dict[str, list[tuple[str, int, str]]]] = {}
     shared_fate_idx: dict[tuple[str, int], list[tuple[str, int, str]]] = {}
     aether_current_idx: dict[tuple[str, int], list[tuple[str, int, str]]] = {}
     blue_mage_rows: list[tuple[str, int, str]] = []
     classes_jobs_rows: list[tuple[str, int, str]] = []
+    classes_jobs_label_idx: dict[str, list[tuple[str, int, str]]] = {}
     desynthesis_rows: list[tuple[str, int, str]] = []
+    hunting_idx: dict[tuple[str, int], list[tuple[str, int, str]]] = {}
+    # Positional-sheet rows, collected per sheet in row order (see
+    # _POSITIONAL_SHEET_BUCKETS). Matched by source index -> nth row.
+    positional_sheet_rows: dict[str, list[tuple[str, int, str]]] = {
+        sheet: [] for sheet in _POSITIONAL_SHEET_BUCKETS.values()
+    }
+    # Society reputation ranks are keyed by (tribe, rank) because rank names
+    # repeat across every allied society.
+    society_idx: dict[tuple[str, str], list[tuple[str, int, str]]] = {}
 
     for row in rows:
         sheet_name = row["sheet_name"]
@@ -1965,15 +2271,37 @@ def import_desktop_completion(
                 desynthesis_rows.append(entry)
             else:
                 classes_jobs_rows.append(entry)
+                for alias in _classes_jobs_label_aliases(label):
+                    norm = _norm_label(alias)
+                    if norm:
+                        classes_jobs_label_idx.setdefault(norm, []).append(entry)
 
+        if sheet_name == "Hunting Logs":
+            hunting_key = _parse_hunting_workbook_label(label)
+            if hunting_key:
+                hunting_idx.setdefault(hunting_key, []).append(entry)
+
+        if sheet_name in positional_sheet_rows:
+            positional_sheet_rows[sheet_name].append(entry)
+
+        if sheet_name == "Society Relations":
+            society_key = (_norm_lookup_key(section_label), _norm_lookup_key(label))
+            if all(society_key):
+                society_idx.setdefault(society_key, []).append(entry)
+
+        row_section = sheet_section_map.get(sheet_name)
+        section_exact = global_exact_by_section.setdefault(row_section, {})
+        section_norm = global_norm_by_section.setdefault(row_section, {})
         for idx_label in _index_labels_for_global(
             node_label=label,
             row_json_obj=row_json_obj,
         ):
             global_exact_idx.setdefault(idx_label.casefold(), []).append(entry)
+            section_exact.setdefault(idx_label.casefold(), []).append(entry)
             norm = _norm_label(idx_label)
             if norm:
                 global_norm_idx.setdefault(norm, []).append(entry)
+                section_norm.setdefault(norm, []).append(entry)
 
         for bucket in _sheet_buckets(sheet_name):
             for idx_label in _index_labels_for_bucket(
@@ -2000,6 +2328,48 @@ def import_desktop_completion(
     desynthesis_idx: dict[str, list[tuple[str, int, str]]] = {
         str(pos): [entry] for pos, entry in enumerate(desynthesis_rows)
     }
+    # bucket_tail -> {str(position): [row]} positional index per configured sheet.
+    positional_sheet_idx: dict[str, dict[str, list[tuple[str, int, str]]]] = {}
+    for bucket_tail_key, sheet in _POSITIONAL_SHEET_BUCKETS.items():
+        ordered = sorted(positional_sheet_rows.get(sheet, []), key=lambda item: item[1])
+        positional_sheet_idx[bucket_tail_key] = {
+            str(pos): [entry] for pos, entry in enumerate(ordered)
+        }
+
+    # --- Importer logic checks -------------------------------------------
+    # Positional and keyed buckets are alignment-sensitive: if the desktop app
+    # and the workbook disagree on size or order, results shift silently. Log
+    # the alignment up front so drift (e.g. a game-version mismatch adding a
+    # row) is visible in the import log rather than discovered by eye later.
+    exclusive_bucket_counts: dict[str, int] = {}
+    max_source_index: dict[str, int] = {}
+    for candidate in candidates:
+        tail = _bucket_tail(str(candidate.get("bucket") or ""))
+        if tail not in _EXCLUSIVE_MATCH_BUCKET_TAILS:
+            continue
+        exclusive_bucket_counts[tail] = exclusive_bucket_counts.get(tail, 0) + 1
+        sid = _normalize_numeric_id(candidate.get("source_id"))
+        if sid is not None:
+            max_source_index[tail] = max(max_source_index.get(tail, -1), int(sid))
+
+    for tail, sheet in _POSITIONAL_SHEET_BUCKETS.items():
+        n_src = exclusive_bucket_counts.get(tail, 0)
+        if not n_src:
+            continue
+        capacity = len(positional_sheet_idx.get(tail, {}))
+        log(f"Check [{sheet}]: {n_src} source entries vs {capacity} workbook rows (positional)")
+        top = max_source_index.get(tail, -1)
+        if capacity and top >= capacity:
+            log(
+                f"WARNING [{sheet}]: source position {top} exceeds the {capacity} workbook "
+                "rows -- positional alignment is off (likely game-version/structure drift)."
+            )
+
+    if exclusive_bucket_counts.get("societal-relations"):
+        log(
+            f"Check [Society Relations]: {exclusive_bucket_counts['societal-relations']} source "
+            f"entries vs {len(society_idx)} keyed (tribe, rank) rows"
+        )
 
     row_actions: dict[tuple[str, int], dict[str, Any]] = {}
     matched_candidates = 0
@@ -2035,12 +2405,50 @@ def import_desktop_completion(
         hits: list[tuple[str, int, str]] | None = None
 
         if bucket_tail == "classes-jobs":
-            hits = classes_jobs_idx.get(source_id)
+            # Prefer explicit label matching when available. This is robust to
+            # source-order drift between desktop app versions and workbook row
+            # order. If labels are unavailable, preserve positional fallback.
+            for source_label in labels:
+                for alias in _classes_jobs_label_aliases(source_label):
+                    norm = _norm_label(alias)
+                    if not norm:
+                        continue
+                    label_hits = _dedupe_hits(classes_jobs_label_idx.get(norm))
+                    if label_hits and len(label_hits) == 1:
+                        hits = label_hits
+                        break
+                if hits:
+                    break
+
+            if not hits:
+                hits = classes_jobs_idx.get(source_id)
         elif bucket_tail == "desynthesis":
             hits = desynthesis_idx.get(source_id)
+        elif bucket_tail in positional_sheet_idx:
+            # Positional: source index lines up 1:1, in order, with the
+            # workbook sheet's rows (GC ranks, companion skills, companion rank).
+            hits = positional_sheet_idx[bucket_tail].get(source_id)
+        elif bucket_tail == "societal-relations":
+            # Keyed by (tribe, rank); the source name token carries both.
+            for source_label in labels:
+                parsed = _parse_society_rank(source_label)
+                if not parsed:
+                    continue
+                hits = society_idx.get(parsed)
+                if hits:
+                    break
 
         if bucket.startswith("character/blue-mage/log/"):
             hits = blue_mage_idx.get((bucket, source_id))
+
+        if not hits and bucket.startswith("logs/hunting/"):
+            for source_label in labels:
+                parsed = _parse_hunting_source_label(source_label)
+                if not parsed:
+                    continue
+                hits = hunting_idx.get(parsed)
+                if hits:
+                    break
 
         if not hits and bucket.startswith("travel/shared-fate/"):
             for source_label in labels:
@@ -2063,15 +2471,27 @@ def import_desktop_completion(
                     if hits:
                         break
 
+        # User "custom" entries have no top-level section. They are freeform and
+        # frequently hold content the desktop app's game version predates, so we
+        # match them conservatively: literal name only (no generic alias
+        # splitting like "Gok Golma - Friendly" -> "Friendly"), no fuzzy, and
+        # only when the name resolves to exactly one workbook row. Otherwise a
+        # bare rank name would mark every group's row of that rank complete.
+        candidate_section = _completion_top_section(source_path_parts)
+        is_sectionless = candidate_section is None
+
         aliases: list[str] = []
-        if not hits:
+        if not hits and bucket_tail not in _EXCLUSIVE_MATCH_BUCKET_TAILS:
             seen_aliases: set[str] = set()
             for source_label in labels:
                 for base_alias in _candidate_aliases(bucket, source_label):
-                    expanded = _generic_label_aliases(base_alias)
-                    ordered_aliases = [base_alias] + sorted(
-                        alias for alias in expanded if alias != base_alias
-                    )
+                    if is_sectionless:
+                        ordered_aliases = [base_alias]
+                    else:
+                        expanded = _generic_label_aliases(base_alias)
+                        ordered_aliases = [base_alias] + sorted(
+                            alias for alias in expanded if alias != base_alias
+                        )
                     for alias in ordered_aliases:
                         key = alias.casefold()
                         if key in seen_aliases:
@@ -2091,7 +2511,7 @@ def import_desktop_completion(
                 if hits:
                     break
 
-            if not hits:
+            if not hits and not is_sectionless:
                 hits = _partial_match_hits(
                     bucket=bucket,
                     aliases=aliases,
@@ -2099,20 +2519,56 @@ def import_desktop_completion(
                     bucket_norm_keys=norm_keys_idx.get(bucket, []),
                 )
 
+            # Cross-sheet (global) fallback is scoped to the source item's own
+            # top-level section so a generic name cannot mark a row in another
+            # section complete. Sections are shared 1:1 between the desktop app
+            # and this workbook (character/duty/logs/travel/social). Section-less
+            # (custom) items consult the unscoped index but are uniqueness-gated
+            # below.
+            if is_sectionless:
+                section_global_exact = global_exact_idx
+                section_global_norm = global_norm_idx
+            else:
+                section_global_exact = global_exact_by_section.get(candidate_section, {})
+                section_global_norm = global_norm_by_section.get(candidate_section, {})
+
             if not hits:
                 for alias in aliases:
-                    hits = global_exact_idx.get(alias.casefold())
+                    hits = section_global_exact.get(alias.casefold())
                     if hits:
                         break
                     norm = _norm_label(alias)
-                    hits = global_norm_idx.get(norm)
+                    hits = section_global_norm.get(norm)
                     if hits:
                         break
 
-            if not hits:
-                hits = _partial_match_hits_generic(aliases, global_norm_idx, cutoff=0.92)
+            if not hits and not is_sectionless:
+                if bucket == "quest":
+                    quest_aliases = [
+                        alias for alias in aliases if " " in _norm_label(alias)
+                    ]
+                    quest_section_norm = {
+                        key: val
+                        for key, val in section_global_norm.items()
+                        if " " in key
+                    }
+                    hits = _partial_match_hits_generic(
+                        quest_aliases,
+                        quest_section_norm,
+                        cutoff=0.95,
+                    )
+                else:
+                    hits = _partial_match_hits_generic(
+                        aliases,
+                        section_global_norm,
+                        cutoff=0.92,
+                    )
 
-        hits = _dedupe_hits(hits)
+            # Custom items must map to a single unambiguous row.
+            if is_sectionless and (_dedupe_hits(hits) or []) and len(_dedupe_hits(hits)) != 1:
+                hits = None
+
+        hits = _dedupe_hits(_filter_hits_for_bucket(bucket, hits))
 
         if not hits:
             if bucket in _IGNORED_UNTRACKED_BUCKETS:

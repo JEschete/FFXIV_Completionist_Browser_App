@@ -86,6 +86,8 @@ data/lodestone_probe/import_uploads/
 data/lodestone_probe/import_history/
 data/lodestone_probe/unmatched/
 data/lodestone_probe/*_auth_*.json
+data/logs/progress_reports/between_run*
+UserDataTesting/
 
 # Downloaded character avatars
 app/static/avatars/

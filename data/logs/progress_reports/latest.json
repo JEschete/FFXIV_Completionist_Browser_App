@@ -1,38 +1,38 @@
 {
   "schema": "ffxiv-tracker/progress-between-run/v2",
-  "generated_at": "2026-05-24T16:50:16",
+  "generated_at": "2026-05-25T00:20:36",
   "reason": "startup-run-transition",
   "baseline": {
     "available": true,
     "path": "D:\\Dev\\FFXIVTracker\\data\\logs\\progress_reports\\progress_baseline.json",
-    "captured_at": "2026-05-24T16:47:32",
-    "source": "desktop-app-initial-import",
+    "captured_at": "2026-05-25T00:12:07",
+    "source": "desktop-app-clean-run",
     "run": {
       "id": 1,
       "source_file": "D:\\Dev\\FFXIVTracker\\Spreadsheet\\FFXIV Checklist 7.5 (New).xlsx",
-      "started_at": "2026-05-24T15:42:06",
-      "completed_at": "2026-05-24T15:42:19",
+      "started_at": "2026-05-24T20:56:44",
+      "completed_at": "2026-05-24T20:56:57",
       "sheet_count": 229,
       "row_count": 35879
     }
   },
   "current": {
-    "captured_at": "2026-05-24T16:50:16",
+    "captured_at": "2026-05-25T00:20:36",
     "source": "current",
     "run": {
       "id": 1,
       "source_file": "D:\\Dev\\FFXIVTracker\\Spreadsheet\\FFXIV Checklist 7.5 (New).xlsx",
-      "started_at": "2026-05-24T16:49:56",
-      "completed_at": "2026-05-24T16:50:09",
+      "started_at": "2026-05-25T00:20:15",
+      "completed_at": "2026-05-25T00:20:28",
       "sheet_count": 229,
       "row_count": 35879
     },
     "totals": {
-      "done": 34404,
-      "todo": 103155,
-      "excluded": 5957,
+      "done": 66737,
+      "todo": 69374,
+      "excluded": 7405,
       "total": 143516,
-      "active_entries": 40369,
+      "active_entries": 74210,
       "entry_count": 143516
     },
     "character_count": 4
@@ -59,23 +59,23 @@
       "changed": false,
       "before": {
         "counts": {
-          "done": 128,
-          "todo": 33961,
-          "excluded": 1790,
+          "done": 21121,
+          "todo": 12889,
+          "excluded": 1869,
           "total": 35879
         },
-        "active_entries": 1918,
-        "fingerprint": "34ed8d5a87f1dbb3a0d4768b005f27878ba23f2f41527cd3fd53df6a08492d8f"
+        "active_entries": 23004,
+        "fingerprint": "548d8487faf24825a7677de742441b09eeeaff934b8a3f324327a8af1f6e7899"
       },
       "after": {
         "counts": {
-          "done": 128,
-          "todo": 33961,
-          "excluded": 1790,
+          "done": 21121,
+          "todo": 12889,
+          "excluded": 1869,
           "total": 35879
         },
-        "active_entries": 1918,
-        "fingerprint": "34ed8d5a87f1dbb3a0d4768b005f27878ba23f2f41527cd3fd53df6a08492d8f"
+        "active_entries": 23004,
+        "fingerprint": "548d8487faf24825a7677de742441b09eeeaff934b8a3f324327a8af1f6e7899"
       },
       "delta": {
         "done": 0,
@@ -93,29 +93,29 @@
       }
     },
     {
-      "name": "Difftest",
-      "character_id": 9,
+      "name": "ImportTest",
+      "character_id": 12,
       "status": "present",
       "changed": false,
       "before": {
         "counts": {
-          "done": 30753,
-          "todo": 4527,
-          "excluded": 599,
+          "done": 21005,
+          "todo": 12979,
+          "excluded": 1895,
           "total": 35879
         },
-        "active_entries": 31360,
-        "fingerprint": "32dd2405e8180033394e25dd86cbf85067cb7cec0dc55fb4bfa7935514fc012d"
+        "active_entries": 22927,
+        "fingerprint": "1c7ef9946b9f5e70440363706aeb4957cae8a1587430e779d1590d6706f4f903"
       },
       "after": {
         "counts": {
-          "done": 30753,
-          "todo": 4527,
-          "excluded": 599,
+          "done": 21005,
+          "todo": 12979,
+          "excluded": 1895,
           "total": 35879
         },
-        "active_entries": 31360,
-        "fingerprint": "32dd2405e8180033394e25dd86cbf85067cb7cec0dc55fb4bfa7935514fc012d"
+        "active_entries": 22927,
+        "fingerprint": "1c7ef9946b9f5e70440363706aeb4957cae8a1587430e779d1590d6706f4f903"
       },
       "delta": {
         "done": 0,
@@ -139,23 +139,23 @@
       "changed": false,
       "before": {
         "counts": {
-          "done": 106,
-          "todo": 33982,
-          "excluded": 1791,
+          "done": 21194,
+          "todo": 12821,
+          "excluded": 1864,
           "total": 35879
         },
-        "active_entries": 1897,
-        "fingerprint": "ef0abd416470d836389e8cd84f725dce5fbd5bc23445822b177c208884077f5c"
+        "active_entries": 23085,
+        "fingerprint": "e2ef2a3fbd97a694e6b1de5a55205752854202160b83074a7a042497eb0ae3ad"
       },
       "after": {
         "counts": {
-          "done": 106,
-          "todo": 33982,
-          "excluded": 1791,
+          "done": 21194,
+          "todo": 12821,
+          "excluded": 1864,
           "total": 35879
         },
-        "active_entries": 1897,
-        "fingerprint": "ef0abd416470d836389e8cd84f725dce5fbd5bc23445822b177c208884077f5c"
+        "active_entries": 23085,
+        "fingerprint": "e2ef2a3fbd97a694e6b1de5a55205752854202160b83074a7a042497eb0ae3ad"
       },
       "delta": {
         "done": 0,
@@ -218,5 +218,5 @@
   "advanced": {
     "orphaned_by_character": {}
   },
-  "report_path": "D:\\Dev\\FFXIVTracker\\data\\logs\\progress_reports\\between_run_20260524_165016.json"
+  "report_path": "D:\\Dev\\FFXIVTracker\\data\\logs\\progress_reports\\between_run_20260525_002036.json"
 }
