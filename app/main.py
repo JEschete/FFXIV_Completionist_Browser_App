@@ -30,7 +30,7 @@ if __package__ in {None, ""}:
 
 from contextlib import asynccontextmanager
 
-from app import db, lodestone_import, progress_io, progress_report, section_sort
+from app import db, game_engine, lodestone_import, progress_io, progress_report, section_sort
 
 RECONCILE_RUN_LOCK = threading.Lock()
 LAST_RECONCILED_RUN_TOKEN: tuple[Any, ...] | None = None
@@ -320,6 +320,11 @@ app = FastAPI(title="FFXIV Completion Tracker", lifespan=lifespan)
 BASE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(BASE / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE / "static")), name="static")
+app.mount(
+    "/minigames-static",
+    StaticFiles(directory=str(BASE / "Minigames")),
+    name="minigames-static",
+)
 
 CHAR_COOKIE = "ffxiv_character"
 LODESTONE_COOKIE = "lodestone_profile_url"
@@ -2293,6 +2298,673 @@ def chains_overview(request: Request):
         if ctx.page_completion_behavior == COMPLETION_BEHAVIOR_HIDE:
             chains = [c for c in chains if not _is_roll_complete(c.get("roll"))]
         return ctx.render("chains.html", {"chains": chains, "active_sheet": None})
+    finally:
+        ctx.close()
+
+
+@app.get("/minigames", response_class=HTMLResponse)
+def minigames_page(request: Request):
+    ctx = Ctx(request)
+    try:
+        games = [
+            {
+                "name": "Slide 15",
+                "path": "/minigames/slide15",
+                "description": "Classic 4x4 sliding puzzle with timer, actions-per-second, and scored history.",
+                "controls": "Click tiles, Arrow keys, or WASD",
+            },
+            {
+                "name": "2048",
+                "path": "/minigames/2048",
+                "description": "Classic merge puzzle with score and move history (no timer).",
+                "controls": "Arrow keys, WASD, or on-screen direction buttons",
+            },
+            {
+                "name": "Bomb Flip",
+                "path": "/minigames/bomb-flip",
+                "description": "5x5 bomb puzzle with row and column hints, multipliers, and bombs.",
+                "controls": "Left click reveal, right click mark",
+            },
+            {
+                "name": "Snake",
+                "path": "/minigames/snake",
+                "description": "Fixed-tick canvas snake with deterministic food spawns and speed ramping.",
+                "controls": "Arrow keys or WASD (on-screen controls supported)",
+            },
+            {
+                "name": "Breakout",
+                "path": "/minigames/breakout",
+                "description": "Continuous canvas arcade breaker with durability bricks and powerups.",
+                "controls": "Arrow keys or A/D (on-screen controls supported)",
+            },
+        ]
+        return ctx.render(
+            "minigames.html",
+            {
+                "games": games,
+                "active_sheet": None,
+            },
+        )
+    finally:
+        ctx.close()
+
+
+@app.get("/minigames/slide15", response_class=HTMLResponse)
+def minigames_slide15_page(request: Request):
+    ctx = Ctx(request)
+    try:
+        return ctx.render(
+            "minigames_slide15.html",
+            {
+                "active_sheet": None,
+            },
+        )
+    finally:
+        ctx.close()
+
+
+@app.get("/minigames/2048", response_class=HTMLResponse)
+def minigames_2048_page(request: Request):
+    ctx = Ctx(request)
+    try:
+        return ctx.render(
+            "minigames_2048.html",
+            {
+                "active_sheet": None,
+            },
+        )
+    finally:
+        ctx.close()
+
+
+@app.get("/minigames/bomb-flip", response_class=HTMLResponse)
+def minigames_bomb_flip_page(request: Request):
+    ctx = Ctx(request)
+    try:
+        return ctx.render(
+            "minigames_bomb_flip.html",
+            {
+                "active_sheet": None,
+            },
+        )
+    finally:
+        ctx.close()
+
+
+@app.get("/minigames/snake", response_class=HTMLResponse)
+def minigames_snake_page(request: Request):
+    ctx = Ctx(request)
+    try:
+        return ctx.render(
+            "minigames_snake.html",
+            {
+                "active_sheet": None,
+            },
+        )
+    finally:
+        ctx.close()
+
+
+@app.get("/minigames/breakout", response_class=HTMLResponse)
+def minigames_breakout_page(request: Request):
+    ctx = Ctx(request)
+    try:
+        return ctx.render(
+            "minigames_breakout.html",
+            {
+                "active_sheet": None,
+            },
+        )
+    finally:
+        ctx.close()
+
+
+@app.get("/api/minigames/slide15/history")
+def slide15_history(request: Request):
+    ctx = Ctx(request, full=False)
+    try:
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, _path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            games: dict[str, Any] = games_any if isinstance(games_any, dict) else {}
+            game_doc_any = games.get(game_engine.MINIGAME_SLIDE15_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+            payload = game_engine.slide15_game_payload(game_doc)
+        return JSONResponse(
+            {
+                "character_id": int(ctx.character["id"]),
+                "character_name": str(ctx.character["name"] or ""),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.post("/api/minigames/slide15/history")
+async def slide15_record_history(request: Request):
+    ctx = Ctx(request, full=False)
+    try:
+        try:
+            raw = await request.json()
+        except Exception as exc:
+            raise HTTPException(400, "Invalid JSON body") from exc
+
+        run = game_engine.normalize_slide15_run(raw)
+        if run is None:
+            raise HTTPException(400, "Invalid Slide 15 run payload")
+
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            if isinstance(games_any, dict):
+                games: dict[str, Any] = games_any
+            else:
+                games = {}
+                doc["games"] = games
+            game_doc_any = games.get(game_engine.MINIGAME_SLIDE15_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+
+            runs_any = game_doc.get("runs")
+            runs = [entry for entry in runs_any if isinstance(entry, dict)] if isinstance(runs_any, list) else []
+            runs.append(run)
+            runs.sort(
+                key=lambda entry: str(entry.get("finished_at") or entry.get("started_at") or ""),
+                reverse=True,
+            )
+            if len(runs) > game_engine.MINIGAME_MAX_RUNS_PER_GAME:
+                runs = runs[:game_engine.MINIGAME_MAX_RUNS_PER_GAME]
+
+            game_doc["runs"] = runs
+            game_doc["updated_at"] = dt.datetime.now().isoformat()
+            games[game_engine.MINIGAME_SLIDE15_KEY] = game_doc
+            doc["games"] = games
+            game_engine.save_minigame_doc(path, doc)
+            payload = game_engine.slide15_game_payload(game_doc)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "character_id": int(ctx.character["id"]),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.delete("/api/minigames/slide15/history/{run_id}")
+def slide15_delete_history_run(request: Request, run_id: str):
+    ctx = Ctx(request, full=False)
+    try:
+        run_id_value = str(run_id or "").strip()
+        if not run_id_value:
+            raise HTTPException(400, "Run id is required")
+
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            games: dict[str, Any] = games_any if isinstance(games_any, dict) else {}
+
+            game_doc_any = games.get(game_engine.MINIGAME_SLIDE15_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+
+            removed = game_engine.delete_game_run(game_doc, run_id_value)
+            if not removed:
+                raise HTTPException(404, "Run not found")
+
+            games[game_engine.MINIGAME_SLIDE15_KEY] = game_doc
+            doc["games"] = games
+            game_engine.save_minigame_doc(path, doc)
+            payload = game_engine.slide15_game_payload(game_doc)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "character_id": int(ctx.character["id"]),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.get("/api/minigames/2048/history")
+def game2048_history(request: Request):
+    ctx = Ctx(request, full=False)
+    try:
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, _path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            games: dict[str, Any] = games_any if isinstance(games_any, dict) else {}
+            game_doc_any = games.get(game_engine.MINIGAME_2048_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+            payload = game_engine.game2048_payload(game_doc)
+        return JSONResponse(
+            {
+                "character_id": int(ctx.character["id"]),
+                "character_name": str(ctx.character["name"] or ""),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.post("/api/minigames/2048/history")
+async def game2048_record_history(request: Request):
+    ctx = Ctx(request, full=False)
+    try:
+        try:
+            raw = await request.json()
+        except Exception as exc:
+            raise HTTPException(400, "Invalid JSON body") from exc
+
+        run = game_engine.normalize_2048_run(raw)
+        if run is None:
+            raise HTTPException(400, "Invalid 2048 run payload")
+
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            if isinstance(games_any, dict):
+                games: dict[str, Any] = games_any
+            else:
+                games = {}
+                doc["games"] = games
+            game_doc_any = games.get(game_engine.MINIGAME_2048_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+
+            runs_any = game_doc.get("runs")
+            runs = [entry for entry in runs_any if isinstance(entry, dict)] if isinstance(runs_any, list) else []
+            runs.append(run)
+            runs.sort(
+                key=lambda entry: str(entry.get("finished_at") or entry.get("started_at") or ""),
+                reverse=True,
+            )
+            if len(runs) > game_engine.MINIGAME_MAX_RUNS_PER_GAME:
+                runs = runs[:game_engine.MINIGAME_MAX_RUNS_PER_GAME]
+
+            game_doc["runs"] = runs
+            game_doc["updated_at"] = dt.datetime.now().isoformat()
+            games[game_engine.MINIGAME_2048_KEY] = game_doc
+            doc["games"] = games
+            game_engine.save_minigame_doc(path, doc)
+            payload = game_engine.game2048_payload(game_doc)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "character_id": int(ctx.character["id"]),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.delete("/api/minigames/2048/history/{run_id}")
+def game2048_delete_history_run(request: Request, run_id: str):
+    ctx = Ctx(request, full=False)
+    try:
+        run_id_value = str(run_id or "").strip()
+        if not run_id_value:
+            raise HTTPException(400, "Run id is required")
+
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            games: dict[str, Any] = games_any if isinstance(games_any, dict) else {}
+
+            game_doc_any = games.get(game_engine.MINIGAME_2048_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+
+            removed = game_engine.delete_game_run(game_doc, run_id_value)
+            if not removed:
+                raise HTTPException(404, "Run not found")
+
+            games[game_engine.MINIGAME_2048_KEY] = game_doc
+            doc["games"] = games
+            game_engine.save_minigame_doc(path, doc)
+            payload = game_engine.game2048_payload(game_doc)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "character_id": int(ctx.character["id"]),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.get("/api/minigames/bomb-flip/history")
+def bomb_flip_history(request: Request):
+    ctx = Ctx(request, full=False)
+    try:
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, _path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            games: dict[str, Any] = games_any if isinstance(games_any, dict) else {}
+            game_doc_any = games.get(game_engine.MINIGAME_BOMB_FLIP_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+            payload = game_engine.bomb_flip_payload(game_doc)
+        return JSONResponse(
+            {
+                "character_id": int(ctx.character["id"]),
+                "character_name": str(ctx.character["name"] or ""),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.post("/api/minigames/bomb-flip/history")
+async def bomb_flip_record_history(request: Request):
+    ctx = Ctx(request, full=False)
+    try:
+        try:
+            raw = await request.json()
+        except Exception as exc:
+            raise HTTPException(400, "Invalid JSON body") from exc
+
+        run = game_engine.normalize_bomb_flip_run(raw)
+        if run is None:
+            raise HTTPException(400, "Invalid Bomb Flip run payload")
+
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            if isinstance(games_any, dict):
+                games: dict[str, Any] = games_any
+            else:
+                games = {}
+                doc["games"] = games
+            game_doc_any = games.get(game_engine.MINIGAME_BOMB_FLIP_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+
+            runs_any = game_doc.get("runs")
+            runs = [entry for entry in runs_any if isinstance(entry, dict)] if isinstance(runs_any, list) else []
+            runs.append(run)
+            runs.sort(
+                key=lambda entry: str(entry.get("finished_at") or entry.get("started_at") or ""),
+                reverse=True,
+            )
+            if len(runs) > game_engine.MINIGAME_MAX_RUNS_PER_GAME:
+                runs = runs[:game_engine.MINIGAME_MAX_RUNS_PER_GAME]
+
+            game_doc["runs"] = runs
+            game_doc["updated_at"] = dt.datetime.now().isoformat()
+            games[game_engine.MINIGAME_BOMB_FLIP_KEY] = game_doc
+            doc["games"] = games
+            game_engine.save_minigame_doc(path, doc)
+            payload = game_engine.bomb_flip_payload(game_doc)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "character_id": int(ctx.character["id"]),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.delete("/api/minigames/bomb-flip/history/{run_id}")
+def bomb_flip_delete_history_run(request: Request, run_id: str):
+    ctx = Ctx(request, full=False)
+    try:
+        run_id_value = str(run_id or "").strip()
+        if not run_id_value:
+            raise HTTPException(400, "Run id is required")
+
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            games: dict[str, Any] = games_any if isinstance(games_any, dict) else {}
+
+            game_doc_any = games.get(game_engine.MINIGAME_BOMB_FLIP_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+
+            removed = game_engine.delete_game_run(game_doc, run_id_value)
+            if not removed:
+                raise HTTPException(404, "Run not found")
+
+            games[game_engine.MINIGAME_BOMB_FLIP_KEY] = game_doc
+            doc["games"] = games
+            game_engine.save_minigame_doc(path, doc)
+            payload = game_engine.bomb_flip_payload(game_doc)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "character_id": int(ctx.character["id"]),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.get("/api/minigames/snake/history")
+def snake_history(request: Request):
+    ctx = Ctx(request, full=False)
+    try:
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, _path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            games: dict[str, Any] = games_any if isinstance(games_any, dict) else {}
+            game_doc_any = games.get(game_engine.MINIGAME_SNAKE_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+            payload = game_engine.snake_payload(game_doc)
+        return JSONResponse(
+            {
+                "character_id": int(ctx.character["id"]),
+                "character_name": str(ctx.character["name"] or ""),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.post("/api/minigames/snake/history")
+async def snake_record_history(request: Request):
+    ctx = Ctx(request, full=False)
+    try:
+        try:
+            raw = await request.json()
+        except Exception as exc:
+            raise HTTPException(400, "Invalid JSON body") from exc
+
+        run = game_engine.normalize_snake_run(raw)
+        if run is None:
+            raise HTTPException(400, "Invalid Snake run payload")
+
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            if isinstance(games_any, dict):
+                games: dict[str, Any] = games_any
+            else:
+                games = {}
+                doc["games"] = games
+            game_doc_any = games.get(game_engine.MINIGAME_SNAKE_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+
+            runs_any = game_doc.get("runs")
+            runs = [entry for entry in runs_any if isinstance(entry, dict)] if isinstance(runs_any, list) else []
+            runs.append(run)
+            runs.sort(
+                key=lambda entry: str(entry.get("finished_at") or entry.get("started_at") or ""),
+                reverse=True,
+            )
+            if len(runs) > game_engine.MINIGAME_MAX_RUNS_PER_GAME:
+                runs = runs[:game_engine.MINIGAME_MAX_RUNS_PER_GAME]
+
+            game_doc["runs"] = runs
+            game_doc["updated_at"] = dt.datetime.now().isoformat()
+            games[game_engine.MINIGAME_SNAKE_KEY] = game_doc
+            doc["games"] = games
+            game_engine.save_minigame_doc(path, doc)
+            payload = game_engine.snake_payload(game_doc)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "character_id": int(ctx.character["id"]),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.delete("/api/minigames/snake/history/{run_id}")
+def snake_delete_history_run(request: Request, run_id: str):
+    ctx = Ctx(request, full=False)
+    try:
+        run_id_value = str(run_id or "").strip()
+        if not run_id_value:
+            raise HTTPException(400, "Run id is required")
+
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            games: dict[str, Any] = games_any if isinstance(games_any, dict) else {}
+
+            game_doc_any = games.get(game_engine.MINIGAME_SNAKE_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+
+            removed = game_engine.delete_game_run(game_doc, run_id_value)
+            if not removed:
+                raise HTTPException(404, "Run not found")
+
+            games[game_engine.MINIGAME_SNAKE_KEY] = game_doc
+            doc["games"] = games
+            game_engine.save_minigame_doc(path, doc)
+            payload = game_engine.snake_payload(game_doc)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "character_id": int(ctx.character["id"]),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.get("/api/minigames/breakout/history")
+def breakout_history(request: Request):
+    ctx = Ctx(request, full=False)
+    try:
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, _path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            games: dict[str, Any] = games_any if isinstance(games_any, dict) else {}
+            game_doc_any = games.get(game_engine.MINIGAME_BREAKOUT_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+            payload = game_engine.breakout_payload(game_doc)
+        return JSONResponse(
+            {
+                "character_id": int(ctx.character["id"]),
+                "character_name": str(ctx.character["name"] or ""),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.post("/api/minigames/breakout/history")
+async def breakout_record_history(request: Request):
+    ctx = Ctx(request, full=False)
+    try:
+        try:
+            raw = await request.json()
+        except Exception as exc:
+            raise HTTPException(400, "Invalid JSON body") from exc
+
+        run = game_engine.normalize_breakout_run(raw)
+        if run is None:
+            raise HTTPException(400, "Invalid Breakout run payload")
+
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            if isinstance(games_any, dict):
+                games: dict[str, Any] = games_any
+            else:
+                games = {}
+                doc["games"] = games
+            game_doc_any = games.get(game_engine.MINIGAME_BREAKOUT_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+
+            runs_any = game_doc.get("runs")
+            runs = [entry for entry in runs_any if isinstance(entry, dict)] if isinstance(runs_any, list) else []
+            runs.append(run)
+            runs.sort(
+                key=lambda entry: str(entry.get("finished_at") or entry.get("started_at") or ""),
+                reverse=True,
+            )
+            if len(runs) > game_engine.MINIGAME_MAX_RUNS_PER_GAME:
+                runs = runs[:game_engine.MINIGAME_MAX_RUNS_PER_GAME]
+
+            game_doc["runs"] = runs
+            game_doc["updated_at"] = dt.datetime.now().isoformat()
+            games[game_engine.MINIGAME_BREAKOUT_KEY] = game_doc
+            doc["games"] = games
+            game_engine.save_minigame_doc(path, doc)
+            payload = game_engine.breakout_payload(game_doc)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "character_id": int(ctx.character["id"]),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.delete("/api/minigames/breakout/history/{run_id}")
+def breakout_delete_history_run(request: Request, run_id: str):
+    ctx = Ctx(request, full=False)
+    try:
+        run_id_value = str(run_id or "").strip()
+        if not run_id_value:
+            raise HTTPException(400, "Run id is required")
+
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            games: dict[str, Any] = games_any if isinstance(games_any, dict) else {}
+
+            game_doc_any = games.get(game_engine.MINIGAME_BREAKOUT_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+
+            removed = game_engine.delete_game_run(game_doc, run_id_value)
+            if not removed:
+                raise HTTPException(404, "Run not found")
+
+            games[game_engine.MINIGAME_BREAKOUT_KEY] = game_doc
+            doc["games"] = games
+            game_engine.save_minigame_doc(path, doc)
+            payload = game_engine.breakout_payload(game_doc)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "character_id": int(ctx.character["id"]),
+                **payload,
+            }
+        )
     finally:
         ctx.close()
 

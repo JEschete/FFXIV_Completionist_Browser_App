@@ -118,7 +118,7 @@ def _reset_module_caches() -> None:
 def ingested_db(template_db, tmp_path, monkeypatch):
     """A fresh copy of the template DB plus tmp data/progress dirs, with every
     module-level ``data/`` path repointed so tests never touch real files."""
-    from app import db, progress_io
+    from app import db, game_engine, progress_io
 
     data_dir = tmp_path / "data"
     progress_dir = data_dir / "progress"
@@ -130,6 +130,7 @@ def ingested_db(template_db, tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB_PATH", db_copy)
     monkeypatch.setattr(db, "VALUE_CAPS_PATH", data_dir / "value_caps.json")
     monkeypatch.setattr(progress_io, "PROGRESS_DIR", progress_dir)
+    monkeypatch.setattr(game_engine, "MINIGAME_DATA_DIR", data_dir / "MinigameData")
 
     # main.py caches "have we reconciled this run yet" process-wide.
     try:

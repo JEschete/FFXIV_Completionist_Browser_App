@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Snake · Minigames{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Snake</h1>
+    <p class="page-sub">
+      Fixed-tick canvas snake with deterministic food spawns, queued input, and speed ramping.
+    </p>
+  </div>
+  <a class="btn-mini" href="/minigames">Back to Minigames</a>
+</div>
+
+<section
+  class="snake-shell"
+  data-snake-app
+  data-history-url="/api/minigames/snake/history"
+  data-record-url="/api/minigames/snake/history"
+  data-delete-url="/api/minigames/snake/history"
+  data-character-id="{{ character.id }}">
+
+  <div class="snake-layout">
+    <div class="snake-main-panel">
+      <div class="snake-stat-grid" aria-label="Snake run stats">
+        <div class="snake-stat-card">
+          <span class="snake-stat-label">Score</span>
+          <strong data-snake-score>0</strong>
+        </div>
+        <div class="snake-stat-card">
+          <span class="snake-stat-label">Length</span>
+          <strong data-snake-length>2</strong>
+        </div>
+        <div class="snake-stat-card">
+          <span class="snake-stat-label">Apples</span>
+          <strong data-snake-apples>0</strong>
+        </div>
+        <div class="snake-stat-card">
+          <span class="snake-stat-label">Speed (ticks/s)</span>
+          <strong data-snake-speed>8.00</strong>
+        </div>
+        <div class="snake-stat-card">
+          <span class="snake-stat-label">Best score</span>
+          <strong data-snake-best-score>0</strong>
+        </div>
+      </div>
+
+      <div class="snake-controls" role="group" aria-label="Snake controls">
+        <button type="button" class="btn-primary" data-snake-new>New Game</button>
+        <button type="button" class="btn-mini" data-snake-pause>Pause</button>
+        <button type="button" class="btn-mini" data-snake-resume>Resume</button>
+        <span class="snake-status" data-snake-status>Ready</span>
+      </div>
+
+      <div class="snake-settings">
+        <label for="snake-speed-setting">Initial speed</label>
+        <select id="snake-speed-setting" data-snake-speed-setting>
+          <option value="easy">Easy</option>
+          <option value="medium" selected>Medium</option>
+          <option value="hard">Hard</option>
+          <option value="very-hard">Very Hard</option>
+        </select>
+      </div>
+
+      <div class="snake-board-wrap">
+        <canvas
+          class="snake-canvas"
+          data-snake-canvas
+          width="480"
+          height="480"
+          role="img"
+          aria-label="Snake game board"></canvas>
+      </div>
+
+      <div class="snake-direction-pad" role="group" aria-label="Direction buttons">
+        <button type="button" class="btn-mini" data-snake-dir="up">Up</button>
+        <button type="button" class="btn-mini" data-snake-dir="left">Left</button>
+        <button type="button" class="btn-mini" data-snake-dir="down">Down</button>
+        <button type="button" class="btn-mini" data-snake-dir="right">Right</button>
+      </div>
+
+      <p class="snake-help">
+        Controls: Arrow keys or WASD. Direction changes are queued per tick. Snake starts moving on first direction input.
+        Avoid walls and your own body.
+      </p>
+    </div>
+
+    <div class="snake-history-panel table-wrap">
+      <table class="data-table snake-history-table">
+        <thead>
+          <tr>
+            <th>Date &amp; time</th>
+            <th>Cause</th>
+            <th>Score</th>
+            <th>Apples</th>
+            <th>Length</th>
+            <th>Duration</th>
+            <th class="snake-col-manage">Manage</th>
+          </tr>
+        </thead>
+        <tbody data-snake-history-body>
+          <tr>
+            <td colspan="7" class="cell-data">Loading history…</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<noscript>
+  <div class="error-banner">Snake requires JavaScript.</div>
+</noscript>
+
+<script src="/minigames-static/Snake/snake.js?v=2"></script>
+{% endblock %}

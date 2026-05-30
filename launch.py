@@ -4,6 +4,7 @@ Invoked by launch.cmd after the virtualenv and dependencies are ready.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 import datetime as dt
 import json
 import os
@@ -481,7 +482,7 @@ def start_server_and_open_browser() -> None:
     time.sleep(1.4)
 
 
-MENU: list[tuple[str, callable]] = [
+MENU: list[tuple[str, Callable[[], None]]] = [
     ("Status / health check",                show_status),
     ("Ingest workbook (.xlsx -> SQLite)",    run_ingest),
     ("Open data folder in Explorer",         open_data_folder),
