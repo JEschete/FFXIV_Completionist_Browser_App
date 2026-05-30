@@ -1789,7 +1789,7 @@ def _run_character_import_job(
             )
             _append_character_import_run_log(
                 run_id,
-                "Desktop import: skipped progress report audit generation and "
+                "Desktop import: skipped deconflict audit generation and "
                 f"reset baseline to {baseline_path}",
             )
         else:
@@ -2055,8 +2055,7 @@ def dashboard(request: Request):
         chains = db.chain_sheets_overview(
             ctx.conn, ctx.run_id, ctx.character_id, ctx.starting_class
         )
-        if hide_completed:
-            chains = [c for c in chains if not _is_roll_complete(c.get("roll"))]
+        chains = [c for c in chains if not _is_roll_complete(c.get("roll"))]
         chains = chains[:6]
         return ctx.render("dashboard.html", {
             "cards": cards,
@@ -4087,7 +4086,7 @@ def progress_report_resolve_item(
     report_doc = _load_latest_progress_report()
     if not isinstance(report_doc, dict):
         return RedirectResponse(
-            f"{destination}?error={quote('No progress report found to resolve.')}",
+            f"{destination}?error={quote('No deconflict snapshot found to resolve.')}",
             status_code=303,
         )
 
@@ -4168,7 +4167,7 @@ def progress_report_resolve_bulk(
     report_doc = _load_latest_progress_report()
     if not isinstance(report_doc, dict):
         return RedirectResponse(
-            f"{destination}?error={quote('No progress report found to resolve.')}",
+            f"{destination}?error={quote('No deconflict snapshot found to resolve.')}",
             status_code=303,
         )
 

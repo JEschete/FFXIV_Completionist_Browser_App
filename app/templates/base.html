@@ -4,7 +4,7 @@
       data-theme-scheme="{{ theme_effective_scheme|default('dark') }}">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, viewport-fit=cover, shrink-to-fit=no" />
   <meta name="color-scheme" content="{{ theme_color_scheme_meta|default('dark') }}" />
   <title>{% block title %}FFXIV Completion Tracker{% endblock %}</title>
   <style>
@@ -26,7 +26,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/static/styles.css?v=18" />
+  <link rel="stylesheet" href="/static/styles.css?v=21" />
   <style id="theme-vars">{{ theme_css|safe }}</style>
   <script src="/static/vendor/htmx.min.js" defer></script>
   <script src="/static/vendor/alpine-collapse.min.js" defer></script>
@@ -146,11 +146,11 @@
             <a href="/" class="quick-link {{ 'active' if request.url.path == '/' }}">Overview</a>
             <a href="/characters" class="quick-link {{ 'active' if request.url.path == '/characters' }}">Characters</a>
             <a href="/chains" class="quick-link {{ 'active' if request.url.path == '/chains' }}">Chains</a>
-            <a href="/progress-reports" class="quick-link {{ 'active' if request.url.path == '/progress-reports' }}">Progress Reports</a>
-            <a href="/lodestone-probe" class="quick-link {{ 'active' if request.url.path == '/lodestone-probe' }}">Lodestone Probe</a>
+            <a href="/progress-reports" class="quick-link {{ 'active' if request.url.path == '/progress-reports' }}">Deconflict</a>
+            <a href="/lodestone-probe" class="quick-link {{ 'active' if request.url.path == '/lodestone-probe' }}">Probe</a>
             <a href="/settings" class="quick-link {{ 'active' if request.url.path == '/settings' }}">Settings</a>
             <a href="/credits" class="quick-link {{ 'active' if request.url.path == '/credits' }}">Credits</a>
-            <a href="/export/current.csv" class="quick-link quick-link-export">Export CSV</a>
+            <a href="/export/current.csv" class="quick-link quick-link-export">Export</a>
           </nav>
         </div>
       </header>

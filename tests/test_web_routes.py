@@ -160,6 +160,35 @@ def test_page_completion_star_marks_completed_cards(client):
     assert 'Odds And Ends<span class="completion-mark"' in resp.text
 
 
+def test_dashboard_chains_in_progress_excludes_completed_chains(client, monkeypatch):
+    import app.main as main_mod
+
+    def fake_chain_sheets_overview(*_args, **_kwargs):
+        return [
+            {
+                "sheet_name": "Synthetic Complete Chain",
+                "title": "Synthetic Complete Chain",
+                "links": 8,
+                "roll": {"done": 10, "countable": 10, "excluded": 0, "total": 10},
+                "pct": 100.0,
+            },
+            {
+                "sheet_name": "Synthetic Active Chain",
+                "title": "Synthetic Active Chain",
+                "links": 8,
+                "roll": {"done": 4, "countable": 10, "excluded": 0, "total": 10},
+                "pct": 40.0,
+            },
+        ]
+
+    monkeypatch.setattr(main_mod.db, "chain_sheets_overview", fake_chain_sheets_overview)
+
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "Synthetic Active Chain" in resp.text
+    assert "Synthetic Complete Chain" not in resp.text
+
+
 def test_sidebar_completion_hide_omits_completed_categories(client):
     # Side Stuff becomes 100% complete: Thing One is already done, toggle Thing Three todo -> done.
     client.post("/api/toggle", data={"sheet_name": "Side Stuff", "row_index": "5"})

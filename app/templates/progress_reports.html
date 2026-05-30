@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Progress Reports · FFXIV Tracker{% endblock %}
+{% block title %}Deconflict · FFXIV Tracker{% endblock %}
 
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Progress Reports</h1>
+    <h1>Deconflict</h1>
     <p class="page-sub">
-      Review detected progression changes around ingest/import/session boundaries.
+      Review detected between-run progression changes and choose how to deconflict each item.
       Resolve each item as done, excluded, or todo. Accepted items are removed from this audit list.
     </p>
   </div>
@@ -16,12 +16,12 @@
 
 {% if not report_doc %}
 <section class="probe-card report-card">
-  <h2>No report found yet</h2>
+  <h2>No deconflict snapshot found yet</h2>
   <p class="page-sub">Run an ingest/import or request a report first. A baseline is saved on close.</p>
 </section>
 {% else %}
 <section class="probe-card report-card">
-  <h2>Latest Report</h2>
+  <h2>Latest Deconflict Snapshot</h2>
   <div class="report-meta-grid">
     <div><span>Reason</span><strong>{{ report_reason or 'unknown' }}</strong></div>
     <div><span>Generated</span><strong>{{ report_generated_at or 'unknown' }}</strong></div>
@@ -29,7 +29,7 @@
     <div><span>Review Unresolved</span><strong>{{ report_summary.review_unresolved or 0 }}</strong></div>
   </div>
   {% if report_path %}
-  <p class="page-sub">Report file: {{ report_path }}</p>
+  <p class="page-sub">Snapshot file: {{ report_path }}</p>
   {% endif %}
 </section>
 
