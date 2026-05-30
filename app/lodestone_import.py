@@ -1690,6 +1690,17 @@ def _path_group_key(parts: list[str]) -> str | None:
     if not segments:
         return None
 
+    if segments[:3] == ["logs", "gathering", "gathering-log"]:
+        # Gathering-log task ids are local to each subgroup file, so include
+        # the subgroup path to keep source ids scoped and avoid collisions.
+        gather_segments = list(segments)
+        if len(gather_segments) >= 5 and gather_segments[4] == "level":
+            # Desktop completion uses "level" while resources use
+            # "level-based" for the same subgroup.
+            gather_segments[4] = "level-based"
+        keep_len = 6 if len(gather_segments) >= 6 else len(gather_segments)
+        return "/".join(gather_segments[:keep_len])
+
     if segments[:3] == ["character", "blue-mage", "log"] and len(segments) >= 4:
         return "/".join(segments[:4])
 
@@ -2139,6 +2150,18 @@ def _bucket_tail(bucket: str) -> str:
     if not value:
         return ""
     return value.rsplit("/", 1)[-1]
+
+
+def _gathering_log_type(bucket: str) -> str | None:
+    parts = [part for part in str(bucket or "").strip().casefold().split("/") if part]
+    if len(parts) < 4:
+        return None
+    if parts[:3] != ["logs", "gathering", "gathering-log"]:
+        return None
+    value = parts[3]
+    if value in {"logging", "harvesting", "mining", "quarrying"}:
+        return value
+    return None
 
 
 # Some desktop buckets are semantically tied to a specific workbook sheet and
@@ -2764,15 +2787,10 @@ def _filter_gathering_log_hits_by_type(
     hits: list[tuple[str, int, str]] | None,
     row_context: dict[tuple[str, int, str], dict[str, Any]],
 ) -> list[tuple[str, int, str]] | None:
-    if not hits or not bucket.startswith("logs/gathering/gathering-log/"):
+    if not hits:
         return hits
 
-    expected_type = {
-        "logging": "logging",
-        "harvesting": "harvesting",
-        "mining": "mining",
-        "quarrying": "quarrying",
-    }.get(_bucket_tail(bucket))
+    expected_type = _gathering_log_type(bucket)
     if not expected_type:
         return hits
 
