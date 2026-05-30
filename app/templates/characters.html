@@ -314,6 +314,12 @@
 
 <form class="char-create" method="post" action="/characters/create">
   <input type="text" name="name" placeholder="New character name…" required />
+  <select name="starting_class" required>
+    <option value="" selected disabled>Pick initial class…</option>
+    {% for cls in starting_classes %}
+    <option value="{{ cls }}">{{ cls|title }}</option>
+    {% endfor %}
+  </select>
   <button type="submit" class="btn-primary">Add character</button>
 </form>
 

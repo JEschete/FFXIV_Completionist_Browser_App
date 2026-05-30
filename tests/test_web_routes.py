@@ -206,6 +206,35 @@ def test_static_pages_render(client):
         assert resp.status_code == 200, f"{path} -> {resp.status_code}"
 
 
+def test_character_create_requires_starting_class(client):
+    resp = client.post(
+        "/characters/create",
+        data={"name": "NoClassCharacter", "starting_class": ""},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert "NoClassCharacter" not in resp.text
+    assert "Pick an initial class from the dropdown" in resp.text
+
+
+def test_character_create_persists_selected_starting_class(client, conn):
+    connection, _run_id = conn
+
+    resp = client.post(
+        "/characters/create",
+        data={"name": "ClassedCharacter", "starting_class": "gladiator"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+
+    created = connection.execute(
+        "SELECT starting_class FROM characters WHERE name = ?",
+        ("ClassedCharacter",),
+    ).fetchone()
+    assert created is not None
+    assert created["starting_class"] == "GLADIATOR"
+
+
 def test_toggle_returns_fragment_and_trigger(client):
     resp = client.post(
         "/api/toggle",

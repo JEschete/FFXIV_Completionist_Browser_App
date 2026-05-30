@@ -931,6 +931,15 @@ img.brand-mark { object-fit: cover; }
   color: var(--text); border-radius: var(--radius-s);
   padding: 8px 12px; font-size: 13px; min-width: 260px;
 }
+.char-create select {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: var(--radius-s);
+  padding: 8px 12px;
+  font-size: 13px;
+  min-width: 220px;
+}
 .error-banner {
   background: rgba(217,107,107,.12);
   border: 1px solid rgba(217,107,107,.35);
@@ -1309,7 +1318,8 @@ img.brand-mark { object-fit: cover; }
   .char-create {
     flex-wrap: wrap;
   }
-  .char-create input {
+  .char-create input,
+  .char-create select {
     min-width: 220px;
     flex: 1;
   }

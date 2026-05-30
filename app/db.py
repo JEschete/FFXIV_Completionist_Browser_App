@@ -296,11 +296,14 @@ def classes_jobs_cap_rows(conn: sqlite3.Connection, run_id: int) -> list[dict[st
 def _state_clauses(starting_class: str | None) -> tuple[str, str, list]:
     """Return (eff_expression, extra_join_sql, extra_join_params) used to splice
     class-overlay support into queries. With no class chosen, behavior is
-    identical to plain `COALESCE(progress, baseline)`."""
+    identical to plain `COALESCE(progress, baseline)`.
+
+    Class overlays that mark a row excluded always win over explicit progress
+    state so imports cannot resurrect quests gated by starting city."""
     if not starting_class:
         return "COALESCE(p.state, n.baseline_state)", "", []
     return (
-        "COALESCE(p.state, co.state, n.baseline_state)",
+        "COALESCE(CASE WHEN co.state = 'excluded' THEN 'excluded' END, p.state, co.state, n.baseline_state)",
         ("LEFT JOIN class_overrides co "
          "ON co.run_id = n.run_id AND co.sheet_name = n.sheet_name "
          "AND co.row_index = n.row_index AND co.starting_class = ?"),
@@ -367,12 +370,20 @@ def get_character(conn: sqlite3.Connection, character_id: int) -> sqlite3.Row | 
     ).fetchone()
 
 
-def create_character(conn: sqlite3.Connection, name: str) -> int:
+def create_character(
+    conn: sqlite3.Connection,
+    name: str,
+    starting_class: str | None = None,
+) -> int:
     clean = name.strip()
     if not clean:
         raise ValueError("Character name is required.")
+    cls = str(starting_class or "").strip().upper() or None
+    if cls and cls not in STARTING_CLASSES:
+        raise ValueError(f"Unknown starting class: {cls}")
     cur = conn.execute(
-        "INSERT INTO characters (name, created_at) VALUES (?, ?)", (clean, now())
+        "INSERT INTO characters (name, starting_class, created_at) VALUES (?, ?, ?)",
+        (clean, cls, now()),
     )
     conn.commit()
     if cur.lastrowid is None:
@@ -515,6 +526,23 @@ def set_row_state(
 ) -> None:
     if state not in ("done", "todo", "excluded"):
         raise ValueError(f"Bad state: {state}")
+
+    # Starting-class exclusions are immutable and should out-prioritize
+    # imported explicit states. If the class overlay says this row is excluded,
+    # force the write to excluded so effective state and rollup deltas stay
+    # consistent.
+    if starting_class and state != "excluded":
+        class_row = conn.execute(
+            """
+            SELECT state
+            FROM class_overrides
+            WHERE run_id = ? AND starting_class = ?
+              AND sheet_name = ? AND row_index = ?
+            """,
+            (run_id, starting_class, sheet_name, row_index),
+        ).fetchone()
+        if class_row is not None and str(class_row["state"] or "").lower() == "excluded":
+            state = "excluded"
 
     # Acquire a write transaction before reading old effective state. This
     # serializes concurrent same-row writes across connections so rollup delta

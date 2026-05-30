@@ -3803,11 +3803,22 @@ def api_search(request: Request, q: str = ""):
 # --- character actions ------------------------------------------------------
 
 @app.post("/characters/create")
-def character_create(request: Request, name: str = Form(...)):
+def character_create(
+    request: Request,
+    name: str = Form(...),
+    starting_class: str = Form(""),
+):
+    cls = starting_class.strip().upper()
+    if not cls:
+        return RedirectResponse(
+            f"/characters?error={quote('Pick an initial class from the dropdown before adding a character.')}",
+            status_code=303,
+        )
+
     conn = db.get_connection()
     try:
         try:
-            cid = db.create_character(conn, name)
+            cid = db.create_character(conn, name, cls)
         except ValueError as exc:
             return RedirectResponse(f"/characters?error={quote(str(exc))}", status_code=303)
         except Exception:
