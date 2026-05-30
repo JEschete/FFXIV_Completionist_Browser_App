@@ -207,10 +207,55 @@ def test_set_value_route(client):
     assert "Paladin" in resp.text
 
 
+def test_set_value_route_desynthesis_allows_two_decimals(client, conn):
+    connection, run_id = conn
+    connection.execute(
+        """
+        UPDATE nodes
+        SET section_label = 'Desynthesis'
+        WHERE run_id = ? AND sheet_name = 'Classes-Jobs' AND row_index = 3
+        """,
+        (run_id,),
+    )
+    connection.commit()
+
+    resp = client.post(
+        "/api/set-value",
+        data={"sheet_name": "Classes-Jobs", "row_index": "3", "percent": "324.52"},
+    )
+    assert resp.status_code == 200
+    assert 'step="0.01"' in resp.text
+    assert 'value="324.52"' in resp.text
+
+    saved = connection.execute(
+        """
+        SELECT progress_percent
+        FROM character_progress
+        WHERE character_id = 1 AND run_id = ?
+          AND sheet_name = 'Classes-Jobs' AND row_index = 3
+        """,
+        (run_id,),
+    ).fetchone()
+    assert saved is not None
+    assert float(saved["progress_percent"]) == 324.52
+
+
 def test_search(client):
     resp = client.get("/api/search", params={"q": "Quest"})
     assert resp.status_code == 200
     assert "Quest Alpha" in resp.text
+
+
+def test_search_includes_global_sheet_and_section_hits(client):
+    sheet_resp = client.get("/api/search", params={"q": "Character Menu"})
+    assert sheet_resp.status_code == 200
+    assert "Character Menu" in sheet_resp.text
+    assert "Page" in sheet_resp.text
+
+    section_resp = client.get("/api/search", params={"q": "MAIN STORY"})
+    assert section_resp.status_code == 200
+    assert "MAIN STORY CHAIN" in section_resp.text
+    assert "Section ·" in section_resp.text
 
 
 def test_progress_header_partial(client):

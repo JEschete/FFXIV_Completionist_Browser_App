@@ -2350,20 +2350,68 @@ def search_nodes(
     eff, join, jparams = _state_clauses(starting_class)
     rows = conn.execute(
         f"""
-        SELECT n.sheet_name, n.row_index, n.label,
-               {eff} AS eff,
-               s.title AS sheet_title
-        FROM nodes n
-        JOIN sheets s ON s.run_id = n.run_id AND s.sheet_name = n.sheet_name
-        LEFT JOIN character_progress p
-          ON p.character_id = ? AND p.run_id = n.run_id
-         AND p.sheet_name = n.sheet_name AND p.row_index = n.row_index
-        {join}
-        WHERE n.run_id = ? AND n.row_type != 'section' AND n.label LIKE ?
-        ORDER BY n.label
+                SELECT x.sheet_name, x.row_index, x.label, x.eff, x.sheet_title, x.result_kind
+                FROM (
+                        -- Direct sheet/page title hits (menu and content pages).
+                        SELECT
+                                s.sheet_name AS sheet_name,
+                                NULL AS row_index,
+                                s.title AS label,
+                                NULL AS eff,
+                                s.title AS sheet_title,
+                                'sheet' AS result_kind,
+                                0 AS rank_kind
+                        FROM sheets s
+                        WHERE s.run_id = ?
+                            AND (s.title LIKE ? OR s.sheet_name LIKE ?)
+
+                        UNION ALL
+
+                        -- Section banner hits.
+                        SELECT
+                                n.sheet_name AS sheet_name,
+                                n.row_index AS row_index,
+                                n.label AS label,
+                                NULL AS eff,
+                                s.title AS sheet_title,
+                                'section' AS result_kind,
+                                1 AS rank_kind
+                        FROM nodes n
+                        JOIN sheets s ON s.run_id = n.run_id AND s.sheet_name = n.sheet_name
+                        WHERE n.run_id = ?
+                            AND n.row_type = 'section'
+                            AND n.label LIKE ?
+
+                        UNION ALL
+
+                        -- Row label hits.
+                        SELECT
+                                n.sheet_name AS sheet_name,
+                                n.row_index AS row_index,
+                                n.label AS label,
+                                {eff} AS eff,
+                                s.title AS sheet_title,
+                                'row' AS result_kind,
+                                2 AS rank_kind
+                        FROM nodes n
+                        JOIN sheets s ON s.run_id = n.run_id AND s.sheet_name = n.sheet_name
+                        LEFT JOIN character_progress p
+                            ON p.character_id = ? AND p.run_id = n.run_id
+                         AND p.sheet_name = n.sheet_name AND p.row_index = n.row_index
+                        {join}
+                        WHERE n.run_id = ?
+                            AND n.row_type != 'section'
+                            AND n.label LIKE ?
+                ) x
+                ORDER BY x.rank_kind, x.label, x.sheet_title
         LIMIT ?
         """,
-        (character_id, *jparams, run_id, f"%{q}%", limit),
+                (
+                        run_id, f"%{q}%", f"%{q}%",
+                        run_id, f"%{q}%",
+                        character_id, *jparams, run_id, f"%{q}%",
+                        limit,
+                ),
     ).fetchall()
     return [dict(r) for r in rows]
 

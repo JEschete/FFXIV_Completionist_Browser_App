@@ -58,6 +58,18 @@ def test_search_nodes(conn, character_id):
     labels = {h["label"] for h in hits}
     assert "Quest Alpha" in labels
 
+    sheet_hits = db.search_nodes(connection, run_id, character_id, "Character")
+    assert any(
+        h.get("result_kind") == "sheet" and h.get("label") == "Character Menu"
+        for h in sheet_hits
+    )
+
+    section_hits = db.search_nodes(connection, run_id, character_id, "MAIN STORY")
+    assert any(
+        h.get("result_kind") == "section" and h.get("label") == "MAIN STORY CHAIN"
+        for h in section_hits
+    )
+
 
 def test_fetch_export_rows(conn, character_id):
     connection, run_id = conn

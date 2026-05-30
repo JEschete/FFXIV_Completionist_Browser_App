@@ -1,7 +1,18 @@
 {% set is_value = row.row_type == 'value' and sheet.value_key %}
 {% set lvl_raw = (row.progress_percent if row.progress_percent is not none
                   else (row.data.get(sheet.value_key) or 0)) %}
-{% set lvl = (lvl_raw|float)|round(0, 'floor')|int %}
+{% set is_desynthesis = (
+  is_value
+  and sheet.sheet_name == 'Classes-Jobs'
+  and 'desynthesis' in ((row.section_label or '')|lower)
+) %}
+{% if is_desynthesis %}
+  {% set lvl = (lvl_raw|float)|round(2) %}
+  {% set lvl_display = '%.2f'|format(lvl) %}
+{% else %}
+  {% set lvl = (lvl_raw|float)|round(0, 'floor')|int %}
+  {% set lvl_display = lvl %}
+{% endif %}
 {% set row_cap = (row.get('value_cap') if row is mapping else none) %}
 {% set lvl_cap = ((row_cap if row_cap is not none else 100)|float) %}
 {% if lvl_cap <= 0 %}{% set lvl_cap = 100 %}{% endif %}
@@ -35,7 +46,7 @@
     {% if is_value and col.key == sheet.value_key %}
       <td class="cell-level state-{{ row.eff }}" style="--level: {{ lvl_pct }}; --hue: {{ (lvl_pct * 1.2)|int }}">
         <input type="number" class="level-input" name="percent"
-               min="0" max="{{ lvl_cap|round(0, 'floor')|int }}" step="1" value="{{ lvl }}"
+               min="0" max="{{ lvl_cap|round(0, 'floor')|int }}" step="{{ '0.01' if is_desynthesis else '1' }}" value="{{ lvl_display }}"
                hx-post="/api/set-value" hx-target="#row-{{ row.row_index }}"
                hx-swap="outerHTML" hx-trigger="change"
                hx-vals='{"sheet_name": {{ sheet.sheet_name|tojson }}, "row_index": {{ row.row_index }} }'
