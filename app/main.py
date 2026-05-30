@@ -340,6 +340,8 @@ THEME_COOKIE = "ffxiv_theme"
 THEME_SCHEME_COOKIE = "ffxiv_theme_scheme"
 THEME_ALLOWED_SCHEME_SETTINGS = {"default", "dark", "light"}
 SECTION_SORT_COOKIE = "ffxiv_sheet_section_sort"
+SHEET_FILTER_COOKIE = "ffxiv_sheet_filter_state"
+SHEET_FILTER_STATES = {"all", "todo", "done", "excluded"}
 SECTION_SORT_OPTIONS = (
     {
         "value": section_sort.SORT_MODE_WORKBOOK,
@@ -500,6 +502,27 @@ def set_section_sort_cookie(response, mode: str) -> None:
     value = section_sort.normalize_sort_mode(mode)
     response.set_cookie(
         SECTION_SORT_COOKIE,
+        value,
+        max_age=60 * 60 * 24 * 365,
+        samesite="lax",
+    )
+
+
+def parse_sheet_filter_state(raw: str | None) -> str | None:
+    value = (raw or "").strip().lower()
+    if value in SHEET_FILTER_STATES:
+        return value
+    return None
+
+
+def cookie_sheet_filter_state(request: Request) -> str:
+    return parse_sheet_filter_state(request.cookies.get(SHEET_FILTER_COOKIE)) or "all"
+
+
+def set_sheet_filter_cookie(response, state: str) -> None:
+    value = parse_sheet_filter_state(state) or "all"
+    response.set_cookie(
+        SHEET_FILTER_COOKIE,
         value,
         max_age=60 * 60 * 24 * 365,
         samesite="lax",
@@ -1792,6 +1815,7 @@ class Ctx:
         )
         self.character_id = int(self.character["id"])
         self.section_sort_mode = cookie_section_sort_mode(request)
+        self.sheet_filter_state = cookie_sheet_filter_state(request)
         self.starting_class: str | None = (
             self.character["starting_class"]
             if "starting_class" in self.character.keys() else None
@@ -1855,6 +1879,7 @@ class Ctx:
             "section_sort_mode_label": section_sort.sort_mode_label(
                 self.section_sort_mode
             ),
+            "sheet_filter_state": self.sheet_filter_state,
             "progress_report_alert": _progress_report_alert_for_character(self.character_id),
             "theme_first_paint_bg": theme["first_paint_bg"],
             "theme_first_paint_text": theme["first_paint_text"],
@@ -1886,6 +1911,7 @@ class Ctx:
         set_theme_cookie(resp, self.theme_state["theme_id"])
         set_theme_scheme_cookie(resp, self.theme_state["scheme_setting"])
         set_section_sort_cookie(resp, self.section_sort_mode)
+        set_sheet_filter_cookie(resp, self.sheet_filter_state)
         return resp
 
 
@@ -1918,9 +1944,14 @@ def dashboard(request: Request):
 
 
 @app.get("/browse/{sheet_name}", response_class=HTMLResponse)
-def browse(request: Request, sheet_name: str, q: str = "", state: str = "all"):
+def browse(request: Request, sheet_name: str, q: str = "", state: str | None = None):
     ctx = Ctx(request)
     try:
+        requested_state = parse_sheet_filter_state(state)
+        if requested_state is not None:
+            ctx.sheet_filter_state = requested_state
+        state = ctx.sheet_filter_state
+
         sheet = ctx.sheets_by_name.get(sheet_name)
         # Backward compatibility for earlier virtual-node URLs that used
         # "::" as the section separator before db.VIRTUAL_SEP was finalized.

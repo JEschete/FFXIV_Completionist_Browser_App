@@ -39,6 +39,18 @@ def test_content_sheet_browse(client):
     assert "Quest Beta" in resp.text
 
 
+def test_browse_filter_state_persists_across_navigation(client):
+    first = client.get("/browse/Side Stuff", params={"state": "todo"})
+    assert first.status_code == 200
+    assert "ffxiv_sheet_filter_state=todo" in first.headers.get("set-cookie", "")
+
+    resp = client.get("/browse/Story Quests")
+    assert resp.status_code == 200
+    assert "Quest Alpha" not in resp.text
+    assert "Quest Beta" in resp.text
+    assert "Quest Gamma" in resp.text
+
+
 def test_static_pages_render(client):
     for path in ("/settings", "/credits", "/chains", "/characters", "/progress-reports"):
         resp = client.get(path)
