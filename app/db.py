@@ -391,6 +391,83 @@ def create_character(
     return int(cur.lastrowid)
 
 
+def rename_character(
+    conn: sqlite3.Connection,
+    character_id: int,
+    new_name: str,
+) -> str:
+    """Rename a character while preserving progress and sidecar ownership.
+
+    Progress rows are keyed by character_id, so DB progress remains intact.
+    We still migrate the sidecar header/path to the new name so reconcile does
+    not resurrect the old character name on next startup.
+    """
+    row = conn.execute(
+        "SELECT name, starting_class, created_at FROM characters WHERE id = ?",
+        (character_id,),
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"Character id {character_id} was not found")
+
+    clean = new_name.strip()
+    if not clean:
+        raise ValueError("Character name is required.")
+
+    old_name = str(row["name"] or "").strip()
+    if not old_name:
+        raise ValueError("Character name is required.")
+    if clean == old_name:
+        return clean
+
+    try:
+        conn.execute(
+            "UPDATE characters SET name = ? WHERE id = ?",
+            (clean, character_id),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError as exc:
+        raise ValueError("Character name already exists") from exc
+
+    from app import progress_io
+
+    old_sidecar = progress_io.sidecar_path(old_name)
+    old_doc = progress_io.load_sidecar(old_sidecar) if old_sidecar.exists() else None
+    if old_doc is not None:
+        header = old_doc.get("character")
+        if not isinstance(header, dict):
+            header = {}
+        header["name"] = clean
+        if "starting_class" not in header:
+            header["starting_class"] = row["starting_class"]
+        if "created_at" not in header:
+            header["created_at"] = row["created_at"]
+        old_doc["character"] = header
+
+        new_sidecar = progress_io.sidecar_path(clean)
+        if new_sidecar != old_sidecar and new_sidecar.exists():
+            suffix = dt.datetime.now().strftime("%Y%m%d%H%M%S")
+            backup = new_sidecar.with_name(f"{new_sidecar.name}.rename-backup-{suffix}")
+            try:
+                new_sidecar.replace(backup)
+            except OSError:
+                pass
+
+        progress_io.save_sidecar(new_sidecar, old_doc)
+        if new_sidecar != old_sidecar:
+            try:
+                old_sidecar.unlink(missing_ok=True)
+            except OSError:
+                pass
+        progress_io.invalidate_cache(old_sidecar)
+        progress_io.invalidate_cache(new_sidecar)
+    else:
+        # Old sidecar may not exist yet (or may be unreadable/corrupt already).
+        # Clearing cache keeps subsequent writes consistent with the new name.
+        progress_io.invalidate_cache()
+
+    return clean
+
+
 def delete_character(conn: sqlite3.Connection, character_id: int) -> int:
     total = conn.execute("SELECT COUNT(*) AS c FROM characters").fetchone()["c"]
     if total <= 1:

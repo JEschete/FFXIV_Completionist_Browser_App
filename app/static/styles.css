@@ -940,6 +940,44 @@ img.brand-mark { object-fit: cover; }
   font-size: 13px;
   min-width: 220px;
 }
+.char-table td[data-col-label]::before {
+  content: none;
+}
+.char-name-cell {
+  min-width: 220px;
+}
+.char-rename-form {
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.char-rename-form[hidden] {
+  display: none !important;
+}
+.char-rename-form input {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: var(--radius-s);
+  padding: 5px 8px;
+  font-size: 12px;
+  min-width: 150px;
+}
+.char-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.char-action-form {
+  display: inline-flex;
+  margin: 0;
+}
+.char-status-cell {
+  white-space: nowrap;
+}
 .error-banner {
   background: rgba(217,107,107,.12);
   border: 1px solid rgba(217,107,107,.35);
@@ -1322,6 +1360,56 @@ img.brand-mark { object-fit: cover; }
   .char-create select {
     min-width: 220px;
     flex: 1;
+  }
+  .char-table-wrap {
+    overflow: visible;
+  }
+  .char-table thead {
+    display: none;
+  }
+  .char-table,
+  .char-table tbody,
+  .char-table tr.data-row,
+  .char-table tr.data-row > td {
+    display: block;
+    width: 100%;
+  }
+  .char-table tr.data-row {
+    padding: 10px 12px;
+  }
+  .char-table tr.data-row > td {
+    padding: 5px 0;
+  }
+  .char-table td[data-col-label]::before {
+    content: attr(data-col-label);
+    display: block;
+    margin-bottom: 4px;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .4px;
+    text-transform: uppercase;
+  }
+  .char-rename-form {
+    width: 100%;
+  }
+  .char-rename-form input {
+    min-width: 0;
+    width: 100%;
+    flex: 1 1 100%;
+  }
+  .char-actions {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .char-actions .btn-mini {
+    min-height: 28px;
+  }
+  .char-action-form {
+    display: inline-flex;
   }
 
   .layout,

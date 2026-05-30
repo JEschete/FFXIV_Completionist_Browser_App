@@ -206,6 +206,43 @@ def test_static_pages_render(client):
         assert resp.status_code == 200, f"{path} -> {resp.status_code}"
 
 
+def test_characters_page_rename_editor_is_opt_in(client):
+    resp = client.get("/characters")
+    assert resp.status_code == 200
+    assert "data-rename-start" in resp.text
+    assert "data-rename-form hidden" in resp.text
+    assert "data-rename-cancel" in resp.text
+
+
+def test_characters_page_actions_order_for_inactive_character(client, conn):
+    _connection, _run_id = conn
+    created = client.post(
+        "/characters/create",
+        data={"name": "OrderCheck", "starting_class": "GLADIATOR"},
+        follow_redirects=False,
+    )
+    assert created.status_code == 303
+
+    resp = client.get("/characters")
+    assert resp.status_code == 200
+
+    row_match = re.search(
+        r"<tr class=\"data-row\"[^>]*>.*?OrderCheck.*?</tr>",
+        resp.text,
+        flags=re.DOTALL,
+    )
+    assert row_match is not None
+    row_html = row_match.group(0)
+
+    switch_pos = row_html.find(">Switch to<")
+    rename_pos = row_html.find("data-rename-start")
+    delete_pos = row_html.find(">Delete<")
+    assert switch_pos != -1
+    assert rename_pos != -1
+    assert delete_pos != -1
+    assert switch_pos < rename_pos < delete_pos
+
+
 def test_character_create_requires_starting_class(client):
     resp = client.post(
         "/characters/create",
@@ -233,6 +270,78 @@ def test_character_create_persists_selected_starting_class(client, conn):
     ).fetchone()
     assert created is not None
     assert created["starting_class"] == "GLADIATOR"
+
+
+def test_character_rename_route_preserves_progress(client, conn, character_id):
+    connection, run_id = conn
+    from app import db
+
+    db.set_row_state(connection, character_id, run_id, "Side Stuff", 5, "done")
+
+    resp = client.post(
+        "/characters/rename",
+        data={
+            "character_id": str(character_id),
+            "name": "Route Rename Character",
+            "next_url": "/characters",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    location = resp.headers.get("location", "")
+    assert "saved=" in location
+
+    follow = client.get(location)
+    assert follow.status_code == 200
+    assert "Character renamed to Route Rename Character." in follow.text
+
+    row = connection.execute(
+        "SELECT name FROM characters WHERE id = ?",
+        (character_id,),
+    ).fetchone()
+    assert row is not None
+    assert row["name"] == "Route Rename Character"
+    assert db.effective_state(connection, character_id, run_id, "Side Stuff", 5) == "done"
+
+
+def test_character_rename_route_validation_errors(client, conn, character_id):
+    connection, _run_id = conn
+
+    created = client.post(
+        "/characters/create",
+        data={"name": "Second Route Character", "starting_class": "GLADIATOR"},
+        follow_redirects=False,
+    )
+    assert created.status_code == 303
+    second = connection.execute(
+        "SELECT id FROM characters WHERE name = ?",
+        ("Second Route Character",),
+    ).fetchone()
+    assert second is not None
+
+    blank = client.post(
+        "/characters/rename",
+        data={
+            "character_id": str(second["id"]),
+            "name": "   ",
+            "next_url": "/characters",
+        },
+        follow_redirects=True,
+    )
+    assert blank.status_code == 200
+    assert "Character name is required" in blank.text
+
+    duplicate = client.post(
+        "/characters/rename",
+        data={
+            "character_id": str(second["id"]),
+            "name": "Adventurer",
+            "next_url": "/characters",
+        },
+        follow_redirects=True,
+    )
+    assert duplicate.status_code == 200
+    assert "Character name already exists" in duplicate.text
 
 
 def test_toggle_returns_fragment_and_trigger(client):

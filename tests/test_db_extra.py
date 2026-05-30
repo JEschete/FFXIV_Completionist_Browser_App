@@ -193,6 +193,43 @@ def test_create_and_delete_character(conn):
         db.delete_character(connection, 1)         # only one left
 
 
+def test_rename_character_preserves_progress_and_migrates_sidecar(conn, character_id):
+    connection, run_id = conn
+    from app import progress_io
+
+    db.set_row_state(connection, character_id, run_id, "Side Stuff", 5, "done")
+
+    old_name = str(db.get_character(connection, character_id)["name"])
+    old_sidecar = progress_io.sidecar_path(old_name)
+    assert old_sidecar.exists()
+
+    db.rename_character(connection, character_id, "Renamed Adventurer")
+
+    renamed = db.get_character(connection, character_id)
+    assert renamed is not None
+    assert renamed["name"] == "Renamed Adventurer"
+    assert db.effective_state(connection, character_id, run_id, "Side Stuff", 5) == "done"
+
+    new_sidecar = progress_io.sidecar_path("Renamed Adventurer")
+    assert new_sidecar.exists()
+    doc = progress_io.load_sidecar(new_sidecar)
+    assert isinstance(doc, dict)
+    assert str((doc.get("character") or {}).get("name") or "") == "Renamed Adventurer"
+    if new_sidecar != old_sidecar:
+        assert not old_sidecar.exists()
+
+
+def test_rename_character_validation(conn, character_id):
+    connection, _ = conn
+    second_id = db.create_character(connection, "Second Rename Target", "GLADIATOR")
+
+    with pytest.raises(ValueError):
+        db.rename_character(connection, character_id, "   ")
+
+    with pytest.raises(ValueError):
+        db.rename_character(connection, second_id, db.get_character(connection, character_id)["name"])
+
+
 def test_set_character_class_validation(conn, character_id):
     connection, _ = conn
     with pytest.raises(ValueError):

@@ -2301,6 +2301,7 @@ def chains_overview(request: Request):
 def characters_page(
     request: Request,
     error: str = "",
+    saved: str = "",
     run_id: str = "",
     payload_path: str = "",
     desktop_path: str = "",
@@ -2367,6 +2368,7 @@ def characters_page(
 
         return ctx.render("characters.html", {
             "error": error,
+            "saved": saved,
             "starting_classes": db.STARTING_CLASSES,
             "import_run_id": run_id,
             "import_run": run,
@@ -3837,6 +3839,40 @@ def character_select(character_id: int = Form(...), next_url: str = Form("/")):
     target = next_url if next_url.startswith("/") else "/"
     resp = RedirectResponse(target, status_code=303)
     set_char_cookie(resp, character_id)
+    return resp
+
+
+@app.post("/characters/rename")
+def character_rename(
+    request: Request,
+    character_id: int = Form(...),
+    name: str = Form(...),
+    next_url: str = Form("/characters"),
+):
+    def with_query(url: str, key: str, value: str) -> str:
+        separator = "&" if "?" in url else "?"
+        return f"{url}{separator}{key}={quote(value)}"
+
+    target = next_url if next_url.startswith("/") else "/characters"
+    conn = db.get_connection()
+    try:
+        try:
+            renamed_to = db.rename_character(conn, character_id, name)
+        except ValueError as exc:
+            return RedirectResponse(
+                with_query(target, "error", str(exc)),
+                status_code=303,
+            )
+    finally:
+        conn.close()
+
+    active = cookie_character_id(request)
+    resp = RedirectResponse(
+        with_query(target, "saved", f"Character renamed to {renamed_to}."),
+        status_code=303,
+    )
+    if active == character_id:
+        set_char_cookie(resp, character_id)
     return resp
 
 
