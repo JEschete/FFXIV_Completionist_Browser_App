@@ -28,7 +28,10 @@
 {% set has_children = ns.visible_children|length > 0 %}
 {% set is_open = (depth < 1 or node.has_active) %}
 {% if not (completion_behavior == 'hide' and is_complete) %}
-<li class="tree-item" x-data="{ open: {{ 'true' if is_open else 'false' }} }">
+<li class="tree-item"
+  x-data="{ open: {{ 'true' if is_open else 'false' }} }"
+  x-on:tree-expand-all.window="open = true"
+  x-on:tree-collapse-all.window="open = false">
   <div class="tree-row depth-{{ depth }} {{ 'active' if is_active }}">
     {% if has_children %}
       <button class="tree-caret" type="button" @click="open = !open"

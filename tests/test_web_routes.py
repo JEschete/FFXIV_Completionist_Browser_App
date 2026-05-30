@@ -52,6 +52,66 @@ def test_browse_filter_state_persists_across_navigation(client):
     assert "Quest Gamma" in resp.text
 
 
+def test_browse_multi_state_filter_persists_across_navigation(client):
+    first = client.get(
+        "/browse/Side Stuff",
+        params=[("states", "done"), ("states", "excluded")],
+    )
+    assert first.status_code == 200
+    # Preserve canonical cookie ordering across repeated query params.
+    assert client.cookies.get("ffxiv_sheet_filter_state") == "done.excluded"
+
+    assert "Thing One" in first.text
+    assert "Thing Two" in first.text
+    assert "Thing Three" not in first.text
+
+    # Navigation should keep the same multi-selection via cookie.
+    resp = client.get("/browse/Story Quests")
+    assert resp.status_code == 200
+    assert "Quest Alpha" in resp.text
+    assert "Quest Beta" not in resp.text
+    assert "Quest Gamma" not in resp.text
+
+
+def test_browse_empty_multi_state_filter_persists(client):
+    first = client.get(
+        "/browse/Side Stuff",
+        params={"states_present": "1"},
+    )
+    assert first.status_code == 200
+    assert client.cookies.get("ffxiv_sheet_filter_state") == "none"
+
+    assert "Thing One" not in first.text
+    assert "Thing Two" not in first.text
+    assert "Thing Three" not in first.text
+
+    # Cookie-backed persistence should keep empty selection across navigation.
+    resp = client.get("/browse/Story Quests")
+    assert resp.status_code == 200
+    assert "Quest Alpha" not in resp.text
+    assert "Quest Beta" not in resp.text
+    assert "Quest Gamma" not in resp.text
+
+
+def test_browse_state_all_resets_persisted_state_filter(client):
+    first = client.get(
+        "/browse/Side Stuff",
+        params=[("states", "done")],
+    )
+    assert first.status_code == 200
+    assert client.cookies.get("ffxiv_sheet_filter_state") == "done"
+    assert "Thing One" in first.text
+    assert "Thing Two" not in first.text
+    assert "Thing Three" not in first.text
+
+    reset = client.get("/browse/Side Stuff", params={"state": "all"})
+    assert reset.status_code == 200
+    assert client.cookies.get("ffxiv_sheet_filter_state") == "all"
+    assert "Thing One" in reset.text
+    assert "Thing Two" in reset.text
+    assert "Thing Three" in reset.text
+
+
 def test_settings_save_persists_completion_behavior_cookies(client):
     settings_page = client.get("/settings")
     assert settings_page.status_code == 200

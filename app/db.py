@@ -1983,6 +1983,7 @@ def fetch_rows(
     sheet_name: str,
     q: str = "",
     state: str = "all",
+    states: list[str] | None = None,
     starting_class: str | None = None,
 ) -> list[dict]:
     """All nodes for a sheet with effective state + parsed data, in row order."""
@@ -2010,6 +2011,23 @@ def fetch_rows(
         """,
         params,
     ).fetchall()
+
+    explicit_state_selection = states is not None
+    allowed_states = {
+        str(s).strip().lower()
+        for s in (states or [])
+        if str(s).strip().lower() in {"todo", "done", "excluded"}
+    }
+    state_norm = str(state or "").strip().lower()
+    if not explicit_state_selection and not allowed_states and state_norm in {"todo", "done", "excluded"}:
+        allowed_states = {state_norm}
+    all_states_selected = len(allowed_states) == 3
+    # Selecting all three state buckets is equivalent to no state filter.
+    if all_states_selected:
+        allowed_states = set()
+
+    explicit_empty_selection = explicit_state_selection and not all_states_selected and not allowed_states
+
     out: list[dict] = []
     for r in rows:
         d = dict(r)
@@ -2021,7 +2039,9 @@ def fetch_rows(
                 d.get("section_label"),
                 d.get("label"),
             )
-        if state != "all" and not d["is_section"] and d["eff"] != state:
+        if explicit_empty_selection and not d["is_section"]:
+            continue
+        if allowed_states and not d["is_section"] and d["eff"] not in allowed_states:
             continue
         out.append(d)
     return out

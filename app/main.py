@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import quote, urlparse
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -341,7 +341,9 @@ THEME_SCHEME_COOKIE = "ffxiv_theme_scheme"
 THEME_ALLOWED_SCHEME_SETTINGS = {"default", "dark", "light"}
 SECTION_SORT_COOKIE = "ffxiv_sheet_section_sort"
 SHEET_FILTER_COOKIE = "ffxiv_sheet_filter_state"
-SHEET_FILTER_STATES = {"all", "todo", "done", "excluded"}
+SHEET_FILTER_STATES = ("todo", "done", "excluded")
+SHEET_FILTER_ALL = "all"
+SHEET_FILTER_NONE = "none"
 SIDEBAR_COMPLETION_COOKIE = "ffxiv_sidebar_completion_behavior"
 PAGE_COMPLETION_COOKIE = "ffxiv_page_completion_behavior"
 COMPLETION_BEHAVIOR_SHOW = "show"
@@ -534,17 +536,57 @@ def set_section_sort_cookie(response, mode: str) -> None:
 
 def parse_sheet_filter_state(raw: str | None) -> str | None:
     value = (raw or "").strip().lower()
-    if value in SHEET_FILTER_STATES:
+    if value in {SHEET_FILTER_ALL, SHEET_FILTER_NONE, *SHEET_FILTER_STATES}:
         return value
     return None
 
 
-def cookie_sheet_filter_state(request: Request) -> str:
-    return parse_sheet_filter_state(request.cookies.get(SHEET_FILTER_COOKIE)) or "all"
+def normalize_sheet_filter_states(raw_values: list[str] | None) -> list[str]:
+    wanted: set[str] = set()
+    for raw in raw_values or []:
+        decoded = str(raw or "").strip().strip('"').replace("\\054", ",")
+        for chunk in re.split(r"[,.]", decoded):
+            value = chunk.strip().lower()
+            if value == SHEET_FILTER_ALL:
+                return list(SHEET_FILTER_STATES)
+            if value == SHEET_FILTER_NONE:
+                return []
+            if value in SHEET_FILTER_STATES:
+                wanted.add(value)
+    return [state for state in SHEET_FILTER_STATES if state in wanted]
 
 
-def set_sheet_filter_cookie(response, state: str) -> None:
-    value = parse_sheet_filter_state(state) or "all"
+def serialize_sheet_filter_states(states: list[str]) -> str:
+    normalized = normalize_sheet_filter_states(states)
+    if len(normalized) == len(SHEET_FILTER_STATES):
+        return SHEET_FILTER_ALL
+    if not normalized:
+        return SHEET_FILTER_NONE
+    # Dot delimiter avoids cookie-layer comma escaping (\054) so parsing stays stable.
+    return ".".join(normalized)
+
+
+def cookie_sheet_filter_states(request: Request) -> list[str]:
+    raw = request.cookies.get(SHEET_FILTER_COOKIE)
+    if raw is None:
+        return list(SHEET_FILTER_STATES)
+
+    # Backward compatibility with single-state cookies used before multi-select.
+    legacy = parse_sheet_filter_state(raw)
+    if legacy == SHEET_FILTER_ALL:
+        return list(SHEET_FILTER_STATES)
+    if legacy == SHEET_FILTER_NONE:
+        return []
+    if legacy in SHEET_FILTER_STATES:
+        return [legacy]
+    parsed = normalize_sheet_filter_states([raw])
+    if parsed:
+        return parsed
+    return list(SHEET_FILTER_STATES)
+
+
+def set_sheet_filter_cookie(response, states: list[str]) -> None:
+    value = serialize_sheet_filter_states(states)
     response.set_cookie(
         SHEET_FILTER_COOKIE,
         value,
@@ -1885,7 +1927,7 @@ class Ctx:
         )
         self.character_id = int(self.character["id"])
         self.section_sort_mode = cookie_section_sort_mode(request)
-        self.sheet_filter_state = cookie_sheet_filter_state(request)
+        self.sheet_filter_states = cookie_sheet_filter_states(request)
         self.sidebar_completion_behavior = cookie_sidebar_completion_behavior(request)
         self.page_completion_behavior = cookie_page_completion_behavior(request)
         self.starting_class: str | None = (
@@ -1951,7 +1993,7 @@ class Ctx:
             "section_sort_mode_label": section_sort.sort_mode_label(
                 self.section_sort_mode
             ),
-            "sheet_filter_state": self.sheet_filter_state,
+            "sheet_filter_states": self.sheet_filter_states,
             "sidebar_completion_behavior": self.sidebar_completion_behavior,
             "page_completion_behavior": self.page_completion_behavior,
             "progress_report_alert": _progress_report_alert_for_character(self.character_id),
@@ -1985,7 +2027,7 @@ class Ctx:
         set_theme_cookie(resp, self.theme_state["theme_id"])
         set_theme_scheme_cookie(resp, self.theme_state["scheme_setting"])
         set_section_sort_cookie(resp, self.section_sort_mode)
-        set_sheet_filter_cookie(resp, self.sheet_filter_state)
+        set_sheet_filter_cookie(resp, self.sheet_filter_states)
         set_sidebar_completion_cookie(resp, self.sidebar_completion_behavior)
         set_page_completion_cookie(resp, self.page_completion_behavior)
         return resp
@@ -2026,13 +2068,36 @@ def dashboard(request: Request):
 
 
 @app.get("/browse/{sheet_name}", response_class=HTMLResponse)
-def browse(request: Request, sheet_name: str, q: str = "", state: str | None = None):
+def browse(
+    request: Request,
+    sheet_name: str,
+    q: str = "",
+    state: str | None = None,
+    states: list[str] | None = Query(default=None),
+    states_present: str | None = Query(default=None),
+):
     ctx = Ctx(request)
     try:
-        requested_state = parse_sheet_filter_state(state)
-        if requested_state is not None:
-            ctx.sheet_filter_state = requested_state
-        state = ctx.sheet_filter_state
+        requested_states: list[str] | None = None
+        if states:
+            requested_states = normalize_sheet_filter_states(states)
+        elif states_present is not None:
+            # Explicit filter form submit with no checked states.
+            requested_states = []
+        elif state is not None:
+            legacy_state = parse_sheet_filter_state(state)
+            if legacy_state == SHEET_FILTER_ALL:
+                requested_states = list(SHEET_FILTER_STATES)
+            elif legacy_state == SHEET_FILTER_NONE:
+                requested_states = []
+            elif legacy_state in SHEET_FILTER_STATES:
+                requested_states = [legacy_state]
+
+        if requested_states is not None:
+            ctx.sheet_filter_states = requested_states
+
+        selected_states = list(ctx.sheet_filter_states)
+        state_filter_active = len(selected_states) < len(SHEET_FILTER_STATES)
 
         def _menu_sections_for_children(children: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
             section_order: list[str | None] = []
@@ -2111,7 +2176,10 @@ def browse(request: Request, sheet_name: str, q: str = "", state: str | None = N
 
         rows = db.fetch_rows(
             ctx.conn, ctx.run_id, ctx.character_id, source_sheet_name,
-            q=q, state=state, starting_class=ctx.starting_class,
+            q=q,
+            state=SHEET_FILTER_ALL,
+            states=selected_states,
+            starting_class=ctx.starting_class,
         )
         flags = db.sheet_chain_flags(
             ctx.conn, ctx.run_id, ctx.character_id, source_sheet_name,
@@ -2200,7 +2268,8 @@ def browse(request: Request, sheet_name: str, q: str = "", state: str | None = N
             "roll": roll,
             "pct": db.pct(roll),
             "q": q,
-            "state": state,
+            "selected_states": selected_states,
+            "state_filter_active": state_filter_active,
             "shown": shown,
             "sheet_total_rows": int(view_sheet.get("total_rows") or shown),
             "browse_sheet_name": sheet_name,

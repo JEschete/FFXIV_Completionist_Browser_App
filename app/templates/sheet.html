@@ -6,7 +6,7 @@
   <div>
     <h1>{{ sheet.title }}</h1>
     <p class="page-sub">{{ shown }} of {{ sheet_total_rows|default(sheet.total_rows) }} rows
-      {% if state != 'all' or q %}<span class="filter-note">· filtered</span>{% endif %}
+      {% if state_filter_active or q %}<span class="filter-note">· filtered</span>{% endif %}
       {% if section_sort_supported %}
         <span class="filter-note">· section order: {{ section_sort_mode_label }}</span>
       {% endif %}
@@ -16,12 +16,21 @@
 
 <form class="toolbar" method="get" action="/browse/{{ browse_sheet_name|default(sheet.sheet_name)|urlencode }}">
   <input type="search" name="q" value="{{ q }}" placeholder="Filter rows in this sheet…" />
-  <div class="seg">
-    {% for opt, lbl in [('all','All'), ('todo','To Do'), ('done','Done'), ('excluded','Excluded')] %}
-      <button type="submit" name="state" value="{{ opt }}"
-              class="seg-btn {{ 'on' if state == opt }}">{{ lbl }}</button>
+  <input type="hidden" name="states_present" value="1" />
+  <div class="seg seg-multi" role="group" aria-label="Row state filters">
+    {% for opt, lbl in [('todo','To Do'), ('done','Done'), ('excluded','Excluded')] %}
+      <label class="seg-btn-toggle">
+        <input type="checkbox" name="states" value="{{ opt }}"
+               onchange="this.form.requestSubmit()"
+               {{ 'checked' if opt in selected_states else '' }} />
+        <span>{{ lbl }}</span>
+      </label>
     {% endfor %}
   </div>
+  {% if q or state_filter_active %}
+    <a class="btn-mini toolbar-mini"
+       href="/browse/{{ browse_sheet_name|default(sheet.sheet_name)|urlencode }}?state=all">Reset</a>
+  {% endif %}
 </form>
 
 <div class="toolbar-section-actions section-bulk-actions" aria-label="Section visibility controls">
