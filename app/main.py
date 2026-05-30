@@ -342,6 +342,30 @@ THEME_ALLOWED_SCHEME_SETTINGS = {"default", "dark", "light"}
 SECTION_SORT_COOKIE = "ffxiv_sheet_section_sort"
 SHEET_FILTER_COOKIE = "ffxiv_sheet_filter_state"
 SHEET_FILTER_STATES = {"all", "todo", "done", "excluded"}
+SIDEBAR_COMPLETION_COOKIE = "ffxiv_sidebar_completion_behavior"
+PAGE_COMPLETION_COOKIE = "ffxiv_page_completion_behavior"
+COMPLETION_BEHAVIOR_SHOW = "show"
+COMPLETION_BEHAVIOR_STAR = "star"
+COMPLETION_BEHAVIOR_HIDE = "hide"
+COMPLETION_BEHAVIOR_OPTIONS = (
+    {
+        "value": COMPLETION_BEHAVIOR_SHOW,
+        "label": "Show (Default)",
+    },
+    {
+        "value": COMPLETION_BEHAVIOR_STAR,
+        "label": "Star",
+    },
+    {
+        "value": COMPLETION_BEHAVIOR_HIDE,
+        "label": "Hide",
+    },
+)
+COMPLETION_BEHAVIOR_VALUES = {
+    COMPLETION_BEHAVIOR_SHOW,
+    COMPLETION_BEHAVIOR_STAR,
+    COMPLETION_BEHAVIOR_HIDE,
+}
 SECTION_SORT_OPTIONS = (
     {
         "value": section_sort.SORT_MODE_WORKBOOK,
@@ -527,6 +551,52 @@ def set_sheet_filter_cookie(response, state: str) -> None:
         max_age=60 * 60 * 24 * 365,
         samesite="lax",
     )
+
+
+def normalize_completion_behavior(raw: str | None) -> str:
+    value = (raw or "").strip().lower()
+    if value in COMPLETION_BEHAVIOR_VALUES:
+        return value
+    return COMPLETION_BEHAVIOR_SHOW
+
+
+def cookie_sidebar_completion_behavior(request: Request) -> str:
+    return normalize_completion_behavior(request.cookies.get(SIDEBAR_COMPLETION_COOKIE))
+
+
+def set_sidebar_completion_cookie(response, behavior: str) -> None:
+    value = normalize_completion_behavior(behavior)
+    response.set_cookie(
+        SIDEBAR_COMPLETION_COOKIE,
+        value,
+        max_age=60 * 60 * 24 * 365,
+        samesite="lax",
+    )
+
+
+def cookie_page_completion_behavior(request: Request) -> str:
+    return normalize_completion_behavior(request.cookies.get(PAGE_COMPLETION_COOKIE))
+
+
+def set_page_completion_cookie(response, behavior: str) -> None:
+    value = normalize_completion_behavior(behavior)
+    response.set_cookie(
+        PAGE_COMPLETION_COOKIE,
+        value,
+        max_age=60 * 60 * 24 * 365,
+        samesite="lax",
+    )
+
+
+def _is_roll_complete(roll: object) -> bool:
+    if not isinstance(roll, dict):
+        return False
+    try:
+        countable = int(roll.get("countable") or 0)
+        done = int(roll.get("done") or 0)
+    except (TypeError, ValueError):
+        return False
+    return countable > 0 and done >= countable
 
 
 def _extract_theme_color(raw: object) -> str | None:
@@ -1816,6 +1886,8 @@ class Ctx:
         self.character_id = int(self.character["id"])
         self.section_sort_mode = cookie_section_sort_mode(request)
         self.sheet_filter_state = cookie_sheet_filter_state(request)
+        self.sidebar_completion_behavior = cookie_sidebar_completion_behavior(request)
+        self.page_completion_behavior = cookie_page_completion_behavior(request)
         self.starting_class: str | None = (
             self.character["starting_class"]
             if "starting_class" in self.character.keys() else None
@@ -1880,6 +1952,8 @@ class Ctx:
                 self.section_sort_mode
             ),
             "sheet_filter_state": self.sheet_filter_state,
+            "sidebar_completion_behavior": self.sidebar_completion_behavior,
+            "page_completion_behavior": self.page_completion_behavior,
             "progress_report_alert": _progress_report_alert_for_character(self.character_id),
             "theme_first_paint_bg": theme["first_paint_bg"],
             "theme_first_paint_text": theme["first_paint_text"],
@@ -1912,6 +1986,8 @@ class Ctx:
         set_theme_scheme_cookie(resp, self.theme_state["scheme_setting"])
         set_section_sort_cookie(resp, self.section_sort_mode)
         set_sheet_filter_cookie(resp, self.sheet_filter_state)
+        set_sidebar_completion_cookie(resp, self.sidebar_completion_behavior)
+        set_page_completion_cookie(resp, self.page_completion_behavior)
         return resp
 
 
@@ -1922,8 +1998,11 @@ def dashboard(request: Request):
     ctx = Ctx(request)
     try:
         # top-level menu cards + a few "needs attention" chains
+        hide_completed = ctx.page_completion_behavior == COMPLETION_BEHAVIOR_HIDE
         cards = []
         for node in ctx.tree:
+            if hide_completed and _is_roll_complete(node.get("roll")):
+                continue
             cards.append({
                 "sheet_name": node["sheet_name"],
                 "title": node["title"],
@@ -1933,7 +2012,10 @@ def dashboard(request: Request):
             })
         chains = db.chain_sheets_overview(
             ctx.conn, ctx.run_id, ctx.character_id, ctx.starting_class
-        )[:6]
+        )
+        if hide_completed:
+            chains = [c for c in chains if not _is_roll_complete(c.get("roll"))]
+        chains = chains[:6]
         return ctx.render("dashboard.html", {
             "cards": cards,
             "chains": chains,
@@ -1952,6 +2034,38 @@ def browse(request: Request, sheet_name: str, q: str = "", state: str | None = N
             ctx.sheet_filter_state = requested_state
         state = ctx.sheet_filter_state
 
+        def _menu_sections_for_children(children: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+            section_order: list[str | None] = []
+            section_cards: dict[str | None, list[dict[str, Any]]] = {}
+            hide_completed = ctx.page_completion_behavior == COMPLETION_BEHAVIOR_HIDE
+
+            for child in children:
+                child_roll = child.get("roll")
+                if hide_completed and _is_roll_complete(child_roll):
+                    continue
+                card = {
+                    "sheet_name": child["sheet_name"],
+                    "title": child["title"],
+                    "is_menu": child["is_menu"],
+                    "roll": child_roll,
+                    "pct": child["pct"],
+                    "children": len(child["children"]),
+                }
+                section = child.get("parent_menu_section")
+                if section not in section_cards:
+                    section_cards[section] = []
+                    section_order.append(section)
+                section_cards[section].append(card)
+
+            sections = [
+                {"label": s, "cards": section_cards[s]}
+                for s in section_order if s is not None
+            ]
+            if None in section_cards:
+                sections.append({"label": None, "cards": section_cards[None]})
+            children_flat = [c for s in sections for c in s["cards"]]
+            return sections, children_flat
+
         sheet = ctx.sheets_by_name.get(sheet_name)
         # Backward compatibility for earlier virtual-node URLs that used
         # "::" as the section separator before db.VIRTUAL_SEP was finalized.
@@ -1965,39 +2079,7 @@ def browse(request: Request, sheet_name: str, q: str = "", state: str | None = N
         node = db.find_node(ctx.tree, sheet_name)
 
         if sheet["is_menu"]:
-            # category-grid view: child cards with aggregated progress,
-            # grouped by parent_menu_section (the workbook column header
-            # the child came from). Sections appear in workbook order;
-            # any child without a section goes to a final "Other" bucket.
-            # Group child cards by parent_menu_section (the workbook column
-            # they came from). Renamed from "items" to "cards" so Jinja's
-            # attribute lookup doesn't collide with the dict ``.items()``
-            # method when iterating ``group.cards`` in the template.
-            section_order: list[str | None] = []
-            section_cards: dict[str | None, list[dict]] = {}
-            for child in (node["children"] if node else []):
-                card = {
-                    "sheet_name": child["sheet_name"],
-                    "title": child["title"],
-                    "is_menu": child["is_menu"],
-                    "roll": child["roll"],
-                    "pct": child["pct"],
-                    "children": len(child["children"]),
-                }
-                section = child.get("parent_menu_section")
-                if section not in section_cards:
-                    section_cards[section] = []
-                    section_order.append(section)
-                section_cards[section].append(card)
-
-            sections = [
-                {"label": s, "cards": section_cards[s]}
-                for s in section_order if s is not None
-            ]
-            # children with no detected section render last under a soft heading
-            if None in section_cards:
-                sections.append({"label": None, "cards": section_cards[None]})
-            children_flat = [c for s in sections for c in s["cards"]]
+            sections, children_flat = _menu_sections_for_children(node["children"] if node else [])
             return ctx.render("menu.html", {
                 "sheet": sheet,
                 "crumbs": crumbs,
@@ -2011,30 +2093,7 @@ def browse(request: Request, sheet_name: str, q: str = "", state: str | None = N
         # This keeps parent pages like Grand Company Ranks focused on routing
         # into their child tracks instead of mixing all rows in one long table.
         if node and node.get("children"):
-            section_order: list[str | None] = []
-            section_cards: dict[str | None, list[dict]] = {}
-            for child in node["children"]:
-                card = {
-                    "sheet_name": child["sheet_name"],
-                    "title": child["title"],
-                    "is_menu": child["is_menu"],
-                    "roll": child["roll"],
-                    "pct": child["pct"],
-                    "children": len(child["children"]),
-                }
-                section = child.get("parent_menu_section")
-                if section not in section_cards:
-                    section_cards[section] = []
-                    section_order.append(section)
-                section_cards[section].append(card)
-
-            sections = [
-                {"label": s, "cards": section_cards[s]}
-                for s in section_order if s is not None
-            ]
-            if None in section_cards:
-                sections.append({"label": None, "cards": section_cards[None]})
-            children_flat = [c for s in sections for c in s["cards"]]
+            sections, children_flat = _menu_sections_for_children(node["children"])
             return ctx.render("menu.html", {
                 "sheet": sheet,
                 "crumbs": crumbs,
@@ -2163,6 +2222,8 @@ def chains_overview(request: Request):
         chains = db.chain_sheets_overview(
             ctx.conn, ctx.run_id, ctx.character_id, ctx.starting_class
         )
+        if ctx.page_completion_behavior == COMPLETION_BEHAVIOR_HIDE:
+            chains = [c for c in chains if not _is_roll_complete(c.get("roll"))]
         return ctx.render("chains.html", {"chains": chains, "active_sheet": None})
     finally:
         ctx.close()
@@ -2669,6 +2730,9 @@ def settings_page(request: Request, saved: str = "", error: str = ""):
             "selected_theme_id": theme_state["theme_id"],
             "selected_scheme_setting": theme_state["scheme_setting"],
             "selected_section_sort_mode": ctx.section_sort_mode,
+            "selected_sidebar_completion_behavior": ctx.sidebar_completion_behavior,
+            "selected_page_completion_behavior": ctx.page_completion_behavior,
+            "completion_behavior_options": COMPLETION_BEHAVIOR_OPTIONS,
             "section_sort_options": SECTION_SORT_OPTIONS,
             "effective_scheme": theme_state["effective_scheme"],
             "value_cap_rows": value_cap_rows,
@@ -2682,6 +2746,8 @@ def settings_theme_save(
     theme_id: str = Form(""),
     theme_scheme: str = Form("default"),
     section_sort_mode: str = Form(section_sort.DEFAULT_SORT_MODE),
+    sidebar_completion_behavior: str = Form(COMPLETION_BEHAVIOR_SHOW),
+    page_completion_behavior: str = Form(COMPLETION_BEHAVIOR_SHOW),
 ):
     catalog = get_theme_catalog()
     themes_raw = catalog.get("themes")
@@ -2698,6 +2764,8 @@ def settings_theme_save(
 
     normalized_scheme = normalize_theme_scheme_setting(theme_scheme)
     normalized_section_sort_mode = section_sort.normalize_sort_mode(section_sort_mode)
+    normalized_sidebar_completion_behavior = normalize_completion_behavior(sidebar_completion_behavior)
+    normalized_page_completion_behavior = normalize_completion_behavior(page_completion_behavior)
     selected_schemes_raw = selected_theme.get("schemes")
     selected_schemes: dict[str, Any] = (
         selected_schemes_raw if isinstance(selected_schemes_raw, dict) else {}
@@ -2709,6 +2777,8 @@ def settings_theme_save(
     set_theme_cookie(response, normalized_theme_id)
     set_theme_scheme_cookie(response, normalized_scheme)
     set_section_sort_cookie(response, normalized_section_sort_mode)
+    set_sidebar_completion_cookie(response, normalized_sidebar_completion_behavior)
+    set_page_completion_cookie(response, normalized_page_completion_behavior)
     return response
 
 

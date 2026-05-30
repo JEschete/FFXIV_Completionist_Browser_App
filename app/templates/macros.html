@@ -11,10 +11,23 @@
 {% endmacro %}
 
 {# ---- recursive sidebar tree node ---------------------------------------- #}
-{% macro tree_node(node, active_sheet, depth=0) %}
+{% macro tree_node(node, active_sheet, depth=0, completion_behavior='show') %}
 {% set is_active = node.sheet_name == active_sheet %}
-{% set has_children = node.children|length > 0 %}
+{% set countable = node.roll.countable|default(0)|int %}
+{% set done = node.roll.done|default(0)|int %}
+{% set is_complete = countable > 0 and done >= countable %}
+{% set ns = namespace(visible_children=[]) %}
+{% for child in node.children %}
+  {% set child_countable = child.roll.countable|default(0)|int %}
+  {% set child_done = child.roll.done|default(0)|int %}
+  {% set child_complete = child_countable > 0 and child_done >= child_countable %}
+  {% if not (completion_behavior == 'hide' and child_complete) %}
+    {% set _ = ns.visible_children.append(child) %}
+  {% endif %}
+{% endfor %}
+{% set has_children = ns.visible_children|length > 0 %}
 {% set is_open = (depth < 1 or node.has_active) %}
+{% if not (completion_behavior == 'hide' and is_complete) %}
 <li class="tree-item" x-data="{ open: {{ 'true' if is_open else 'false' }} }">
   <div class="tree-row depth-{{ depth }} {{ 'active' if is_active }}">
     {% if has_children %}
@@ -24,7 +37,7 @@
       <span class="tree-caret spacer"></span>
     {% endif %}
     <a class="tree-link" href="/browse/{{ node.sheet_name|urlencode }}">
-      <span class="tree-title">{{ node.title }}</span>
+      <span class="tree-title">{{ node.title }}{% if completion_behavior == 'star' and is_complete %}<span class="completion-mark" aria-label="complete" title="100% complete">★</span>{% endif %}</span>
       {% if node.roll.countable %}
         <span class="tree-pct" title="{{ node.roll.done }}/{{ node.roll.countable }}">
           {{ '%.0f'|format(node.pct) }}%
@@ -34,19 +47,23 @@
   </div>
   {% if has_children %}
   <ul class="tree-children" x-show="open" x-collapse {% if not is_open %}style="display:none"{% endif %}>
-    {% for child in node.children %}
-      {{ tree_node(child, active_sheet, depth + 1) }}
+    {% for child in ns.visible_children %}
+      {{ tree_node(child, active_sheet, depth + 1, completion_behavior) }}
     {% endfor %}
   </ul>
   {% endif %}
 </li>
+{% endif %}
 {% endmacro %}
 
 {# ---- category card (dashboard / menu grids) ----------------------------- #}
-{% macro category_card(item) %}
+{% macro category_card(item, completion_behavior='show') %}
+{% set countable = item.roll.countable|default(0)|int %}
+{% set done = item.roll.done|default(0)|int %}
+{% set is_complete = countable > 0 and done >= countable %}
 <a class="cat-card" href="/browse/{{ item.sheet_name|urlencode }}">
   <div class="cat-card-head">
-    <h3>{{ item.title }}</h3>
+    <h3>{{ item.title }}{% if completion_behavior == 'star' and is_complete %}<span class="completion-mark" aria-label="complete" title="100% complete">★</span>{% endif %}</h3>
     {% if item.children %}
       <span class="cat-tag">{{ item.children }} {{ 'section' if item.children == 1 else 'sections' }}</span>
     {% elif item.roll.countable %}

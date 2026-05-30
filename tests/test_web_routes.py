@@ -7,6 +7,7 @@ contains the character's rows.
 from __future__ import annotations
 
 import json
+import re
 
 from app import progress_report
 
@@ -49,6 +50,65 @@ def test_browse_filter_state_persists_across_navigation(client):
     assert "Quest Alpha" not in resp.text
     assert "Quest Beta" in resp.text
     assert "Quest Gamma" in resp.text
+
+
+def test_settings_save_persists_completion_behavior_cookies(client):
+    settings_page = client.get("/settings")
+    assert settings_page.status_code == 200
+
+    match = re.search(
+        r'<select id="theme-id"[^>]*>\s*<option value="([^"]+)"',
+        settings_page.text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    assert match, "expected at least one theme option"
+    theme_id = match.group(1)
+
+    save = client.post(
+        "/settings/theme",
+        data={
+            "theme_id": theme_id,
+            "sidebar_completion_behavior": "star",
+            "page_completion_behavior": "hide",
+        },
+        follow_redirects=False,
+    )
+    assert save.status_code == 303
+    assert client.cookies.get("ffxiv_sidebar_completion_behavior") == "star"
+    assert client.cookies.get("ffxiv_page_completion_behavior") == "hide"
+
+
+def test_page_completion_hide_omits_completed_cards(client):
+    # Side Stuff becomes 100% complete: Thing One is already done, toggle Thing Three todo -> done.
+    client.post("/api/toggle", data={"sheet_name": "Side Stuff", "row_index": "5"})
+
+    client.cookies.set("ffxiv_page_completion_behavior", "hide")
+    resp = client.get("/browse/Character Menu")
+    assert resp.status_code == 200
+    assert '<a class="cat-card" href="/browse/Side%20Stuff">' not in resp.text
+    assert '<a class="cat-card" href="/browse/Story%20Quests">' in resp.text
+
+
+def test_page_completion_star_marks_completed_cards(client):
+    # Side Stuff becomes 100% complete: Thing One is already done, toggle Thing Three todo -> done.
+    client.post("/api/toggle", data={"sheet_name": "Side Stuff", "row_index": "5"})
+
+    client.cookies.set("ffxiv_page_completion_behavior", "star")
+    resp = client.get("/browse/Character Menu")
+    assert resp.status_code == 200
+    assert '<a class="cat-card" href="/browse/Side%20Stuff">' in resp.text
+    assert 'Odds And Ends<span class="completion-mark"' in resp.text
+
+
+def test_sidebar_completion_hide_omits_completed_categories(client):
+    # Side Stuff becomes 100% complete: Thing One is already done, toggle Thing Three todo -> done.
+    client.post("/api/toggle", data={"sheet_name": "Side Stuff", "row_index": "5"})
+
+    client.cookies.set("ffxiv_sidebar_completion_behavior", "hide")
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert '<a class="tree-link" href="/browse/Side%20Stuff">' not in resp.text
+    assert '<a class="tree-link" href="/browse/Story%20Quests">' in resp.text
 
 
 def test_static_pages_render(client):

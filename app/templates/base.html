@@ -75,7 +75,7 @@
     <nav class="tree">
       <ul class="tree-root">
         {% for node in tree %}
-          {{ tree_node(node, active_sheet, 0) }}
+          {{ tree_node(node, active_sheet, 0, sidebar_completion_behavior) }}
         {% endfor %}
       </ul>
     </nav>
