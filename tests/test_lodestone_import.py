@@ -223,7 +223,19 @@ def test_path_group_key_and_bucket_from_path():
             "level",
             "x9",
         ]
-    ) == "logs/gathering/gathering-log/mining"
+    ) == "logs/gathering/gathering-log/mining/level-based"
+    assert li._path_group_key(
+        [
+            "overall",
+            "logs",
+            "gathering",
+            "gathering-log",
+            "mining",
+            "level",
+            "96-100",
+            "x9",
+        ]
+    ) == "logs/gathering/gathering-log/mining/level-based/96-100"
     assert li._path_group_key(
         [
             "overall",
@@ -933,7 +945,7 @@ def test_island_sanctuary_and_gathering_filters():
         },
     }
     filtered_logging = li._filter_gathering_log_hits_by_type(
-        bucket="logs/gathering/gathering-log/logging",
+        bucket="logs/gathering/gathering-log/logging/level-based/96-100",
         hits=gathering_hits,
         row_context=row_context,
     )
