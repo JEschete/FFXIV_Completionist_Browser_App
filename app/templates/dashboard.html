@@ -14,6 +14,17 @@
   </div>
 </div>
 
+{% if whats_new_toast %}
+<section class="whats-new-toast" role="status" aria-live="polite">
+  <div class="whats-new-toast-title">What's New update available</div>
+  <p class="whats-new-toast-copy">
+    {{ whats_new_toast.total_new_items }} new trackable item{{ '' if whats_new_toast.total_new_items == 1 else 's' }}
+    from the latest ingest{% if whats_new_toast.latest_workbook %} ({{ whats_new_toast.latest_workbook }}){% endif %}.
+  </p>
+  <a class="whats-new-toast-link" href="{{ whats_new_toast.path }}">Review What's New</a>
+</section>
+{% endif %}
+
 <section class="cat-grid">
   {% for card in cards %}
     {{ category_card(card, page_completion_behavior) }}

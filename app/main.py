@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
+import hashlib
 import io
 import json
 import re
@@ -84,6 +85,130 @@ def _save_shutdown_progress_baseline() -> None:
 
 def _load_latest_progress_report() -> dict[str, Any] | None:
     return progress_report.load_latest_report()
+
+
+def _load_whats_new_previous_ingest_snapshot() -> dict[str, Any] | None:
+    path = db.WHATS_NEW_PREVIOUS_INGEST_PATH
+    if not path.exists() or not path.is_file():
+        return None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    return raw
+
+
+def _build_whats_new_payload(
+    conn,
+    run_id: int,
+    *,
+    limit: int,
+) -> dict[str, Any]:
+    previous_snapshot = _load_whats_new_previous_ingest_snapshot() or {}
+    previous_rows_fallback = previous_snapshot.get("rows")
+    previous_meta_fallback = previous_snapshot.get("run")
+    whats_new = db.latest_ingest_new_items(
+        conn,
+        run_id=run_id,
+        limit=limit,
+        previous_rows_fallback=(
+            previous_rows_fallback
+            if isinstance(previous_rows_fallback, list)
+            else None
+        ),
+        previous_meta_fallback=(
+            previous_meta_fallback
+            if isinstance(previous_meta_fallback, dict)
+            else None
+        ),
+    )
+
+    latest_run_raw = whats_new.get("latest_run")
+    latest_run = latest_run_raw if isinstance(latest_run_raw, dict) else None
+    previous_run_raw = whats_new.get("previous_run")
+    previous_run = previous_run_raw if isinstance(previous_run_raw, dict) else None
+
+    latest_source_file = ""
+    previous_source_file = ""
+    if latest_run is not None:
+        latest_source_file = Path(str(latest_run.get("source_file") or "")).name
+    if previous_run is not None:
+        previous_source_file = Path(str(previous_run.get("source_file") or "")).name
+
+    return {
+        "whats_new": whats_new,
+        "latest_run": latest_run,
+        "previous_run": previous_run,
+        "latest_source_file": latest_source_file,
+        "previous_source_file": previous_source_file,
+    }
+
+
+def _whats_new_token_meta(raw: object) -> dict[str, str | int]:
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        "id": str(raw.get("id") or ""),
+        "source_file": str(raw.get("source_file") or ""),
+        "started_at": str(raw.get("started_at") or ""),
+        "completed_at": str(raw.get("completed_at") or ""),
+        "sheet_count": int(raw.get("sheet_count") or 0),
+        "row_count": int(raw.get("row_count") or 0),
+    }
+
+
+def _whats_new_review_token(whats_new: dict[str, Any]) -> str:
+    token_doc = {
+        "latest": _whats_new_token_meta(whats_new.get("latest_run")),
+        "previous": _whats_new_token_meta(whats_new.get("previous_run")),
+        "total_new_items": int(whats_new.get("total_new_items") or 0),
+    }
+    token_raw = json.dumps(
+        token_doc,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+    return hashlib.sha256(token_raw.encode("utf-8")).hexdigest()[:24]
+
+
+def _to_int(raw: object) -> int:
+    if raw is None:
+        return 0
+    if isinstance(raw, bool):
+        return int(raw)
+    if isinstance(raw, (int, float, str)):
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return 0
+    return 0
+
+
+def _overview_whats_new_toast(
+    request: Request,
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    whats_new_raw = payload.get("whats_new")
+    if not isinstance(whats_new_raw, dict):
+        return None
+
+    total_new_items = _to_int(whats_new_raw.get("total_new_items"))
+    if total_new_items <= 0:
+        return None
+
+    review_token = _whats_new_review_token(whats_new_raw)
+    if cookie_whats_new_review_token(request) == review_token:
+        return None
+
+    latest_workbook = str(payload.get("latest_source_file") or "")
+    return {
+        "total_new_items": total_new_items,
+        "latest_workbook": latest_workbook,
+        "path": "/whats-new",
+    }
 
 
 def _progress_report_alert_for_character(character_id: int) -> dict[str, Any] | None:
@@ -352,6 +477,7 @@ SHEET_FILTER_ALL = "all"
 SHEET_FILTER_NONE = "none"
 SIDEBAR_COMPLETION_COOKIE = "ffxiv_sidebar_completion_behavior"
 PAGE_COMPLETION_COOKIE = "ffxiv_page_completion_behavior"
+WHATS_NEW_REVIEW_COOKIE = "ffxiv_whats_new_reviewed"
 COMPLETION_BEHAVIOR_SHOW = "show"
 COMPLETION_BEHAVIOR_STAR = "star"
 COMPLETION_BEHAVIOR_HIDE = "hide"
@@ -630,6 +756,22 @@ def set_page_completion_cookie(response, behavior: str) -> None:
     value = normalize_completion_behavior(behavior)
     response.set_cookie(
         PAGE_COMPLETION_COOKIE,
+        value,
+        max_age=60 * 60 * 24 * 365,
+        samesite="lax",
+    )
+
+
+def cookie_whats_new_review_token(request: Request) -> str:
+    return (request.cookies.get(WHATS_NEW_REVIEW_COOKIE) or "").strip()
+
+
+def set_whats_new_review_cookie(response, token: str) -> None:
+    value = str(token or "").strip()
+    if not value:
+        return
+    response.set_cookie(
+        WHATS_NEW_REVIEW_COOKIE,
         value,
         max_age=60 * 60 * 24 * 365,
         samesite="lax",
@@ -2313,6 +2455,13 @@ def dashboard(request: Request):
     ctx = Ctx(request)
     try:
         # top-level menu cards + a few "needs attention" chains
+        whats_new_payload = _build_whats_new_payload(
+            ctx.conn,
+            ctx.run_id,
+            limit=120,
+        )
+        whats_new_toast = _overview_whats_new_toast(request, whats_new_payload)
+
         hide_completed = ctx.page_completion_behavior == COMPLETION_BEHAVIOR_HIDE
         cards = []
         for node in ctx.tree:
@@ -2360,6 +2509,7 @@ def dashboard(request: Request):
             "recent_activity_groups": recent_activity_groups,
             "activity_total": activity_total,
             "heatmap": heatmap,
+            "whats_new_toast": whats_new_toast,
             "active_sheet": None,
         })
     finally:
@@ -2375,6 +2525,34 @@ def share_cards_page(request: Request):
             "share": share,
             "active_sheet": None,
         })
+    finally:
+        ctx.close()
+
+
+@app.get("/whats-new", response_class=HTMLResponse)
+def whats_new_page(request: Request):
+    ctx = Ctx(request)
+    try:
+        payload = _build_whats_new_payload(
+            ctx.conn,
+            run_id=ctx.run_id,
+            limit=700,
+        )
+        whats_new = payload["whats_new"]
+        response = ctx.render(
+            "whats_new.html",
+            {
+                "whats_new": payload["whats_new"],
+                "latest_run": payload["latest_run"],
+                "previous_run": payload["previous_run"],
+                "latest_source_file": payload["latest_source_file"],
+                "previous_source_file": payload["previous_source_file"],
+                "active_sheet": None,
+            },
+        )
+        if _to_int(whats_new.get("total_new_items")) > 0:
+            set_whats_new_review_cookie(response, _whats_new_review_token(whats_new))
+        return response
     finally:
         ctx.close()
 

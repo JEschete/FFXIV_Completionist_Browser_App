@@ -15,6 +15,7 @@ import hashlib
 import json
 import re
 import sqlite3
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,9 @@ from app import progress_io, section_sort
 
 DB_PATH = Path("data/ffxiv_tracker.sqlite")
 VALUE_CAPS_PATH = Path("data/value_caps.json")
+WHATS_NEW_PREVIOUS_INGEST_PATH = Path(
+    "data/logs/progress_reports/whats_new_previous_ingest.json"
+)
 
 _VALUE_CAPS_CACHE_MTIME_NS: int | None = None
 _VALUE_CAPS_CACHE_DATA: dict[str, float] = {}
@@ -1027,6 +1031,319 @@ def latest_run_id(conn: sqlite3.Connection) -> int | None:
     except sqlite3.OperationalError:
         return None
     return int(row["m"]) if row and row["m"] is not None else None
+
+
+def _ingest_run_meta(conn: sqlite3.Connection, run_id: int) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT id, source_file, started_at, completed_at, sheet_count, row_count
+        FROM ingest_runs
+        WHERE id = ?
+        """,
+        (int(run_id),),
+    ).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": int(row["id"]),
+        "source_file": str(row["source_file"] or ""),
+        "started_at": str(row["started_at"] or ""),
+        "completed_at": str(row["completed_at"] or ""),
+        "sheet_count": int(row["sheet_count"] or 0),
+        "row_count": int(row["row_count"] or 0),
+    }
+
+
+def _normalize_ingest_meta(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+
+    run_id_raw = raw.get("id")
+    run_id_value: Any = "snapshot"
+    if run_id_raw not in {None, ""}:
+        try:
+            run_id_value = int(run_id_raw)
+        except (TypeError, ValueError):
+            run_id_value = str(run_id_raw)
+
+    return {
+        "id": run_id_value,
+        "source_file": str(raw.get("source_file") or ""),
+        "started_at": str(raw.get("started_at") or ""),
+        "completed_at": str(raw.get("completed_at") or ""),
+        "sheet_count": int(raw.get("sheet_count") or 0),
+        "row_count": int(raw.get("row_count") or 0),
+    }
+
+
+def _ingest_meta_token(meta: dict[str, Any]) -> tuple[str, str, str, int, int]:
+    return (
+        str(meta.get("source_file") or ""),
+        str(meta.get("started_at") or ""),
+        str(meta.get("completed_at") or ""),
+        int(meta.get("sheet_count") or 0),
+        int(meta.get("row_count") or 0),
+    )
+
+
+def _trackable_rows_for_run(
+    conn: sqlite3.Connection,
+    run_id: int,
+) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT n.sheet_name, n.row_index, n.row_type, n.section_label,
+               n.label, n.row_json, n.stable_hash,
+               s.title AS sheet_title
+        FROM nodes n
+        JOIN sheets s
+          ON s.run_id = n.run_id AND s.sheet_name = n.sheet_name
+        WHERE n.run_id = ?
+          AND n.row_type IN ('checkbox', 'value')
+        ORDER BY n.sheet_name, n.row_index
+        """,
+        (int(run_id),),
+    ).fetchall()
+
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        sheet_name = str(row["sheet_name"] or "")
+        out.append(
+            {
+                "sheet_name": sheet_name,
+                "sheet_title": str(row["sheet_title"] or sheet_name),
+                "row_index": int(row["row_index"] or 0),
+                "row_type": str(row["row_type"] or "checkbox"),
+                "section_label": str(row["section_label"] or ""),
+                "label": str(row["label"] or "").strip(),
+                "row_json": str(row["row_json"] or ""),
+                "stable_hash": str(row["stable_hash"] or ""),
+            }
+        )
+    return out
+
+
+def _normalize_trackable_rows(raw_rows: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    if not isinstance(raw_rows, list):
+        return out
+
+    for entry in raw_rows:
+        if not isinstance(entry, dict):
+            continue
+        sheet_name = str(entry.get("sheet_name") or "")
+        if not sheet_name:
+            continue
+        try:
+            row_index = int(entry.get("row_index") or 0)
+        except (TypeError, ValueError):
+            row_index = 0
+        out.append(
+            {
+                "sheet_name": sheet_name,
+                "sheet_title": str(entry.get("sheet_title") or sheet_name),
+                "row_index": row_index,
+                "row_type": str(entry.get("row_type") or "checkbox"),
+                "section_label": str(entry.get("section_label") or ""),
+                "label": str(entry.get("label") or "").strip(),
+                "row_json": str(entry.get("row_json") or ""),
+                "stable_hash": str(entry.get("stable_hash") or ""),
+            }
+        )
+    return out
+
+
+def _new_trackable_items(
+    previous_rows: list[dict[str, Any]],
+    current_rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    tiers = ("section_label", "label", "hash", "position")
+    buckets: dict[str, dict[str, deque[int]]] = {tier: {} for tier in tiers}
+    available_previous: set[int] = set()
+
+    for idx, row in enumerate(previous_rows):
+        available_previous.add(idx)
+        ids = _row_stable_ids(
+            sheet_name=str(row["sheet_name"] or ""),
+            row_index=int(row["row_index"] or 0),
+            section_label=str(row["section_label"] or ""),
+            label=str(row["label"] or ""),
+            row_json=str(row["row_json"] or ""),
+            stable_hash=str(row["stable_hash"] or ""),
+        )
+        for tier in tiers:
+            key = str(ids.get(tier) or "")
+            if not key:
+                continue
+            queue = buckets[tier].setdefault(key, deque())
+            queue.append(idx)
+
+    added_items: list[dict[str, Any]] = []
+    by_sheet: dict[str, dict[str, Any]] = {}
+
+    for row in current_rows:
+        ids = _row_stable_ids(
+            sheet_name=str(row["sheet_name"] or ""),
+            row_index=int(row["row_index"] or 0),
+            section_label=str(row["section_label"] or ""),
+            label=str(row["label"] or ""),
+            row_json=str(row["row_json"] or ""),
+            stable_hash=str(row["stable_hash"] or ""),
+        )
+
+        matched = False
+        for tier in tiers:
+            key = str(ids.get(tier) or "")
+            if not key:
+                continue
+            queue = buckets[tier].get(key)
+            if not queue:
+                continue
+            while queue:
+                candidate = queue[0]
+                if candidate in available_previous:
+                    available_previous.remove(candidate)
+                    matched = True
+                    break
+                queue.popleft()
+            if matched:
+                break
+
+        if matched:
+            continue
+
+        sheet_name = str(row["sheet_name"] or "")
+        sheet_title = str(row["sheet_title"] or sheet_name)
+        row_index = int(row["row_index"] or 0)
+        label = str(row["label"] or "").strip() or f"Row {row_index}"
+        row_type = str(row["row_type"] or "checkbox")
+        section_label = str(row["section_label"] or "")
+
+        added_items.append(
+            {
+                "sheet_name": sheet_name,
+                "sheet_title": sheet_title,
+                "row_index": row_index,
+                "row_type": row_type,
+                "section_label": section_label,
+                "label": label,
+            }
+        )
+        sheet_bucket = by_sheet.setdefault(
+            sheet_name,
+            {
+                "sheet_name": sheet_name,
+                "sheet_title": sheet_title,
+                "new_count": 0,
+            },
+        )
+        sheet_bucket["new_count"] = int(sheet_bucket["new_count"] or 0) + 1
+
+    sheet_summary = sorted(
+        by_sheet.values(),
+        key=lambda entry: (-int(entry["new_count"]), str(entry["sheet_title"])),
+    )
+
+    return added_items, sheet_summary
+
+
+def latest_ingest_new_items(
+    conn: sqlite3.Connection,
+    *,
+    run_id: int | None = None,
+    limit: int = 400,
+    previous_rows_fallback: list[dict[str, Any]] | None = None,
+    previous_meta_fallback: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return workbook rows newly introduced in the latest ingest.
+
+    Comparison is run-level (latest vs immediate previous ingest run) and uses
+    tiered stable row identities so shifted row indexes do not appear as new.
+    """
+    effective_run_id = int(run_id) if run_id is not None else int(latest_run_id(conn) or 0)
+    if effective_run_id <= 0:
+        return {
+            "latest_run": None,
+            "previous_run": None,
+            "total_new_items": 0,
+            "shown_count": 0,
+            "omitted_count": 0,
+            "new_items": [],
+            "new_items_by_sheet": [],
+        }
+
+    latest_meta = _ingest_run_meta(conn, effective_run_id)
+    prev_raw = conn.execute(
+        """
+        SELECT id FROM ingest_runs
+        WHERE id < ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (effective_run_id,),
+    ).fetchone()
+    previous_meta = (
+        _ingest_run_meta(conn, int(prev_raw["id"]))
+        if prev_raw is not None
+        else None
+    )
+
+    if latest_meta is None:
+        return {
+            "latest_run": latest_meta,
+            "previous_run": previous_meta,
+            "total_new_items": 0,
+            "shown_count": 0,
+            "omitted_count": 0,
+            "new_items": [],
+            "new_items_by_sheet": [],
+        }
+
+    current_rows = _trackable_rows_for_run(conn, effective_run_id)
+
+    previous_rows: list[dict[str, Any]] | None = None
+    if previous_meta is not None:
+        previous_rows = _trackable_rows_for_run(conn, int(previous_meta["id"]))
+    elif previous_rows_fallback is not None:
+        previous_rows = _normalize_trackable_rows(previous_rows_fallback)
+        previous_meta = _normalize_ingest_meta(previous_meta_fallback) or {
+            "id": "snapshot",
+            "source_file": "",
+            "started_at": "",
+            "completed_at": "",
+            "sheet_count": 0,
+            "row_count": len(previous_rows),
+        }
+        if _ingest_meta_token(previous_meta) == _ingest_meta_token(latest_meta):
+            previous_meta = None
+            previous_rows = None
+
+    if previous_meta is None or previous_rows is None:
+        return {
+            "latest_run": latest_meta,
+            "previous_run": previous_meta,
+            "total_new_items": 0,
+            "shown_count": 0,
+            "omitted_count": 0,
+            "new_items": [],
+            "new_items_by_sheet": [],
+        }
+
+    added_items, sheet_summary = _new_trackable_items(previous_rows, current_rows)
+
+    bounded_limit = max(1, int(limit))
+    shown_items = added_items[:bounded_limit]
+    omitted = max(0, len(added_items) - len(shown_items))
+
+    return {
+        "latest_run": latest_meta,
+        "previous_run": previous_meta,
+        "total_new_items": len(added_items),
+        "shown_count": len(shown_items),
+        "omitted_count": omitted,
+        "new_items": shown_items,
+        "new_items_by_sheet": sheet_summary,
+    }
 
 
 # --- characters -------------------------------------------------------------

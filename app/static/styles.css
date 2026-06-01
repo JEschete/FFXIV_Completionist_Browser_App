@@ -1283,6 +1283,51 @@ img.brand-mark { object-fit: cover; }
 .chain-links { color: var(--muted); font-size: 11.5px; }
 .dash-block { margin-top: 8px; }
 
+.whats-new-toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  border-radius: var(--radius-s);
+  background: color-mix(in srgb, var(--accent) 9%, var(--panel));
+}
+
+.whats-new-toast-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.whats-new-toast-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  flex: 1 1 420px;
+}
+
+.whats-new-toast-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  color: var(--text);
+  background: color-mix(in srgb, var(--panel-2) 88%, transparent);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.whats-new-toast-link:hover {
+  border-color: var(--accent);
+}
+
 .dash-insights {
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);

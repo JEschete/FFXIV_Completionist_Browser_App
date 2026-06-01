@@ -13,6 +13,156 @@ import sqlite3
 from app import db, progress_io, progress_report
 
 
+def _seed_second_ingest_run(connection: sqlite3.Connection, run_id: int) -> int:
+    src = connection.execute(
+        """
+        SELECT source_file, sheet_count, row_count
+        FROM ingest_runs
+        WHERE id = ?
+        """,
+        (int(run_id),),
+    ).fetchone()
+    assert src is not None
+
+    ts = "2026-06-10T01:00:00"
+    new_run_id = connection.execute(
+        """
+        INSERT INTO ingest_runs (source_file, started_at, completed_at, sheet_count, row_count)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            str(src["source_file"] or "synthetic-updated.xlsx"),
+            ts,
+            ts,
+            int(src["sheet_count"] or 0),
+            int(src["row_count"] or 0),
+        ),
+    ).lastrowid
+    assert new_run_id is not None
+
+    connection.execute(
+        """
+        INSERT INTO sheets (
+            run_id, sheet_index, sheet_name, title, is_menu, is_readonly,
+            parent_sheet, parent_menu_section, data_columns_json,
+            label_key, value_key, total_rows
+        )
+        SELECT ?, sheet_index, sheet_name, title, is_menu, is_readonly,
+               parent_sheet, parent_menu_section, data_columns_json,
+               label_key, value_key, total_rows
+        FROM sheets
+        WHERE run_id = ?
+        """,
+        (int(new_run_id), int(run_id)),
+    )
+    connection.execute(
+        """
+        INSERT INTO nodes (
+            run_id, sheet_name, row_index, label, baseline_state,
+            row_type, section_label, seq, row_json, stable_hash
+        )
+        SELECT ?, sheet_name, row_index, label, baseline_state,
+               row_type, section_label, seq, row_json, stable_hash
+        FROM nodes
+        WHERE run_id = ?
+        """,
+        (int(new_run_id), int(run_id)),
+    )
+    connection.execute(
+        """
+        INSERT INTO nodes (
+            run_id, sheet_name, row_index, label, baseline_state,
+            row_type, section_label, seq, row_json, stable_hash
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            int(new_run_id),
+            "Side Stuff",
+            999,
+            "Thing Four",
+            "todo",
+            "checkbox",
+            "ODDS AND ENDS",
+            999,
+            json.dumps({"label": "Thing Four", "row": 999}),
+            "aa11bb22cc33",
+        ),
+    )
+    connection.execute(
+        "UPDATE ingest_runs SET row_count = row_count + 1 WHERE id = ?",
+        (int(new_run_id),),
+    )
+    connection.execute(
+        """
+        UPDATE sheets
+        SET total_rows = total_rows + 1
+        WHERE run_id = ? AND sheet_name = ?
+        """,
+        (int(new_run_id), "Side Stuff"),
+    )
+    connection.commit()
+    return int(new_run_id)
+
+
+def _write_whats_new_fallback_snapshot(
+    *,
+    missing_sheet_name: str,
+    missing_row_index: int,
+    previous_run_id: int = 77,
+    source_file: str = "Old Checklist.xlsx",
+) -> None:
+    connection = db.get_connection()
+    try:
+        run_id = db.latest_run_id(connection)
+        assert run_id is not None
+        rows = connection.execute(
+            """
+            SELECT n.sheet_name, n.row_index, n.row_type, n.section_label,
+                   n.label, n.row_json, n.stable_hash, s.title AS sheet_title
+            FROM nodes n
+            JOIN sheets s
+              ON s.run_id = n.run_id AND s.sheet_name = n.sheet_name
+            WHERE n.run_id = ?
+              AND n.row_type IN ('checkbox', 'value')
+            ORDER BY n.sheet_name, n.row_index
+            """,
+            (run_id,),
+        ).fetchall()
+    finally:
+        connection.close()
+
+    previous_rows = [
+        dict(row)
+        for row in rows
+        if not (
+            str(row["sheet_name"] or "") == missing_sheet_name
+            and int(row["row_index"] or 0) == int(missing_row_index)
+        )
+    ]
+
+    db.WHATS_NEW_PREVIOUS_INGEST_PATH.parent.mkdir(parents=True, exist_ok=True)
+    db.WHATS_NEW_PREVIOUS_INGEST_PATH.write_text(
+        json.dumps(
+            {
+                "schema_version": "ffxiv-tracker/whats-new-baseline/v1",
+                "run": {
+                    "id": int(previous_run_id),
+                    "source_file": source_file,
+                    "started_at": "2026-05-31T10:00:00",
+                    "completed_at": "2026-05-31T10:01:00",
+                    "sheet_count": 3,
+                    "row_count": len(previous_rows),
+                },
+                "rows": previous_rows,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_health(client):
     resp = client.get("/health")
     assert resp.status_code == 200
@@ -102,6 +252,78 @@ def test_share_cards_page_shows_weekly_improvement_after_done_toggle(client):
     resp = client.get("/share-cards")
     assert resp.status_code == 200
     assert "+1 done" in resp.text
+
+
+def test_whats_new_page_renders(client):
+    resp = client.get("/whats-new")
+    assert resp.status_code == 200
+    assert "What's New in Latest Ingest" in resp.text
+    assert "No previous ingest run yet" in resp.text
+
+
+def test_whats_new_page_lists_new_items_from_latest_run(client):
+    connection = db.get_connection()
+    try:
+        run_id = db.latest_run_id(connection)
+        assert run_id is not None
+        _seed_second_ingest_run(connection, run_id)
+    finally:
+        connection.close()
+
+    resp = client.get("/whats-new")
+    assert resp.status_code == 200
+    assert "New items by sheet" in resp.text
+    assert "Added rows" in resp.text
+    assert "Thing Four" in resp.text
+
+
+def test_whats_new_page_uses_pre_ingest_snapshot_fallback(client):
+    _write_whats_new_fallback_snapshot(
+        missing_sheet_name="Side Stuff",
+        missing_row_index=5,
+    )
+
+    resp = client.get("/whats-new")
+    assert resp.status_code == 200
+    assert "No previous ingest run yet" not in resp.text
+    assert "Thing Three" in resp.text
+    assert "#77" in resp.text
+
+
+def test_dashboard_shows_whats_new_toast_when_unreviewed(client):
+    _write_whats_new_fallback_snapshot(
+        missing_sheet_name="Side Stuff",
+        missing_row_index=5,
+    )
+
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "What's New update available" in resp.text
+    assert "Review What's New" in resp.text
+
+
+def test_dashboard_whats_new_toast_clears_after_review(client):
+    _write_whats_new_fallback_snapshot(
+        missing_sheet_name="Side Stuff",
+        missing_row_index=5,
+    )
+
+    first_dashboard = client.get("/")
+    assert first_dashboard.status_code == 200
+    assert "What's New update available" in first_dashboard.text
+
+    review_page = client.get("/whats-new")
+    assert review_page.status_code == 200
+    assert "Thing Three" in review_page.text
+
+    second_dashboard = client.get("/")
+    assert second_dashboard.status_code == 200
+    assert "What's New update available" not in second_dashboard.text
+
+    # Reviewing should clear only the toast state, not the What's New data itself.
+    still_there = client.get("/whats-new")
+    assert still_there.status_code == 200
+    assert "Thing Three" in still_there.text
 
 
 def test_menu_browse_lists_children(client):

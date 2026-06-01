@@ -2,9 +2,70 @@
 character CRUD, and section grouping."""
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from app import db
+
+
+def _clone_ingest_run(connection, run_id: int) -> int:
+    src = connection.execute(
+        """
+        SELECT source_file, sheet_count, row_count
+        FROM ingest_runs
+        WHERE id = ?
+        """,
+        (int(run_id),),
+    ).fetchone()
+    assert src is not None
+
+    ts = "2026-06-10T00:00:00"
+    new_run_id = connection.execute(
+        """
+        INSERT INTO ingest_runs (source_file, started_at, completed_at, sheet_count, row_count)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            str(src["source_file"] or "synthetic-updated.xlsx"),
+            ts,
+            ts,
+            int(src["sheet_count"] or 0),
+            int(src["row_count"] or 0),
+        ),
+    ).lastrowid
+    assert new_run_id is not None
+
+    connection.execute(
+        """
+        INSERT INTO sheets (
+            run_id, sheet_index, sheet_name, title, is_menu, is_readonly,
+            parent_sheet, parent_menu_section, data_columns_json,
+            label_key, value_key, total_rows
+        )
+        SELECT ?, sheet_index, sheet_name, title, is_menu, is_readonly,
+               parent_sheet, parent_menu_section, data_columns_json,
+               label_key, value_key, total_rows
+        FROM sheets
+        WHERE run_id = ?
+        """,
+        (int(new_run_id), int(run_id)),
+    )
+    connection.execute(
+        """
+        INSERT INTO nodes (
+            run_id, sheet_name, row_index, label, baseline_state,
+            row_type, section_label, seq, row_json, stable_hash
+        )
+        SELECT ?, sheet_name, row_index, label, baseline_state,
+               row_type, section_label, seq, row_json, stable_hash
+        FROM nodes
+        WHERE run_id = ?
+        """,
+        (int(new_run_id), int(run_id)),
+    )
+    connection.commit()
+    return int(new_run_id)
 
 
 # --- value caps -------------------------------------------------------------
@@ -196,6 +257,118 @@ def test_dashboard_recent_activity_fallback_honors_starting_class(conn, characte
         str(r["sheet_name"] or "") == "Side Stuff" and int(r["row_index"] or 0) == 5
         for r in rows
     )
+
+
+def test_latest_ingest_new_items_handles_single_run(conn):
+    connection, run_id = conn
+    report = db.latest_ingest_new_items(connection, run_id=run_id)
+
+    latest = report.get("latest_run")
+    assert isinstance(latest, dict)
+    assert int(latest["id"]) == run_id
+    assert report["previous_run"] is None
+    assert int(report["total_new_items"]) == 0
+
+
+def test_latest_ingest_new_items_detects_added_rows(conn):
+    connection, run_id = conn
+    new_run_id = _clone_ingest_run(connection, run_id)
+
+    connection.execute(
+        """
+        INSERT INTO nodes (
+            run_id, sheet_name, row_index, label, baseline_state,
+            row_type, section_label, seq, row_json, stable_hash
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            new_run_id,
+            "Side Stuff",
+            999,
+            "Thing Four",
+            "todo",
+            "checkbox",
+            "ODDS AND ENDS",
+            999,
+            json.dumps({"label": "Thing Four", "row": 999}),
+            "aa11bb22cc33",
+        ),
+    )
+    connection.execute(
+        "UPDATE ingest_runs SET row_count = row_count + 1 WHERE id = ?",
+        (new_run_id,),
+    )
+    connection.execute(
+        """
+        UPDATE sheets
+        SET total_rows = total_rows + 1
+        WHERE run_id = ? AND sheet_name = ?
+        """,
+        (new_run_id, "Side Stuff"),
+    )
+    connection.commit()
+
+    report = db.latest_ingest_new_items(connection)
+    latest = report.get("latest_run")
+    previous = report.get("previous_run")
+    assert isinstance(latest, dict) and isinstance(previous, dict)
+    assert int(latest["id"]) == new_run_id
+    assert int(previous["id"]) == run_id
+    assert int(report["total_new_items"]) == 1
+    labels = {str(item.get("label") or "") for item in report["new_items"]}
+    assert "Thing Four" in labels
+    sheet_counts = {
+        str(item.get("sheet_name") or ""): int(item.get("new_count") or 0)
+        for item in report["new_items_by_sheet"]
+    }
+    assert sheet_counts.get("Side Stuff") == 1
+
+
+def test_latest_ingest_new_items_uses_fallback_snapshot_when_history_resets(conn):
+    connection, run_id = conn
+    rows = connection.execute(
+        """
+        SELECT n.sheet_name, n.row_index, n.row_type, n.section_label,
+               n.label, n.row_json, n.stable_hash, s.title AS sheet_title
+        FROM nodes n
+        JOIN sheets s
+          ON s.run_id = n.run_id AND s.sheet_name = n.sheet_name
+        WHERE n.run_id = ?
+          AND n.row_type IN ('checkbox', 'value')
+        ORDER BY n.sheet_name, n.row_index
+        """,
+        (run_id,),
+    ).fetchall()
+
+    fallback_rows = [
+        dict(row)
+        for row in rows
+        if not (
+            str(row["sheet_name"] or "") == "Side Stuff"
+            and int(row["row_index"] or 0) == 5
+        )
+    ]
+
+    report = db.latest_ingest_new_items(
+        connection,
+        run_id=run_id,
+        previous_rows_fallback=fallback_rows,
+        previous_meta_fallback={
+            "id": 77,
+            "source_file": "old-checklist.xlsx",
+            "started_at": "2026-05-30T09:00:00",
+            "completed_at": "2026-05-30T09:01:00",
+            "sheet_count": 3,
+            "row_count": len(fallback_rows),
+        },
+    )
+
+    previous = report.get("previous_run")
+    assert isinstance(previous, dict)
+    assert int(previous["id"]) == 77
+    assert int(report["total_new_items"]) == 1
+    assert any(str(item.get("label") or "") == "Thing Three" for item in report["new_items"])
 
 
 # --- chains -----------------------------------------------------------------

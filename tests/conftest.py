@@ -129,6 +129,11 @@ def ingested_db(template_db, tmp_path, monkeypatch):
 
     monkeypatch.setattr(db, "DB_PATH", db_copy)
     monkeypatch.setattr(db, "VALUE_CAPS_PATH", data_dir / "value_caps.json")
+    monkeypatch.setattr(
+        db,
+        "WHATS_NEW_PREVIOUS_INGEST_PATH",
+        data_dir / "logs" / "progress_reports" / "whats_new_previous_ingest.json",
+    )
     monkeypatch.setattr(progress_io, "PROGRESS_DIR", progress_dir)
     monkeypatch.setattr(game_engine, "MINIGAME_DATA_DIR", data_dir / "MinigameData")
 
