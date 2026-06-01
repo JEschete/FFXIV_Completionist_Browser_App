@@ -25,6 +25,65 @@ def test_dashboard_renders(client):
     assert "Character Menu" in resp.text
 
 
+def test_dashboard_renders_activity_feed_and_heatmap_before_chains(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "Recent activity" in resp.text
+    assert "activity-scroll" in resp.text
+    assert "Contribution heatmap" in resp.text
+    assert "Current streak" in resp.text
+    assert "Longest streak" in resp.text
+    assert "Today" in resp.text
+    assert "This Week" in resp.text
+    assert "Older" in resp.text
+
+    recent_pos = resp.text.find("Recent activity")
+    heatmap_pos = resp.text.find("Contribution heatmap")
+    chains_pos = resp.text.find("Chains in progress")
+    assert recent_pos != -1 and heatmap_pos != -1
+    if chains_pos != -1:
+        assert recent_pos < chains_pos
+        assert heatmap_pos < chains_pos
+
+
+def test_dashboard_activity_feed_lists_touched_rows(client):
+    toggle = client.post(
+        "/api/toggle",
+        data={"sheet_name": "Side Stuff", "row_index": "5"},
+    )
+    assert toggle.status_code == 200
+
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "Recent activity" in resp.text
+    assert "Thing Three" in resp.text
+
+
+def test_dashboard_activity_ignores_non_done_actions(client):
+    first = client.post(
+        "/api/toggle",
+        data={"sheet_name": "Side Stuff", "row_index": "5"},
+    )
+    assert first.status_code == 200
+
+    second = client.post(
+        "/api/set-state",
+        data={"sheet_name": "Side Stuff", "row_index": "5", "state": "todo"},
+    )
+    assert second.status_code == 200
+
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "0 done actions" in resp.text
+    assert "Thing Three" not in resp.text
+
+
+def test_dashboard_heatmap_tiles_render(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "heatmap-day level-" in resp.text
+
+
 def test_menu_browse_lists_children(client):
     resp = client.get("/browse/Character Menu")
     assert resp.status_code == 200

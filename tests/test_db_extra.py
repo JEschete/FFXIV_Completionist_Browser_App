@@ -88,6 +88,72 @@ def test_snapshot_trackable_rows(conn, character_id):
     assert snap[("Side Stuff", 5)]["state"] == "todo"
 
 
+def test_dashboard_contribution_counts_include_done_only(conn, character_id, monkeypatch):
+    connection, run_id = conn
+
+    timestamps = iter([
+        "2026-05-30T10:00:00",
+        "2026-05-31T10:00:00",
+    ])
+    monkeypatch.setattr(db, "now", lambda: next(timestamps))
+
+    db.set_row_state(connection, character_id, run_id, "Side Stuff", 5, "done")
+    db.set_row_state(connection, character_id, run_id, "Side Stuff", 5, "excluded")
+
+    day_counts = db.dashboard_contribution_day_counts(connection, run_id, character_id)
+    assert day_counts == {}
+
+
+def test_dashboard_recent_activity_rows_include_done_only(conn, character_id, monkeypatch):
+    connection, run_id = conn
+
+    timestamps = iter([
+        "2026-05-30T09:00:00",
+        "2026-05-30T10:00:00",
+    ])
+    monkeypatch.setattr(db, "now", lambda: next(timestamps))
+
+    db.set_row_state(connection, character_id, run_id, "Side Stuff", 5, "done")
+    db.set_row_state(connection, character_id, run_id, "Side Stuff", 5, "todo")
+
+    rows = db.dashboard_recent_activity_rows(
+        connection,
+        run_id,
+        character_id,
+        limit=10,
+    )
+    assert rows == []
+
+
+def test_dashboard_recent_activity_fallback_honors_starting_class(conn, character_id):
+    connection, run_id = conn
+    db.set_character_class(connection, character_id, "GLADIATOR")
+
+    db.set_row_state(
+        connection,
+        character_id,
+        run_id,
+        "Side Stuff",
+        5,
+        "done",
+        starting_class="GLADIATOR",
+    )
+    connection.execute("DELETE FROM progress_activity")
+    connection.commit()
+
+    rows = db.dashboard_recent_activity_rows(
+        connection,
+        run_id,
+        character_id,
+        starting_class="GLADIATOR",
+        limit=10,
+    )
+    assert any(
+        str(r["sheet_name"] or "") == "Side Stuff" and int(r["row_index"] or 0) == 5
+        for r in rows
+    )
+
+
 # --- chains -----------------------------------------------------------------
 
 def test_fetch_chain(conn, character_id):

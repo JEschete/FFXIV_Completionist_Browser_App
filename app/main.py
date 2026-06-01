@@ -2068,6 +2068,187 @@ class Ctx:
 
 # --- pages ------------------------------------------------------------------
 
+def _parse_dashboard_timestamp(value: str | None) -> dt.datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    normalized = text.replace("Z", "+00:00")
+    try:
+        parsed = dt.datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone().replace(tzinfo=None)
+    return parsed
+
+
+def _dashboard_recent_activity_groups(
+    rows: list[dict[str, Any]],
+    sheets_by_name: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    today = dt.date.today()
+    week_start = today - dt.timedelta(days=today.weekday())
+    groups: dict[str, list[dict[str, Any]]] = {
+        "today": [],
+        "this_week": [],
+        "older": [],
+    }
+
+    for raw in rows:
+        ts = _parse_dashboard_timestamp(raw.get("updated_at"))
+        if ts is None:
+            continue
+
+        touched_day = ts.date()
+        if touched_day == today:
+            group_key = "today"
+            display_time = ts.strftime("%H:%M")
+        elif touched_day >= week_start:
+            group_key = "this_week"
+            display_time = ts.strftime("%a %H:%M")
+        else:
+            group_key = "older"
+            display_time = ts.strftime("%b %d")
+
+        sheet_name = str(raw.get("sheet_name") or "")
+        sheet_meta = sheets_by_name.get(sheet_name)
+        sheet_title = (
+            str(sheet_meta.get("title") or sheet_name)
+            if isinstance(sheet_meta, dict)
+            else sheet_name
+        )
+        label = str(raw.get("label") or "").strip() or f"Row {int(raw.get('row_index') or 0)}"
+
+        groups[group_key].append(
+            {
+                "sheet_name": sheet_name,
+                "sheet_title": sheet_title,
+                "row_index": int(raw.get("row_index") or 0),
+                "label": label,
+                "section_label": str(raw.get("section_label") or "").strip(),
+                "state": str(raw.get("eff") or "todo"),
+                "progress_percent": raw.get("progress_percent"),
+                "updated_at": ts.isoformat(timespec="seconds"),
+                "updated_at_display": display_time,
+            }
+        )
+
+    ordered = [
+        {"key": "today", "title": "Today", "items": groups["today"]},
+        {"key": "this_week", "title": "This Week", "items": groups["this_week"]},
+        {"key": "older", "title": "Older", "items": groups["older"]},
+    ]
+    return ordered
+
+
+def _dashboard_heatmap_payload(day_counts: dict[str, int]) -> dict[str, Any]:
+    today = dt.date.today()
+    display_days = 26 * 7
+    start_date = today - dt.timedelta(days=display_days - 1)
+    start_monday = start_date - dt.timedelta(days=start_date.weekday())
+    end_sunday = today + dt.timedelta(days=(6 - today.weekday()))
+
+    counts_by_date: dict[dt.date, int] = {}
+    for key, raw_count in day_counts.items():
+        try:
+            d = dt.date.fromisoformat(str(key))
+        except ValueError:
+            continue
+        counts_by_date[d] = max(0, int(raw_count or 0))
+
+    active_days = sorted(d for d, count in counts_by_date.items() if count > 0)
+    active_set = set(active_days)
+
+    longest_streak = 0
+    current = 0
+    prev: dt.date | None = None
+    for day in active_days:
+        if prev is not None and day == (prev + dt.timedelta(days=1)):
+            current += 1
+        else:
+            current = 1
+        if current > longest_streak:
+            longest_streak = current
+        prev = day
+
+    current_streak = 0
+    probe = today
+    while probe in active_set:
+        current_streak += 1
+        probe -= dt.timedelta(days=1)
+
+    max_count = max([count for count in counts_by_date.values()] or [0])
+
+    def _level_for(count: int) -> int:
+        if count <= 0:
+            return 0
+        if max_count <= 1:
+            return 2
+        ratio = count / max_count
+        if ratio < 0.34:
+            return 1
+        if ratio < 0.67:
+            return 2
+        if ratio < 1.0:
+            return 3
+        return 4
+
+    weeks: list[dict[str, Any]] = []
+    cursor = start_monday
+    week_index = 0
+    while cursor <= end_sunday:
+        week_days: list[dict[str, Any]] = []
+        for offset in range(7):
+            day = cursor + dt.timedelta(days=offset)
+            in_range = start_date <= day <= today
+            count = counts_by_date.get(day, 0) if in_range else 0
+            week_days.append(
+                {
+                    "date": day.isoformat(),
+                    "count": count,
+                    "level": _level_for(count),
+                    "in_range": in_range,
+                    "is_today": day == today,
+                    "tooltip": (
+                        f"{day.isoformat()}: {count} update"
+                        f"{'' if count == 1 else 's'}"
+                        if in_range else "Outside current range"
+                    ),
+                }
+            )
+        weeks.append({"index": week_index, "days": week_days})
+        week_index += 1
+        cursor += dt.timedelta(days=7)
+
+    month_labels: list[dict[str, Any]] = []
+    seen_month: str | None = None
+    for idx, week in enumerate(weeks):
+        first_live = next((day for day in week["days"] if day["in_range"]), None)
+        if first_live is None:
+            continue
+        month_key = str(first_live["date"])[:7]
+        if month_key == seen_month:
+            continue
+        seen_month = month_key
+        date_obj = dt.date.fromisoformat(str(first_live["date"]))
+        month_labels.append({
+            "week_index": idx,
+            "label": date_obj.strftime("%b"),
+        })
+
+    return {
+        "weeks": weeks,
+        "month_labels": month_labels,
+        "weekday_labels": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+        "start_date": start_date.isoformat(),
+        "end_date": today.isoformat(),
+        "display_days": display_days,
+        "total_updates": sum(counts_by_date.values()),
+        "active_days": len(active_set),
+        "current_streak": current_streak,
+        "longest_streak": longest_streak,
+    }
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
     ctx = Ctx(request)
@@ -2090,9 +2271,36 @@ def dashboard(request: Request):
         )
         chains = [c for c in chains if not _is_roll_complete(c.get("roll"))]
         chains = chains[:6]
+        activity_rows = db.dashboard_recent_activity_rows(
+            ctx.conn,
+            ctx.run_id,
+            ctx.character_id,
+            starting_class=ctx.starting_class,
+            limit=42,
+        )
+        recent_activity_groups = _dashboard_recent_activity_groups(
+            activity_rows,
+            ctx.sheets_by_name,
+        )
+        activity_total = sum(
+            len(group.get("items", []))
+            for group in recent_activity_groups
+            if isinstance(group, dict)
+        )
+        heatmap = _dashboard_heatmap_payload(
+            db.dashboard_contribution_day_counts(
+                ctx.conn,
+                ctx.run_id,
+                ctx.character_id,
+                starting_class=ctx.starting_class,
+            )
+        )
         return ctx.render("dashboard.html", {
             "cards": cards,
             "chains": chains,
+            "recent_activity_groups": recent_activity_groups,
+            "activity_total": activity_total,
+            "heatmap": heatmap,
             "active_sheet": None,
         })
     finally:

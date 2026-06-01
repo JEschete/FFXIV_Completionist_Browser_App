@@ -349,13 +349,29 @@ CREATE INDEX IF NOT EXISTS idx_watchlist_character_updated
     ON watchlist_entries (character_id, updated_at DESC, stable_key);
 """
 
+PROGRESS_ACTIVITY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS progress_activity (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    character_id     INTEGER NOT NULL,
+    run_id           INTEGER NOT NULL,
+    sheet_name       TEXT NOT NULL,
+    row_index        INTEGER NOT NULL,
+    state            TEXT NOT NULL,
+    progress_percent REAL,
+    updated_at       TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_progress_activity_character_run_updated
+    ON progress_activity (character_id, run_id, updated_at DESC, id DESC);
+"""
+
 
 def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.executescript(ROLLUP_SCHEMA + WATCHLIST_SCHEMA)
+    conn.executescript(ROLLUP_SCHEMA + WATCHLIST_SCHEMA + PROGRESS_ACTIVITY_SCHEMA)
     return conn
 
 
@@ -875,6 +891,77 @@ def watchlist_rows_for_character(
     return out
 
 
+def dashboard_recent_activity_rows(
+    conn: sqlite3.Connection,
+    run_id: int,
+    character_id: int,
+    *,
+    starting_class: str | None = None,
+    limit: int = 40,
+) -> list[dict[str, Any]]:
+    """Most-recent explicit rows currently in done state."""
+    eff, join, jparams = _state_clauses(starting_class)
+    rows = conn.execute(
+        f"""
+        SELECT p.sheet_name, p.row_index, p.updated_at, p.progress_percent,
+               n.label, n.section_label, n.row_type,
+               {eff} AS eff
+        FROM character_progress p
+        JOIN nodes n
+          ON n.run_id = p.run_id AND n.sheet_name = p.sheet_name
+         AND n.row_index = p.row_index
+        {join}
+        WHERE p.character_id = ? AND p.run_id = ?
+          AND n.row_type IN ('checkbox', 'value')
+          AND {eff} = 'done'
+          AND p.updated_at IS NOT NULL AND p.updated_at != ''
+        ORDER BY p.updated_at DESC, p.sheet_name, p.row_index DESC
+        LIMIT ?
+        """,
+        (*jparams, character_id, run_id, max(1, int(limit))),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _day_count_map(rows: list[sqlite3.Row]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for row in rows:
+        day_key = str(row["day_key"] or "").strip()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day_key):
+            continue
+        out[day_key] = int(row["c"] or 0)
+    return out
+
+
+def dashboard_contribution_day_counts(
+    conn: sqlite3.Connection,
+    run_id: int,
+    character_id: int,
+    *,
+    starting_class: str | None = None,
+) -> dict[str, int]:
+    """Map YYYY-MM-DD -> number of rows currently done on that update day."""
+    eff, join, jparams = _state_clauses(starting_class)
+    rows = conn.execute(
+        f"""
+        SELECT SUBSTR(p.updated_at, 1, 10) AS day_key, COUNT(*) AS c
+        FROM character_progress p
+        JOIN nodes n
+          ON n.run_id = p.run_id AND n.sheet_name = p.sheet_name
+         AND n.row_index = p.row_index
+        {join}
+        WHERE p.character_id = ? AND p.run_id = ?
+          AND n.row_type IN ('checkbox', 'value')
+          AND {eff} = 'done'
+          AND p.updated_at IS NOT NULL AND p.updated_at != ''
+        GROUP BY day_key
+        ORDER BY day_key
+        """,
+        (*jparams, character_id, run_id),
+    ).fetchall()
+    return _day_count_map(rows)
+
+
 def latest_run_id(conn: sqlite3.Connection) -> int | None:
     """Return the newest ingest run id, or None if there hasn't been one
     yet. A fresh / never-prepped DB is allowed — the table simply doesn't
@@ -1184,6 +1271,7 @@ def set_row_state(
     # a write that equals the baseline is stored anyway so toggles are explicit.
     # progress_percent is preserved across writes that don't supply one — so
     # toggling a value row to excluded and back keeps its level intact.
+    touched_at = now()
     conn.execute(
         """
         INSERT INTO character_progress
@@ -1194,7 +1282,15 @@ def set_row_state(
             progress_percent = COALESCE(excluded.progress_percent, character_progress.progress_percent),
             updated_at = excluded.updated_at
         """,
-        (character_id, run_id, sheet_name, row_index, state, progress_percent, now()),
+        (character_id, run_id, sheet_name, row_index, state, progress_percent, touched_at),
+    )
+    conn.execute(
+        """
+        INSERT INTO progress_activity
+            (character_id, run_id, sheet_name, row_index, state, progress_percent, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (character_id, run_id, sheet_name, row_index, state, progress_percent, touched_at),
     )
 
     new_row = dict(old_row) if old_row is not None else {
@@ -1315,6 +1411,24 @@ def clear_row_override(
             WHERE character_id = ? AND run_id = ? AND sheet_name = ?
             """,
             (d_done, d_excl, d_total, character_id, run_id, sheet_name),
+        )
+
+    if removed and now_eff_row is not None:
+        conn.execute(
+            """
+            INSERT INTO progress_activity
+                (character_id, run_id, sheet_name, row_index, state, progress_percent, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                character_id,
+                run_id,
+                sheet_name,
+                row_index,
+                str(now_eff_row["eff"] or "todo"),
+                now_eff_row["progress_percent"],
+                now(),
+            ),
         )
 
     try:

@@ -1283,6 +1283,242 @@ img.brand-mark { object-fit: cover; }
 .chain-links { color: var(--muted); font-size: 11.5px; }
 .dash-block { margin-top: 8px; }
 
+.dash-insights {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+.dash-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+.dash-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.dash-panel-title {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.dash-panel-meta {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.activity-scroll {
+  max-height: clamp(240px, 55vh, 520px);
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-gutter: stable;
+}
+
+.activity-groups {
+  display: grid;
+  gap: 12px;
+}
+
+.activity-group {
+  border-top: 1px solid var(--line-soft);
+  padding-top: 10px;
+}
+
+.activity-group:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.activity-group-title {
+  margin: 0 0 7px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .45px;
+  color: var(--muted);
+}
+
+.activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.activity-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-2) 88%, transparent);
+}
+
+.activity-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.activity-row-label {
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-row-meta {
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.activity-value {
+  font-size: 11.5px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-time {
+  color: var(--muted);
+  font-size: 11px;
+  min-width: 54px;
+  text-align: right;
+}
+
+.activity-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.heatmap-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 11px;
+}
+
+.heatmap-stat {
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  padding: 7px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.heatmap-stat span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.heatmap-stat strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.heatmap-wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 2px;
+}
+
+.heatmap-months {
+  display: grid;
+  grid-template-columns: repeat(var(--heatmap-weeks), 12px);
+  column-gap: 4px;
+  margin-left: 28px;
+  margin-bottom: 5px;
+  font-size: 10px;
+  color: var(--muted);
+  min-width: fit-content;
+}
+
+.heatmap-body {
+  display: flex;
+  gap: 6px;
+  min-width: fit-content;
+}
+
+.heatmap-weekdays {
+  display: grid;
+  grid-template-rows: repeat(7, 12px);
+  gap: 4px;
+  font-size: 10px;
+  color: var(--muted);
+  width: 22px;
+}
+
+.heatmap-grid {
+  display: flex;
+  gap: 4px;
+}
+
+.heatmap-week {
+  display: grid;
+  grid-template-rows: repeat(7, 12px);
+  gap: 4px;
+}
+
+.heatmap-day {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, var(--line) 58%, transparent);
+  background: color-mix(in srgb, var(--panel-3) 94%, transparent);
+  transition: background-color .12s ease, box-shadow .12s ease;
+}
+
+.heatmap-day.level-1 {
+  background: color-mix(in srgb, var(--done-dk) 55%, var(--panel-3));
+}
+
+.heatmap-day.level-2 {
+  background: color-mix(in srgb, var(--done) 58%, var(--panel-3));
+}
+
+.heatmap-day.level-3 {
+  background: color-mix(in srgb, var(--done) 76%, var(--panel-3));
+}
+
+.heatmap-day.level-4 {
+  background: color-mix(in srgb, var(--done) 94%, var(--panel-3));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--done) 52%, transparent);
+}
+
+.heatmap-day.is-outside {
+  opacity: .35;
+}
+
+.heatmap-day.is-today {
+  outline: 1px solid color-mix(in srgb, var(--gold) 65%, var(--line));
+  outline-offset: 1px;
+}
+
 /* ---- toolbar ----------------------------------------------- */
 .toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .toolbar input[type="search"] {
@@ -2485,6 +2721,15 @@ img.brand-mark { object-fit: cover; }
   }
   .cat-grid {
     grid-template-columns: 1fr;
+  }
+  .dash-insights {
+    grid-template-columns: 1fr;
+  }
+  .activity-scroll {
+    max-height: clamp(220px, 50vh, 420px);
+  }
+  .heatmap-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .mg-grid {
     grid-template-columns: minmax(0, 320px);
