@@ -1,0 +1,57 @@
+<tr class="data-row {{ 'watchlist-row-missing' if not row.resolved else '' }}">
+  <td class="watchlist-state-cell">
+    {% if row.resolved %}
+      {% if row.row_type == 'value' %}
+      <button class="exclude-toggle status-{{ row.state }}" type="button"
+              title="{{ 'Restore' if row.state == 'excluded' else 'Exclude this row' }}"
+              hx-post="/api/watchlist/toggle-state"
+              hx-target="closest tr"
+              hx-swap="outerHTML"
+              hx-vals='{"sheet_name": {{ row.sheet_name|tojson }}, "row_index": {{ row.row_index }}, "stable_key": {{ row.stable_key|tojson }}, "show_missing": {{ 1 if watchlist_show_missing else 0 }} }'>
+        {% if row.state == 'excluded' %}✕{% else %}—{% endif %}
+      </button>
+      {% else %}
+      <button class="status-toggle status-{{ row.state }}" type="button"
+              title="Click to cycle: To Do → Done → Excluded"
+              hx-post="/api/watchlist/toggle-state"
+              hx-target="closest tr"
+              hx-swap="outerHTML"
+              hx-vals='{"sheet_name": {{ row.sheet_name|tojson }}, "row_index": {{ row.row_index }}, "stable_key": {{ row.stable_key|tojson }}, "show_missing": {{ 1 if watchlist_show_missing else 0 }} }'>
+        {% if row.state == 'done' %}✓{% elif row.state == 'excluded' %}✕{% else %}○{% endif %}
+      </button>
+      {% endif %}
+    {% else %}
+    <span class="badge badge-excluded">missing</span>
+    {% endif %}
+  </td>
+  <td>{{ sheet_title }}</td>
+  <td>#{{ row.row_index }}</td>
+  <td>
+    <div class="report-row-title">{{ row.label or '(no label)' }}</div>
+    {% if row.section_label %}
+    <div class="report-row-label">{{ row.section_label }}</div>
+    {% endif %}
+  </td>
+  <td>
+    {% if row.progress_percent is not none %}
+      {{ '%.2f'|format(row.progress_percent|float) }}
+    {% else %}
+      -
+    {% endif %}
+  </td>
+  <td>{{ row.updated_at or '-' }}</td>
+  <td>
+    {% if row.resolved %}
+    <a class="btn-mini" href="/browse/{{ row.sheet_name|urlencode }}?state=all#row-{{ row.row_index }}">Open</a>
+    {% else %}
+    <span class="watchlist-missing-note">Not found in current workbook</span>
+    {% endif %}
+  </td>
+  <td class="watchlist-pin-col">
+    <form method="post" action="/watchlist/unpin" class="watchlist-unpin-form">
+      <input type="hidden" name="stable_key" value="{{ row.stable_key }}" />
+      <input type="hidden" name="next_url" value="{{ next_watchlist_url }}" />
+      <button type="submit" class="btn-mini">Unpin</button>
+    </form>
+  </td>
+</tr>

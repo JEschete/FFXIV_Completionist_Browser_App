@@ -70,4 +70,15 @@
               hx-target="#chain-drawer" hx-swap="innerHTML">⛓</button>
     {% endif %}
   </td>
+  <td class="cell-watch">
+    <button class="pin-toggle {{ 'is-on' if row.watch_pinned else '' }}"
+            type="button"
+            title="{{ 'Remove from watchlist' if row.watch_pinned else 'Pin to watchlist' }}"
+            hx-post="/api/watchlist/toggle"
+            hx-target="#row-{{ row.row_index }}"
+            hx-swap="outerHTML"
+            hx-vals='{"sheet_name": {{ sheet.sheet_name|tojson }}, "row_index": {{ row.row_index }} }'>
+      {% if row.watch_pinned %}Unpin{% else %}Pin{% endif %}
+    </button>
+  </td>
 </tr>

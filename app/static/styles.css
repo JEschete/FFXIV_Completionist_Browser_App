@@ -1453,7 +1453,7 @@ img.brand-mark { object-fit: cover; }
 .th-sortable[data-sort-dir="desc"] .th-sort-indicator {
   color: var(--accent);
 }
-.th-status, .th-chain { width: 40px; text-align: center; }
+.th-status, .th-chain, .th-watch { width: 40px; text-align: center; }
 .data-row {
   border-bottom: 1px solid var(--line-soft);
   transition: background .1s;
@@ -1463,6 +1463,7 @@ img.brand-mark { object-fit: cover; }
 .data-row > td { padding: 7px 12px; vertical-align: middle; }
 .cell-status { text-align: center; padding: 4px !important; }
 .cell-chain { text-align: center; }
+.cell-watch { text-align: center; }
 .cell-label .row-label { font-weight: 600; color: #eef2f8; }
 .cell-data { color: #b9c4d3; }
 
@@ -1490,6 +1491,30 @@ img.brand-mark { object-fit: cover; }
   background: var(--excluded); color: #1a1c22; border-color: #5a5f6c;
 }
 .lock-flag { margin-left: 6px; font-size: 11px; opacity: .8; }
+
+.pin-toggle {
+  height: 24px;
+  min-width: 50px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--panel-3);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .2px;
+  cursor: pointer;
+  padding: 0 8px;
+  transition: background .12s, border-color .12s, color .12s;
+}
+.pin-toggle:hover {
+  border-color: var(--accent-dk);
+  color: var(--text);
+}
+.pin-toggle.is-on {
+  background: color-mix(in srgb, var(--gold) 22%, var(--panel-3));
+  border-color: color-mix(in srgb, var(--gold) 55%, var(--line));
+  color: var(--gold);
+}
 
 /* ---- value rows (Classes-Jobs etc.) ----------------------- */
 .exclude-toggle {
@@ -1881,6 +1906,39 @@ img.brand-mark { object-fit: cover; }
   color: var(--muted);
   font-size: 12px;
 }
+
+.watchlist-filter-form {
+  margin-top: 10px;
+}
+
+.watchlist-table .watchlist-pin-col {
+  width: 88px;
+  text-align: right;
+}
+
+.watchlist-unpin-form {
+  margin: 0;
+}
+
+.watchlist-state-cell {
+  min-width: 64px;
+  text-align: center;
+}
+
+.watchlist-state-form {
+  margin: 0;
+  display: inline-flex;
+}
+
+.watchlist-row-missing {
+  opacity: .8;
+}
+
+.watchlist-missing-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .report-orphan-block {
   margin-bottom: 10px;
 }

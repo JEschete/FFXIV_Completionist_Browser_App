@@ -202,7 +202,14 @@ def test_sidebar_completion_hide_omits_completed_categories(client):
 
 
 def test_static_pages_render(client):
-    for path in ("/settings", "/credits", "/chains", "/characters", "/progress-reports"):
+    for path in (
+        "/settings",
+        "/credits",
+        "/chains",
+        "/characters",
+        "/watchlist",
+        "/progress-reports",
+    ):
         resp = client.get(path)
         assert resp.status_code == 200, f"{path} -> {resp.status_code}"
 
@@ -364,6 +371,186 @@ def test_toggle_persists_state(client):
     assert resp.status_code == 200
     # Two done rows now (Thing One baseline + Thing Three just toggled).
     assert resp.text.count("Thing Three") >= 1
+
+
+def test_watchlist_toggle_endpoint_renders_updated_row(client):
+    first = client.post(
+        "/api/watchlist/toggle",
+        data={"sheet_name": "Side Stuff", "row_index": "5"},
+    )
+    assert first.status_code == 200
+    assert "Thing Three" in first.text
+    assert "Unpin" in first.text
+
+    trigger = json.loads(first.headers["HX-Trigger"])
+    assert trigger.get("progress-changed") is True
+
+    second = client.post(
+        "/api/watchlist/toggle",
+        data={"sheet_name": "Side Stuff", "row_index": "5"},
+    )
+    assert second.status_code == 200
+    assert "Thing Three" in second.text
+    assert "Pin" in second.text
+
+
+def test_watchlist_page_lists_pinned_rows(client):
+    client.post(
+        "/api/watchlist/toggle",
+        data={"sheet_name": "Side Stuff", "row_index": "5"},
+    )
+
+    page = client.get("/watchlist")
+    assert page.status_code == 200
+    assert "Watchlist" in page.text
+    assert "Thing Three" in page.text
+    assert "/browse/Side%20Stuff?state=all#row-5" in page.text
+    assert "/api/watchlist/toggle-state" in page.text
+
+
+def test_watchlist_api_toggle_state_returns_row_fragment(client, conn, character_id):
+    connection, run_id = conn
+
+    pin_resp = client.post(
+        "/api/watchlist/toggle",
+        data={"sheet_name": "Side Stuff", "row_index": "5"},
+    )
+    assert pin_resp.status_code == 200
+
+    entry = connection.execute(
+        """
+        SELECT stable_key
+        FROM watchlist_entries
+        WHERE character_id = ? AND sheet_name = ? AND row_index_hint = ?
+        LIMIT 1
+        """,
+        (character_id, "Side Stuff", 5),
+    ).fetchone()
+    assert entry is not None
+
+    resp = client.post(
+        "/api/watchlist/toggle-state",
+        data={
+            "sheet_name": "Side Stuff",
+            "row_index": "5",
+            "stable_key": str(entry["stable_key"] or ""),
+            "show_missing": "1",
+        },
+    )
+    assert resp.status_code == 200
+    assert "Thing Three" in resp.text
+    assert "status-done" in resp.text
+
+    trigger = json.loads(resp.headers["HX-Trigger"])
+    assert trigger.get("progress-changed") is True
+
+    after = db.effective_state(connection, character_id, run_id, "Side Stuff", 5)
+    assert after == "done"
+
+
+def test_watchlist_toggle_state_route_updates_checkbox_row(client, conn, character_id):
+    connection, run_id = conn
+
+    pin_resp = client.post(
+        "/api/watchlist/toggle",
+        data={"sheet_name": "Side Stuff", "row_index": "5"},
+    )
+    assert pin_resp.status_code == 200
+
+    before = db.effective_state(connection, character_id, run_id, "Side Stuff", 5)
+    assert before == "todo"
+
+    toggle_resp = client.post(
+        "/watchlist/toggle-state",
+        data={
+            "sheet_name": "Side Stuff",
+            "row_index": "5",
+            "next_url": "/watchlist",
+        },
+        follow_redirects=False,
+    )
+    assert toggle_resp.status_code == 303
+    assert "saved=" in toggle_resp.headers.get("location", "")
+
+    after = db.effective_state(connection, character_id, run_id, "Side Stuff", 5)
+    assert after == "done"
+
+
+def test_watchlist_toggle_state_route_updates_value_row(client, conn, character_id):
+    connection, run_id = conn
+
+    pin_resp = client.post(
+        "/api/watchlist/toggle",
+        data={"sheet_name": "Classes-Jobs", "row_index": "3"},
+    )
+    assert pin_resp.status_code == 200
+
+    toggle_exclude = client.post(
+        "/watchlist/toggle-state",
+        data={
+            "sheet_name": "Classes-Jobs",
+            "row_index": "3",
+            "next_url": "/watchlist?show_missing=1",
+        },
+        follow_redirects=False,
+    )
+    assert toggle_exclude.status_code == 303
+    assert "show_missing=1&saved=" in toggle_exclude.headers.get("location", "")
+
+    excluded_state = db.effective_state(connection, character_id, run_id, "Classes-Jobs", 3)
+    assert excluded_state == "excluded"
+
+    toggle_restore = client.post(
+        "/watchlist/toggle-state",
+        data={
+            "sheet_name": "Classes-Jobs",
+            "row_index": "3",
+            "next_url": "/watchlist",
+        },
+        follow_redirects=False,
+    )
+    assert toggle_restore.status_code == 303
+
+    restored_state = db.effective_state(connection, character_id, run_id, "Classes-Jobs", 3)
+    assert restored_state in {"todo", "done"}
+
+
+def test_watchlist_unpin_route_removes_item(client, conn, character_id):
+    connection, _run_id = conn
+
+    pin_resp = client.post(
+        "/api/watchlist/toggle",
+        data={"sheet_name": "Side Stuff", "row_index": "5"},
+    )
+    assert pin_resp.status_code == 200
+
+    entry = connection.execute(
+        """
+        SELECT stable_key
+        FROM watchlist_entries
+        WHERE character_id = ?
+        LIMIT 1
+        """,
+        (character_id,),
+    ).fetchone()
+    assert entry is not None
+    stable_key = str(entry["stable_key"] or "")
+    assert stable_key
+
+    unpin_resp = client.post(
+        "/watchlist/unpin",
+        data={
+            "stable_key": stable_key,
+            "next_url": "/watchlist",
+        },
+        follow_redirects=False,
+    )
+    assert unpin_resp.status_code == 303
+    assert "saved=" in unpin_resp.headers.get("location", "")
+
+    page = client.get("/watchlist")
+    assert page.status_code == 200
+    assert "Thing Three" not in page.text
 
 
 def test_set_value_route(client):

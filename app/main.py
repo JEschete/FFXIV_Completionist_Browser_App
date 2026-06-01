@@ -2219,6 +2219,12 @@ def browse(
         )
         for row in rows:
             row["chain_info"] = flags.get(row["row_index"])
+        db.annotate_watchlist_state(
+            ctx.conn,
+            ctx.character_id,
+            source_sheet_name,
+            rows,
+        )
         groups = db.group_rows_by_section(
             rows,
             sheet_name=source_sheet_name,
@@ -2326,6 +2332,362 @@ def chains_overview(request: Request):
         if ctx.page_completion_behavior == COMPLETION_BEHAVIOR_HIDE:
             chains = [c for c in chains if not _is_roll_complete(c.get("roll"))]
         return ctx.render("chains.html", {"chains": chains, "active_sheet": None})
+    finally:
+        ctx.close()
+
+
+@app.get("/watchlist", response_class=HTMLResponse)
+def watchlist_page(
+    request: Request,
+    show_missing: int = 1,
+    saved: str = "",
+    error: str = "",
+):
+    ctx = Ctx(request)
+    try:
+        rows = db.watchlist_rows_for_character(
+            ctx.conn,
+            ctx.run_id,
+            ctx.character_id,
+            ctx.starting_class,
+        )
+
+        show_missing_bool = bool(show_missing)
+        if not show_missing_bool:
+            rows = [row for row in rows if bool(row.get("resolved"))]
+
+        rows.sort(
+            key=lambda item: (
+                0 if bool(item.get("resolved")) else 1,
+                str(item.get("sheet_name") or ""),
+                int(item.get("row_index") or 0),
+                str(item.get("label") or ""),
+            )
+        )
+
+        sheet_titles = {
+            str(name): str(meta.get("title") or name)
+            for (name, meta) in ctx.sheets_by_name.items()
+            if isinstance(meta, dict)
+        }
+        resolved_count = sum(1 for row in rows if bool(row.get("resolved")))
+        missing_count = sum(1 for row in rows if not bool(row.get("resolved")))
+
+        return ctx.render(
+            "watchlist.html",
+            {
+                "active_sheet": None,
+                "watchlist_rows": rows,
+                "watchlist_total": len(rows),
+                "watchlist_resolved": resolved_count,
+                "watchlist_missing": missing_count,
+                "watchlist_sheet_titles": sheet_titles,
+                "watchlist_show_missing": show_missing_bool,
+                "saved": saved,
+                "error": error,
+            },
+        )
+    finally:
+        ctx.close()
+
+
+def _watchlist_redirect_url(destination: str, *, key: str, message: str) -> str:
+    sep = "&" if "?" in destination else "?"
+    return f"{destination}{sep}{key}={quote(message)}"
+
+
+def _watchlist_row_for_render(
+    conn,
+    *,
+    run_id: int,
+    character_id: int,
+    starting_class: str | None,
+    stable_key: str,
+    sheet_name: str,
+    row_index: int,
+) -> dict[str, Any] | None:
+    rows = db.watchlist_rows_for_character(
+        conn,
+        run_id,
+        character_id,
+        starting_class,
+    )
+    key = str(stable_key or "").strip()
+    if key:
+        for row in rows:
+            if str(row.get("stable_key") or "") == key:
+                return row
+
+    source_sheet = str(sheet_name or "")
+    target_row_index = int(row_index)
+    for row in rows:
+        if str(row.get("sheet_name") or "") == source_sheet and int(row.get("row_index") or 0) == target_row_index:
+            return row
+    return None
+
+
+@app.post("/watchlist/unpin")
+def watchlist_unpin(
+    request: Request,
+    stable_key: str = Form(""),
+    next_url: str = Form("/watchlist"),
+):
+    destination = str(next_url or "").strip()
+    if not destination.startswith("/"):
+        destination = "/watchlist"
+
+    ctx = Ctx(request, full=False)
+    try:
+        removed = db.unpin_watchlist_key(
+            ctx.conn,
+            ctx.character_id,
+            stable_key,
+            commit=True,
+        )
+        if not removed:
+            return RedirectResponse(
+                _watchlist_redirect_url(
+                    destination,
+                    key="error",
+                    message="Could not find that watchlist entry.",
+                ),
+                status_code=303,
+            )
+        return RedirectResponse(
+            _watchlist_redirect_url(
+                destination,
+                key="saved",
+                message="Watchlist item removed.",
+            ),
+            status_code=303,
+        )
+    finally:
+        ctx.close()
+
+
+@app.post("/api/watchlist/toggle-state", response_class=HTMLResponse)
+def api_watchlist_toggle_state(
+    request: Request,
+    sheet_name: str = Form(...),
+    row_index: int = Form(...),
+    stable_key: str = Form(""),
+    show_missing: int = Form(1),
+):
+    ctx = Ctx(request, full=False)
+    try:
+        _ensure_character_import_idle(ctx.character_id)
+        sheet = ctx.require_content_sheet(sheet_name)
+        source_sheet_name = str(sheet.get("sheet_name") or sheet_name)
+
+        live_row = db.fetch_row(
+            ctx.conn,
+            ctx.run_id,
+            ctx.character_id,
+            source_sheet_name,
+            row_index,
+            ctx.starting_class,
+        )
+        if live_row is None:
+            raise HTTPException(404, "Could not find that row in the current workbook.")
+
+        live_row_type = str(live_row.get("row_type") or "checkbox")
+        try:
+            if live_row_type == "value":
+                db.toggle_excluded(
+                    ctx.conn,
+                    ctx.character_id,
+                    ctx.run_id,
+                    source_sheet_name,
+                    row_index,
+                    ctx.starting_class,
+                )
+            else:
+                db.toggle_row(
+                    ctx.conn,
+                    ctx.character_id,
+                    ctx.run_id,
+                    source_sheet_name,
+                    row_index,
+                    ctx.starting_class,
+                )
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower():
+                try:
+                    ctx.conn.rollback()
+                except sqlite3.Error:
+                    pass
+                raise HTTPException(
+                    409,
+                    "Database is busy with another write. Please retry in a few seconds.",
+                ) from exc
+            raise
+
+        row_for_render = _watchlist_row_for_render(
+            ctx.conn,
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
+            starting_class=ctx.starting_class,
+            stable_key=stable_key,
+            sheet_name=source_sheet_name,
+            row_index=row_index,
+        )
+        if row_for_render is None:
+            raise HTTPException(404, "Could not resolve that watchlist row.")
+
+        live_sheet_name = str(row_for_render.get("sheet_name") or source_sheet_name)
+        live_sheet = db.fetch_sheet(ctx.conn, ctx.run_id, live_sheet_name)
+        sheet_title = str(live_sheet["title"] or live_sheet_name) if live_sheet is not None else live_sheet_name
+
+        body = templates.get_template("partials/watchlist_row.html").render(
+            request=ctx.request,
+            row=row_for_render,
+            sheet_title=sheet_title,
+            watchlist_show_missing=bool(show_missing),
+            next_watchlist_url=(
+                "/watchlist?show_missing=1"
+                if bool(show_missing)
+                else "/watchlist"
+            ),
+        )
+        response = HTMLResponse(body)
+        _set_hx_triggers(response, {"kind": "watchlist", "action": "state-toggle"})
+        return response
+    finally:
+        ctx.close()
+
+
+@app.post("/watchlist/toggle-state")
+def watchlist_toggle_state(
+    request: Request,
+    sheet_name: str = Form(...),
+    row_index: int = Form(...),
+    next_url: str = Form("/watchlist"),
+):
+    destination = str(next_url or "").strip()
+    if not destination.startswith("/"):
+        destination = "/watchlist"
+
+    ctx = Ctx(request, full=False)
+    try:
+        _ensure_character_import_idle(ctx.character_id)
+        sheet = ctx.require_content_sheet(sheet_name)
+        source_sheet_name = str(sheet.get("sheet_name") or sheet_name)
+
+        live_row = db.fetch_row(
+            ctx.conn,
+            ctx.run_id,
+            ctx.character_id,
+            source_sheet_name,
+            row_index,
+            ctx.starting_class,
+        )
+        if live_row is None:
+            return RedirectResponse(
+                _watchlist_redirect_url(
+                    destination,
+                    key="error",
+                    message="Could not find that row in the current workbook.",
+                ),
+                status_code=303,
+            )
+
+        live_row_type = str(live_row.get("row_type") or "checkbox")
+        try:
+            if live_row_type == "value":
+                new_state = db.toggle_excluded(
+                    ctx.conn,
+                    ctx.character_id,
+                    ctx.run_id,
+                    source_sheet_name,
+                    row_index,
+                    ctx.starting_class,
+                )
+            else:
+                new_state, _changed = db.toggle_row(
+                    ctx.conn,
+                    ctx.character_id,
+                    ctx.run_id,
+                    source_sheet_name,
+                    row_index,
+                    ctx.starting_class,
+                )
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower():
+                try:
+                    ctx.conn.rollback()
+                except sqlite3.Error:
+                    pass
+                return RedirectResponse(
+                    _watchlist_redirect_url(
+                        destination,
+                        key="error",
+                        message="Database is busy with another write. Please retry in a few seconds.",
+                    ),
+                    status_code=303,
+                )
+            raise
+
+        return RedirectResponse(
+            _watchlist_redirect_url(
+                destination,
+                key="saved",
+                message=f"Row state updated to {new_state}.",
+            ),
+            status_code=303,
+        )
+    finally:
+        ctx.close()
+
+
+@app.post("/api/watchlist/toggle", response_class=HTMLResponse)
+def api_watchlist_toggle(
+    request: Request,
+    sheet_name: str = Form(...),
+    row_index: int = Form(...),
+):
+    ctx = Ctx(request, full=False)
+    try:
+        _ensure_character_import_idle(ctx.character_id)
+        sheet = ctx.require_content_sheet(sheet_name)
+
+        try:
+            db.toggle_watchlist_row(
+                ctx.conn,
+                ctx.character_id,
+                ctx.run_id,
+                sheet_name,
+                row_index,
+                commit=True,
+            )
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower():
+                try:
+                    ctx.conn.rollback()
+                except sqlite3.Error:
+                    pass
+                raise HTTPException(
+                    409,
+                    "Database is busy with another write. Please retry in a few seconds.",
+                ) from exc
+            raise
+
+        flags = db.sheet_chain_flags(
+            ctx.conn,
+            ctx.run_id,
+            ctx.character_id,
+            sheet_name,
+            ctx.starting_class,
+        )
+        body = _render_row(
+            ctx,
+            sheet,
+            row_index,
+            json.loads(sheet["data_columns_json"]),
+            flags.get(row_index),
+        )
+        response = HTMLResponse(body)
+        _set_hx_triggers(response, {"kind": "watchlist", "action": "toggle"})
+        return response
     finally:
         ctx.close()
 
@@ -3726,6 +4088,12 @@ def _render_row(
     )
     if row is None:
         raise HTTPException(404, "Row not found")
+    db.annotate_watchlist_state_for_row(
+        ctx.conn,
+        ctx.character_id,
+        sheet["sheet_name"],
+        row,
+    )
     return templates.get_template("partials/row.html").render(
         request=ctx.request,
         sheet=sheet,
