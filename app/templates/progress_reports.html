@@ -102,19 +102,37 @@
 
 <section class="probe-card report-card">
   <h2>Review Items for {{ report_selected_character.name }}</h2>
-  {% if report_review_items %}
+  <p class="page-sub report-review-guide">
+    <strong>done</strong> accepts the <strong>After</strong> snapshot,
+    <strong>excluded</strong> reverts to <strong>Before</strong>, and
+    <strong>todo</strong> keeps or reopens an item as unresolved.
+  </p>
+
+  <div class="report-review-counts" aria-label="Review resolution counts">
+    <span class="report-review-count report-review-count-unresolved">Unresolved: {{ report_review_counts.unresolved or 0 }}</span>
+    <span class="report-review-count report-review-count-done">Accepted: {{ report_review_counts.resolved_done or 0 }}</span>
+    <span class="report-review-count report-review-count-excluded">Reverted: {{ report_review_counts.resolved_excluded or 0 }}</span>
+    <span class="report-review-count">Total: {{ report_review_counts.total or 0 }}</span>
+  </div>
+
   <form method="post" action="/progress-reports/resolve-bulk" class="report-bulk-form">
     <input type="hidden" name="character_id" value="{{ report_selected_character_id }}" />
-    <input type="hidden" name="only_unresolved" value="1" />
     <input type="hidden" name="next_url" value="/progress-reports?character_id={{ report_selected_character_id }}{% if report_show_advanced %}&show_advanced=1{% endif %}" />
-    <label for="bulk-resolution">Bulk action</label>
-    <select id="bulk-resolution" name="resolution">
-      <option value="done">done (accept all visible)</option>
-      <option value="excluded">excluded (revert all visible)</option>
-      <option value="todo">todo (reopen all visible)</option>
+    <label for="bulk-scope">Scope</label>
+    <select id="bulk-scope" name="only_unresolved">
+      <option value="1" selected>Unresolved only (table rows)</option>
+      <option value="0">All review items (including resolved)</option>
     </select>
-    <button type="submit" class="btn-mini">Apply Bulk Resolution</button>
+    <label for="bulk-resolution">Action</label>
+    <select id="bulk-resolution" name="resolution">
+      <option value="done">done (accept using After)</option>
+      <option value="excluded">excluded (revert using Before)</option>
+      <option value="todo">todo (mark unresolved / reopen)</option>
+    </select>
+    <button type="submit" class="btn-mini">Apply Bulk Action</button>
   </form>
+
+  {% if report_review_items %}
   <div class="table-wrap report-table-wrap">
     <table class="data-table report-table">
       <thead>
@@ -163,11 +181,11 @@
               <input type="hidden" name="item_id" value="{{ item.id }}" />
               <input type="hidden" name="next_url" value="/progress-reports?character_id={{ report_selected_character_id }}{% if report_show_advanced %}&show_advanced=1{% endif %}" />
               <select name="resolution">
-                <option value="todo" {{ 'selected' if res.status == 'todo' else '' }}>todo</option>
-                <option value="done" {{ 'selected' if res.status == 'done' else '' }}>done (accept change)</option>
-                <option value="excluded" {{ 'selected' if res.status == 'excluded' else '' }}>excluded (revert change)</option>
+                <option value="todo" {{ 'selected' if res.status == 'todo' else '' }}>todo (unresolved)</option>
+                <option value="done" {{ 'selected' if res.status == 'done' else '' }}>done (accept After)</option>
+                <option value="excluded" {{ 'selected' if res.status == 'excluded' else '' }}>excluded (revert Before)</option>
               </select>
-              <button type="submit" class="btn-mini">Accept Resolution</button>
+              <button type="submit" class="btn-mini">Save</button>
             </form>
             {% if res.updated_at %}
             <div class="report-resolution-meta">updated: {{ res.updated_at }}</div>
@@ -179,7 +197,14 @@
     </table>
   </div>
   {% else %}
+  {% if (report_review_counts.total or 0) > 0 %}
+  <p class="page-sub">
+    No unresolved review items for this character. All review items are currently resolved.
+    To reopen resolved items, use bulk scope <strong>All review items</strong> with action <strong>todo</strong>.
+  </p>
+  {% else %}
   <p class="page-sub">No unresolved review items for this character in the latest report.</p>
+  {% endif %}
   {% endif %}
 </section>
 

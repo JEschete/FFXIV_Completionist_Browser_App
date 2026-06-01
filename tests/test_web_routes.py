@@ -1117,6 +1117,7 @@ def test_progress_report_bulk_resolution_route(client):
         follow_redirects=False,
     )
     assert bulk_resp.status_code == 303
+    assert "ok=" in (bulk_resp.headers.get("location", ""))
 
     latest = progress_report.load_latest_report()
     assert isinstance(latest, dict)
@@ -1129,6 +1130,89 @@ def test_progress_report_bulk_resolution_route(client):
     page_resp = client.get("/progress-reports", params={"character_id": str(character_id)})
     assert page_resp.status_code == 200
     assert "No unresolved review items for this character" in page_resp.text
+
+
+def test_progress_report_bulk_resolution_route_reports_noop_scope(client):
+    client.post("/api/toggle", data={"sheet_name": "Side Stuff", "row_index": "5"})
+    report_resp = client.get(
+        "/api/progress/between-run-report",
+        params={"persist": "true"},
+    )
+    assert report_resp.status_code == 200
+    report_doc = report_resp.json()
+    items = report_doc.get("review_items")
+    assert isinstance(items, list) and items
+    character_id = int(items[0]["character_id"])
+
+    first_bulk = client.post(
+        "/progress-reports/resolve-bulk",
+        data={
+            "character_id": str(character_id),
+            "resolution": "done",
+            "only_unresolved": "1",
+            "next_url": f"/progress-reports?character_id={character_id}",
+        },
+        follow_redirects=False,
+    )
+    assert first_bulk.status_code == 303
+
+    second_bulk = client.post(
+        "/progress-reports/resolve-bulk",
+        data={
+            "character_id": str(character_id),
+            "resolution": "done",
+            "only_unresolved": "1",
+            "next_url": f"/progress-reports?character_id={character_id}",
+        },
+        follow_redirects=True,
+    )
+    assert second_bulk.status_code == 200
+    assert "No unresolved items matched the selected bulk action scope" in second_bulk.text
+
+
+def test_progress_report_bulk_resolution_scope_all_can_reopen(client):
+    client.post("/api/toggle", data={"sheet_name": "Side Stuff", "row_index": "5"})
+    report_resp = client.get(
+        "/api/progress/between-run-report",
+        params={"persist": "true"},
+    )
+    assert report_resp.status_code == 200
+    report_doc = report_resp.json()
+    items = report_doc.get("review_items")
+    assert isinstance(items, list) and items
+    character_id = int(items[0]["character_id"])
+
+    resolve_all = client.post(
+        "/progress-reports/resolve-bulk",
+        data={
+            "character_id": str(character_id),
+            "resolution": "done",
+            "only_unresolved": "1",
+            "next_url": f"/progress-reports?character_id={character_id}",
+        },
+        follow_redirects=False,
+    )
+    assert resolve_all.status_code == 303
+
+    reopen = client.post(
+        "/progress-reports/resolve-bulk",
+        data={
+            "character_id": str(character_id),
+            "resolution": "todo",
+            "only_unresolved": "0",
+            "next_url": f"/progress-reports?character_id={character_id}",
+        },
+        follow_redirects=False,
+    )
+    assert reopen.status_code == 303
+
+    latest = progress_report.load_latest_report()
+    assert isinstance(latest, dict)
+    unresolved = progress_report.count_unresolved_review_items(
+        latest,
+        character_id=character_id,
+    )
+    assert unresolved >= 1
 
 
 def test_progress_report_reset_baseline_route(client):

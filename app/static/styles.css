@@ -2644,6 +2644,36 @@ img.brand-mark { object-fit: cover; }
   color: var(--text);
   font-size: 13px;
 }
+.report-review-guide {
+  margin-top: 10px;
+  margin-bottom: 8px;
+}
+.report-review-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.report-review-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel-2) 86%, transparent);
+  color: var(--muted);
+  font-size: 12px;
+}
+.report-review-count-unresolved {
+  color: var(--todo);
+}
+.report-review-count-done {
+  color: var(--done);
+}
+.report-review-count-excluded {
+  color: var(--gold);
+}
 .report-baseline-form {
   margin-top: 10px;
   padding-top: 10px;
@@ -2687,7 +2717,7 @@ img.brand-mark { object-fit: cover; }
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 6px;
   margin-bottom: 8px;
 }
 .report-bulk-form label {

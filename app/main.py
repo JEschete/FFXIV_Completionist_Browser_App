@@ -5597,6 +5597,30 @@ def _find_report_review_item(
     return None
 
 
+def _character_review_counts(report_doc: dict[str, Any], character_id: int) -> dict[str, int]:
+    counts = {
+        "unresolved": 0,
+        "resolved_done": 0,
+        "resolved_excluded": 0,
+        "total": 0,
+    }
+    all_items = progress_report.review_items_for_character(
+        report_doc,
+        character_id,
+        include_resolved=True,
+    )
+    for item in all_items:
+        status = str((item.get("resolution") or {}).get("status") or "todo").strip().lower()
+        if status == "done":
+            counts["resolved_done"] += 1
+        elif status == "excluded":
+            counts["resolved_excluded"] += 1
+        else:
+            counts["unresolved"] += 1
+    counts["total"] = len(all_items)
+    return counts
+
+
 def _apply_report_item_resolution_to_progress(
     conn,
     *,
@@ -5712,6 +5736,12 @@ def progress_reports_page(
         report_path = ""
         summary: dict[str, Any] = {}
         review_items: list[dict[str, Any]] = []
+        review_counts: dict[str, int] = {
+            "unresolved": 0,
+            "resolved_done": 0,
+            "resolved_excluded": 0,
+            "total": 0,
+        }
         advanced_items: list[dict[str, Any]] = []
         orphaned_map: dict[str, int] = {}
         integrity_alerts: list[dict[str, Any]] = []
@@ -5723,6 +5753,11 @@ def progress_reports_page(
             report_path = str(report_doc.get("report_path") or "")
             summary_raw = report_doc.get("summary")
             summary = summary_raw if isinstance(summary_raw, dict) else {}
+
+            review_counts = _character_review_counts(
+                report_doc,
+                selected_character_id,
+            )
 
             review_items = progress_report.review_items_for_character(
                 report_doc,
@@ -5787,6 +5822,7 @@ def progress_reports_page(
                 "report_path": report_path,
                 "report_summary": summary,
                 "report_review_items": review_items,
+                "report_review_counts": review_counts,
                 "report_advanced_items": advanced_items,
                 "report_orphaned_map": orphaned_map,
                 "report_integrity_alerts": integrity_alerts,
@@ -5947,23 +5983,30 @@ def progress_report_resolve_bulk(
     normalized_resolution = str(resolution or "todo").strip().lower()
     if normalized_resolution not in progress_report.RESOLUTION_VALUES:
         return RedirectResponse(
-            f"{destination}?error={quote('Invalid resolution state.')}",
+            _with_progress_report_message(destination, "error", "Invalid resolution state."),
             status_code=303,
         )
 
     report_doc = _load_latest_progress_report()
     if not isinstance(report_doc, dict):
         return RedirectResponse(
-            f"{destination}?error={quote('No deconflict snapshot found to resolve.')}",
+            _with_progress_report_message(
+                destination,
+                "error",
+                "No deconflict snapshot found to resolve.",
+            ),
             status_code=303,
         )
+
+    unresolved_only_scope = _is_truthy_form_flag(only_unresolved)
+    scope_label = "unresolved items" if unresolved_only_scope else "all review items"
 
     target_items = progress_report.review_items_for_character(
         report_doc,
         character_id,
         include_resolved=True,
     )
-    if _is_truthy_form_flag(only_unresolved):
+    if unresolved_only_scope:
         target_items = [
             item
             for item in target_items
@@ -5971,10 +6014,40 @@ def progress_report_resolve_bulk(
         ]
 
     if not target_items:
-        return RedirectResponse(destination, status_code=303)
+        return RedirectResponse(
+            _with_progress_report_message(
+                destination,
+                "ok",
+                f"No {scope_label} matched the selected bulk action scope.",
+            ),
+            status_code=303,
+        )
+
+    items_to_update: list[dict[str, Any]] = []
+    skipped_same_status = 0
+    for item in target_items:
+        current_status = str((item.get("resolution") or {}).get("status") or "todo").strip().lower()
+        if current_status == normalized_resolution:
+            skipped_same_status += 1
+            continue
+        items_to_update.append(item)
+
+    if not items_to_update:
+        return RedirectResponse(
+            _with_progress_report_message(
+                destination,
+                "ok",
+                (
+                    "No review items changed. "
+                    f"{skipped_same_status} item(s) were already marked '{normalized_resolution}'."
+                ),
+            ),
+            status_code=303,
+        )
 
     applied_states: dict[str, str | None] = {}
     any_progress_updates = False
+    progress_update_count = 0
 
     if normalized_resolution != "todo":
         conn = db.get_connection()
@@ -5984,11 +6057,8 @@ def progress_report_resolve_bulk(
                 raise ValueError("No ingest run found.")
 
             starting_class_cache: dict[int, str | None] = {}
-            for item in target_items:
+            for item in items_to_update:
                 item_id = str(item.get("id") or "")
-                current_status = str((item.get("resolution") or {}).get("status") or "todo").strip().lower()
-                if item_id and current_status == normalized_resolution:
-                    continue
                 applied_states[item_id] = _apply_report_item_resolution_to_progress(
                     conn,
                     run_id=run_id,
@@ -5997,6 +6067,7 @@ def progress_report_resolve_bulk(
                     starting_class_cache=starting_class_cache,
                 )
                 any_progress_updates = True
+                progress_update_count += 1
 
             if any_progress_updates:
                 _, current_run_token = _latest_run_identity(conn)
@@ -6019,7 +6090,7 @@ def progress_report_resolve_bulk(
                 pass
 
     updated_count = 0
-    for item in target_items:
+    for item in items_to_update:
         item_id = str(item.get("id") or "")
         updated = progress_report.set_review_item_resolution(
             report_doc,
@@ -6032,14 +6103,27 @@ def progress_report_resolve_bulk(
 
     if updated_count <= 0:
         return RedirectResponse(
-            f"{destination}?error={quote('Could not update report resolution state.')}",
+            _with_progress_report_message(
+                destination,
+                "error",
+                "Could not update report resolution state.",
+            ),
             status_code=303,
         )
 
     report_path_raw = report_doc.get("report_path")
     report_path = Path(str(report_path_raw)) if isinstance(report_path_raw, str) and report_path_raw else None
     progress_report.save_report_document(report_doc, report_path=report_path)
-    return RedirectResponse(destination, status_code=303)
+
+    message = f"Bulk action applied: {updated_count} {scope_label} set to '{normalized_resolution}'."
+    if normalized_resolution != "todo":
+        message += f" Progress updated for {progress_update_count} row(s)."
+    if skipped_same_status > 0:
+        message += f" {skipped_same_status} item(s) already matched that state."
+    return RedirectResponse(
+        _with_progress_report_message(destination, "ok", message),
+        status_code=303,
+    )
 
 
 # --- export -----------------------------------------------------------------
