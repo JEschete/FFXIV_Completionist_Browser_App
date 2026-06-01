@@ -10,7 +10,7 @@ import json
 import re
 import sqlite3
 
-from app import db, progress_report
+from app import db, progress_io, progress_report
 
 
 def test_health(client):
@@ -406,6 +406,7 @@ def test_watchlist_page_lists_pinned_rows(client):
     assert "Thing Three" in page.text
     assert "/browse/Side%20Stuff?state=all#row-5" in page.text
     assert "/api/watchlist/toggle-state" in page.text
+    assert "data-note-toggle" in page.text
 
 
 def test_watchlist_api_toggle_state_returns_row_fragment(client, conn, character_id):
@@ -446,6 +447,75 @@ def test_watchlist_api_toggle_state_returns_row_fragment(client, conn, character
 
     after = db.effective_state(connection, character_id, run_id, "Side Stuff", 5)
     assert after == "done"
+
+
+def test_row_note_upsert_and_delete_routes(client, conn, character_id):
+    connection, run_id = conn
+
+    upsert = client.post(
+        "/api/row-note/upsert",
+        data={
+            "sheet_name": "Side Stuff",
+            "row_index": "5",
+            "note_text": "Remember to finish this before patch day",
+            "reminder_date": "2026-06-15",
+        },
+    )
+    assert upsert.status_code == 200
+    payload = upsert.json()
+    assert payload.get("ok") is True
+    assert payload.get("has_note") is True
+    assert payload.get("reminder_date") == "2026-06-15"
+
+    char_name = str(db.get_character(connection, character_id)["name"])
+    sidecar_doc = json.loads(
+        progress_io.sidecar_path(char_name).read_text(encoding="utf-8")
+    )
+    notes = sidecar_doc.get("notes")
+    assert isinstance(notes, list)
+
+    node = connection.execute(
+        """
+        SELECT label, section_label, row_json, stable_hash
+        FROM nodes
+        WHERE run_id = ? AND sheet_name = ? AND row_index = ?
+        LIMIT 1
+        """,
+        (run_id, "Side Stuff", 5),
+    ).fetchone()
+    assert node is not None
+
+    ids = progress_io.compute_stable_ids(
+        "Side Stuff",
+        node["section_label"],
+        node["label"],
+        node["row_json"],
+        5,
+        precomputed_hash=node["stable_hash"] or None,
+    )
+    note_entry = progress_io.match_note_entry(notes, ids)
+    assert isinstance(note_entry, dict)
+    assert note_entry.get("note") == "Remember to finish this before patch day"
+    assert note_entry.get("reminder_date") == "2026-06-15"
+
+    deleted = client.post(
+        "/api/row-note/delete",
+        data={
+            "sheet_name": "Side Stuff",
+            "row_index": "5",
+        },
+    )
+    assert deleted.status_code == 200
+    deleted_payload = deleted.json()
+    assert deleted_payload.get("ok") is True
+    assert deleted_payload.get("has_note") is False
+
+    sidecar_after = json.loads(
+        progress_io.sidecar_path(char_name).read_text(encoding="utf-8")
+    )
+    notes_after = sidecar_after.get("notes")
+    assert isinstance(notes_after, list)
+    assert progress_io.match_note_entry(notes_after, ids) is None
 
 
 def test_watchlist_toggle_state_route_updates_checkbox_row(client, conn, character_id):

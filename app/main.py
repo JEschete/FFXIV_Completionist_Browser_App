@@ -2225,6 +2225,12 @@ def browse(
             source_sheet_name,
             rows,
         )
+        db.annotate_row_notes(
+            ctx.conn,
+            ctx.character_id,
+            rows,
+            sheet_name=source_sheet_name,
+        )
         groups = db.group_rows_by_section(
             rows,
             sheet_name=source_sheet_name,
@@ -2350,6 +2356,11 @@ def watchlist_page(
             ctx.run_id,
             ctx.character_id,
             ctx.starting_class,
+        )
+        db.annotate_row_notes(
+            ctx.conn,
+            ctx.character_id,
+            rows,
         )
 
         show_missing_bool = bool(show_missing)
@@ -2533,6 +2544,11 @@ def api_watchlist_toggle_state(
         )
         if row_for_render is None:
             raise HTTPException(404, "Could not resolve that watchlist row.")
+        db.annotate_row_notes(
+            ctx.conn,
+            ctx.character_id,
+            [row_for_render],
+        )
 
         live_sheet_name = str(row_for_render.get("sheet_name") or source_sheet_name)
         live_sheet = db.fetch_sheet(ctx.conn, ctx.run_id, live_sheet_name)
@@ -2688,6 +2704,102 @@ def api_watchlist_toggle(
         response = HTMLResponse(body)
         _set_hx_triggers(response, {"kind": "watchlist", "action": "toggle"})
         return response
+    finally:
+        ctx.close()
+
+
+@app.post("/api/row-note/upsert")
+def api_row_note_upsert(
+    request: Request,
+    sheet_name: str = Form(...),
+    row_index: int = Form(...),
+    note_text: str = Form(""),
+    reminder_date: str = Form(""),
+):
+    ctx = Ctx(request, full=False)
+    try:
+        _ensure_character_import_idle(ctx.character_id)
+        sheet = ctx.require_content_sheet(sheet_name)
+        source_sheet_name = str(sheet.get("sheet_name") or sheet_name)
+
+        row = db.fetch_row(
+            ctx.conn,
+            ctx.run_id,
+            ctx.character_id,
+            source_sheet_name,
+            row_index,
+            ctx.starting_class,
+        )
+        if row is None:
+            raise HTTPException(404, "Row not found")
+
+        reminder_clean = str(reminder_date or "").strip()
+        if reminder_clean and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", reminder_clean):
+            raise HTTPException(400, "Reminder date must use YYYY-MM-DD")
+
+        saved = progress_io.record_row_note(
+            ctx.conn,
+            ctx.character_id,
+            ctx.run_id,
+            source_sheet_name,
+            row_index,
+            note_text,
+            reminder_clean,
+        )
+        payload = {
+            "ok": True,
+            "has_note": bool(saved.get("has_note")),
+            "note": str(saved.get("note") or ""),
+            "reminder_date": str(saved.get("reminder_date") or ""),
+            "updated_at": str(saved.get("updated_at") or ""),
+        }
+        return JSONResponse(payload)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc) or "Could not save note") from exc
+    finally:
+        ctx.close()
+
+
+@app.post("/api/row-note/delete")
+def api_row_note_delete(
+    request: Request,
+    sheet_name: str = Form(...),
+    row_index: int = Form(...),
+):
+    ctx = Ctx(request, full=False)
+    try:
+        _ensure_character_import_idle(ctx.character_id)
+        sheet = ctx.require_content_sheet(sheet_name)
+        source_sheet_name = str(sheet.get("sheet_name") or sheet_name)
+
+        row = db.fetch_row(
+            ctx.conn,
+            ctx.run_id,
+            ctx.character_id,
+            source_sheet_name,
+            row_index,
+            ctx.starting_class,
+        )
+        if row is None:
+            raise HTTPException(404, "Row not found")
+
+        deleted = progress_io.delete_row_note(
+            ctx.conn,
+            ctx.character_id,
+            ctx.run_id,
+            source_sheet_name,
+            row_index,
+        )
+        payload = {
+            "ok": True,
+            "has_note": bool(deleted.get("has_note")),
+            "note": str(deleted.get("note") or ""),
+            "reminder_date": str(deleted.get("reminder_date") or ""),
+            "updated_at": str(deleted.get("updated_at") or ""),
+        }
+        return JSONResponse(payload)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc) or "Could not delete note") from exc
     finally:
         ctx.close()
 
@@ -4089,6 +4201,12 @@ def _render_row(
     if row is None:
         raise HTTPException(404, "Row not found")
     db.annotate_watchlist_state_for_row(
+        ctx.conn,
+        ctx.character_id,
+        sheet["sheet_name"],
+        row,
+    )
+    db.annotate_row_note_for_row(
         ctx.conn,
         ctx.character_id,
         sheet["sheet_name"],

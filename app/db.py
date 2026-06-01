@@ -18,7 +18,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from app import section_sort
+from app import progress_io, section_sort
 
 DB_PATH = Path("data/ffxiv_tracker.sqlite")
 VALUE_CAPS_PATH = Path("data/value_caps.json")
@@ -662,6 +662,65 @@ def annotate_watchlist_state_for_row(
     row["watch_pinned"] = pinned is not None
 
 
+def _apply_note_entry_to_row(
+    row: dict[str, Any],
+    note_entry: dict[str, Any] | None,
+) -> None:
+    note_text = ""
+    reminder_date = ""
+    if isinstance(note_entry, dict):
+        note_text = str(note_entry.get("note") or "").strip()
+        reminder_date = str(note_entry.get("reminder_date") or "").strip()
+
+    row["note_text"] = note_text
+    row["note_reminder_date"] = reminder_date
+    row["has_note"] = bool(note_text or reminder_date)
+
+
+def annotate_row_notes(
+    conn: sqlite3.Connection,
+    character_id: int,
+    rows: list[dict[str, Any]],
+    *,
+    sheet_name: str | None = None,
+) -> None:
+    notes = progress_io.load_character_notes(conn, character_id)
+
+    for row in rows:
+        if bool(row.get("is_section")):
+            _apply_note_entry_to_row(row, None)
+            continue
+
+        current_sheet = str(sheet_name or row.get("sheet_name") or "").strip()
+        if not current_sheet:
+            _apply_note_entry_to_row(row, None)
+            continue
+
+        ids = _row_stable_ids(
+            sheet_name=current_sheet,
+            row_index=int(row.get("row_index") or 0),
+            section_label=str(row.get("section_label") or ""),
+            label=str(row.get("label") or ""),
+            row_json=str(row.get("row_json") or ""),
+            stable_hash=str(row.get("stable_hash") or ""),
+        )
+        _apply_note_entry_to_row(row, progress_io.match_note_entry(notes, ids))
+
+
+def annotate_row_note_for_row(
+    conn: sqlite3.Connection,
+    character_id: int,
+    sheet_name: str,
+    row: dict[str, Any],
+) -> None:
+    annotate_row_notes(
+        conn,
+        character_id,
+        [row],
+        sheet_name=sheet_name,
+    )
+
+
 def _resolve_watchlist_live_row(
     conn: sqlite3.Connection,
     *,
@@ -786,6 +845,8 @@ def watchlist_rows_for_character(
                     "row_type": str(live_row.get("row_type") or "checkbox"),
                     "state": str(live_row.get("eff") or "todo"),
                     "progress_percent": live_row.get("progress_percent"),
+                    "row_json": str(live_row.get("row_json") or ""),
+                    "stable_hash": str(live_row.get("stable_hash") or ""),
                     "resolved": True,
                     "created_at": str(entry["created_at"] or ""),
                     "updated_at": str(entry["updated_at"] or ""),
@@ -803,6 +864,8 @@ def watchlist_rows_for_character(
                 "row_type": str(entry["row_type"] or "checkbox"),
                 "state": "missing",
                 "progress_percent": None,
+                "row_json": "",
+                "stable_hash": str(entry["stable_hash_hint"] or ""),
                 "resolved": False,
                 "created_at": str(entry["created_at"] or ""),
                 "updated_at": str(entry["updated_at"] or ""),
