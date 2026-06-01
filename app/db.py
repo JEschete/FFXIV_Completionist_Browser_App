@@ -962,6 +962,62 @@ def dashboard_contribution_day_counts(
     return _day_count_map(rows)
 
 
+def dashboard_weekly_sheet_improvements(
+    conn: sqlite3.Connection,
+    run_id: int,
+    character_id: int,
+    *,
+    week_start_iso: str,
+    limit: int = 5,
+) -> list[dict[str, Any]]:
+    """Top sheets by net done gains since week_start_iso.
+
+    Net gain is computed from explicit transitions in progress_activity:
+    entering done counts +1, leaving done counts -1.
+    """
+    rows = conn.execute(
+        """
+        WITH all_events AS (
+            SELECT a.id, a.sheet_name, a.row_index, a.state, a.updated_at
+            FROM progress_activity a
+            JOIN nodes n
+              ON n.run_id = a.run_id AND n.sheet_name = a.sheet_name
+             AND n.row_index = a.row_index
+            WHERE a.character_id = ? AND a.run_id = ?
+              AND n.row_type IN ('checkbox', 'value')
+        ),
+        ordered AS (
+            SELECT id, sheet_name, row_index, state, updated_at,
+                   LAG(state) OVER (
+                       PARTITION BY sheet_name, row_index
+                       ORDER BY updated_at, id
+                   ) AS prev_state
+            FROM all_events
+        ),
+        week_events AS (
+            SELECT sheet_name, state, prev_state
+            FROM ordered
+            WHERE updated_at >= ?
+        )
+        SELECT sheet_name,
+               SUM(
+                   CASE
+                       WHEN state = 'done' AND COALESCE(prev_state, '') != 'done' THEN 1
+                       WHEN state != 'done' AND prev_state = 'done' THEN -1
+                       ELSE 0
+                   END
+               ) AS net_done
+        FROM week_events
+        GROUP BY sheet_name
+        HAVING net_done > 0
+        ORDER BY net_done DESC, sheet_name
+        LIMIT ?
+        """,
+        (character_id, run_id, str(week_start_iso), max(1, int(limit))),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def latest_run_id(conn: sqlite3.Connection) -> int | None:
     """Return the newest ingest run id, or None if there hasn't been one
     yet. A fresh / never-prepped DB is allowed — the table simply doesn't

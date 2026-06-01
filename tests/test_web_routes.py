@@ -84,6 +84,26 @@ def test_dashboard_heatmap_tiles_render(client):
     assert "heatmap-day level-" in resp.text
 
 
+def test_share_cards_page_renders(client):
+    resp = client.get("/share-cards")
+    assert resp.status_code == 200
+    assert "Shareable progress cards" in resp.text
+    assert "Download PNG" in resp.text
+    assert "share-theme" in resp.text
+
+
+def test_share_cards_page_shows_weekly_improvement_after_done_toggle(client):
+    toggle = client.post(
+        "/api/toggle",
+        data={"sheet_name": "Side Stuff", "row_index": "5"},
+    )
+    assert toggle.status_code == 200
+
+    resp = client.get("/share-cards")
+    assert resp.status_code == 200
+    assert "+1 done" in resp.text
+
+
 def test_menu_browse_lists_children(client):
     resp = client.get("/browse/Character Menu")
     assert resp.status_code == 200

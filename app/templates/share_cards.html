@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% block title %}Share Cards · FFXIV Completion Tracker{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Shareable progress cards</h1>
+    <p class="page-sub">Build export-ready PNG cards for Discord or social posts. Week window: {{ share.week_label }}.</p>
+  </div>
+</div>
+
+<section class="share-controls-panel">
+  <div class="share-controls-grid">
+    <label class="share-control">
+      <span>Style</span>
+      <select id="share-theme">
+        <option value="theme-elegant" selected>Elegant navy glass</option>
+        <option value="theme-poster">Bold poster</option>
+        <option value="theme-fantasy">FFXIV fantasy</option>
+        <option value="theme-neon">Neon gamer</option>
+      </select>
+    </label>
+
+    <label class="share-control">
+      <span>Layout</span>
+      <select id="share-layout">
+        <option value="mode-combined" selected>One combined card</option>
+        <option value="mode-separate">Three separate cards</option>
+      </select>
+    </label>
+
+    <label class="share-control">
+      <span>Export size</span>
+      <select id="share-size">
+        <option value="size-discord" selected>Discord landscape (1200x675)</option>
+        <option value="size-square">Square (1080x1080)</option>
+      </select>
+    </label>
+
+    <div class="share-actions">
+      <button id="share-download" type="button" class="btn">Download PNG</button>
+    </div>
+  </div>
+  <p id="share-status" class="share-status" aria-live="polite"></p>
+</section>
+
+<section class="share-stage-shell">
+  <div class="share-preview-wrap">
+    <div id="share-export-root" class="share-export theme-elegant mode-combined size-discord">
+      <article class="share-card share-card-combined">
+        <div class="share-card-overlay"></div>
+        <header class="share-card-head">
+          <span class="share-kicker">{{ character.name }}</span>
+          <h2>FFXIV Completion Snapshot</h2>
+          <p>{{ share.week_label }} · {{ share.current_streak }} day current streak</p>
+        </header>
+
+        <div class="share-overall-row">
+          <div class="share-overall-main">
+            <span class="share-overall-pct">{{ '%.1f'|format(share.overall_pct) }}%</span>
+            <span class="share-overall-label">overall completion</span>
+          </div>
+          <div class="share-overall-metrics">
+            <div class="share-metric-box">
+              <span>Done</span>
+              <strong>{{ share.overall.done }}</strong>
+            </div>
+            <div class="share-metric-box">
+              <span>Trackable</span>
+              <strong>{{ share.countable }}</strong>
+            </div>
+            <div class="share-metric-box">
+              <span>Longest streak</span>
+              <strong>{{ share.longest_streak }} day{{ '' if share.longest_streak == 1 else 's' }}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="share-improvement-block">
+          <h3>Top sheets improved this week</h3>
+          {% if share.top_improvements %}
+          <ol class="share-top-list">
+            {% for row in share.top_improvements %}
+            <li>
+              <div>
+                <span class="share-top-title">{{ row.title }}</span>
+                <span class="share-top-sub">{{ '%.1f'|format(row.pct) }}% complete</span>
+              </div>
+              <span class="share-top-delta">+{{ row.net_done }} done</span>
+            </li>
+            {% endfor %}
+          </ol>
+          {% else %}
+          <p class="share-top-empty">No net done gains recorded in this week window yet.</p>
+          {% endif %}
+        </div>
+      </article>
+
+      <div class="share-card-stack" aria-hidden="true">
+        <article class="share-card share-card-mini">
+          <p class="share-mini-label">Overall completion</p>
+          <div class="share-mini-value">{{ '%.1f'|format(share.overall_pct) }}%</div>
+          <p class="share-mini-sub">{{ share.overall.done }} of {{ share.countable }} trackable complete</p>
+        </article>
+
+        <article class="share-card share-card-mini">
+          <p class="share-mini-label">Top sheets improved this week</p>
+          {% if share.top_improvements %}
+          <ul class="share-mini-list">
+            {% for row in share.top_improvements[:3] %}
+            <li><span>{{ row.title }}</span><strong>+{{ row.net_done }}</strong></li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p class="share-mini-sub">No net gains yet this week.</p>
+          {% endif %}
+        </article>
+
+        <article class="share-card share-card-mini">
+          <p class="share-mini-label">Streak</p>
+          <div class="share-mini-grid">
+            <div>
+              <span>Current</span>
+              <strong>{{ share.current_streak }} day{{ '' if share.current_streak == 1 else 's' }}</strong>
+            </div>
+            <div>
+              <span>Longest</span>
+              <strong>{{ share.longest_streak }} day{{ '' if share.longest_streak == 1 else 's' }}</strong>
+            </div>
+          </div>
+          <p class="share-mini-sub">Consistency over the last 26 weeks.</p>
+        </article>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.13/dist/html-to-image.min.js"></script>
+<script>
+(() => {
+  const root = document.getElementById("share-export-root");
+  const themeSelect = document.getElementById("share-theme");
+  const layoutSelect = document.getElementById("share-layout");
+  const sizeSelect = document.getElementById("share-size");
+  const status = document.getElementById("share-status");
+  const downloadBtn = document.getElementById("share-download");
+
+  if (!root || !themeSelect || !layoutSelect || !sizeSelect || !status || !downloadBtn) {
+    return;
+  }
+
+  const themeClasses = ["theme-elegant", "theme-poster", "theme-fantasy", "theme-neon"];
+  const layoutClasses = ["mode-combined", "mode-separate"];
+  const sizeClasses = ["size-discord", "size-square"];
+
+  const setStatus = (text, isError = false) => {
+    status.textContent = text;
+    status.classList.toggle("is-error", Boolean(isError));
+  };
+
+  const applySelections = () => {
+    for (const c of themeClasses) root.classList.remove(c);
+    for (const c of layoutClasses) root.classList.remove(c);
+    for (const c of sizeClasses) root.classList.remove(c);
+
+    root.classList.add(themeSelect.value || "theme-elegant");
+    root.classList.add(layoutSelect.value || "mode-combined");
+    root.classList.add(sizeSelect.value || "size-discord");
+  };
+
+  const renderCardDataUrl = async () => {
+    if (!(window.htmlToImage && typeof window.htmlToImage.toPng === "function")) {
+      throw new Error("Export library failed to load.");
+    }
+    return window.htmlToImage.toPng(root, {
+      pixelRatio: 2,
+      cacheBust: true,
+    });
+  };
+
+  downloadBtn.addEventListener("click", async () => {
+    try {
+      setStatus("Rendering PNG...");
+      const dataUrl = await renderCardDataUrl();
+      const link = document.createElement("a");
+      const layoutTag = (layoutSelect.value || "mode-combined").replace("mode-", "");
+      const sizeTag = (sizeSelect.value || "size-discord").replace("size-", "");
+      link.download = `ffxiv-share-card-${layoutTag}-${sizeTag}.png`;
+      link.href = dataUrl;
+      link.click();
+      setStatus("PNG downloaded.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not generate PNG.";
+      setStatus(message, true);
+    }
+  });
+
+  themeSelect.addEventListener("change", applySelections);
+  layoutSelect.addEventListener("change", applySelections);
+  sizeSelect.addEventListener("change", applySelections);
+  applySelections();
+})();
+</script>
+{% endblock %}

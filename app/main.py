@@ -2249,6 +2249,65 @@ def _dashboard_heatmap_payload(day_counts: dict[str, int]) -> dict[str, Any]:
         "longest_streak": longest_streak,
     }
 
+
+def _share_cards_payload(ctx: "Ctx") -> dict[str, Any]:
+    now_dt = dt.datetime.now()
+    week_start_date = now_dt.date() - dt.timedelta(days=now_dt.weekday())
+    week_start_dt = dt.datetime.combine(week_start_date, dt.time.min)
+
+    heatmap = _dashboard_heatmap_payload(
+        db.dashboard_contribution_day_counts(
+            ctx.conn,
+            ctx.run_id,
+            ctx.character_id,
+            starting_class=ctx.starting_class,
+        )
+    )
+
+    improvements_raw = db.dashboard_weekly_sheet_improvements(
+        ctx.conn,
+        ctx.run_id,
+        ctx.character_id,
+        week_start_iso=week_start_dt.isoformat(timespec="seconds"),
+        limit=5,
+    )
+    top_improvements: list[dict[str, Any]] = []
+    for row in improvements_raw:
+        sheet_name = str(row.get("sheet_name") or "")
+        if not sheet_name:
+            continue
+        meta = ctx.sheets_by_name.get(sheet_name)
+        title = (
+            str(meta.get("title") or sheet_name)
+            if isinstance(meta, dict)
+            else sheet_name
+        )
+        roll = ctx.rollups.get(sheet_name)
+        if not isinstance(roll, dict):
+            roll = {"done": 0, "excluded": 0, "total": 0}
+        top_improvements.append(
+            {
+                "sheet_name": sheet_name,
+                "title": title,
+                "net_done": int(row.get("net_done") or 0),
+                "roll": roll,
+                "pct": db.pct(roll),
+            }
+        )
+
+    countable = max(0, int(ctx.overall.get("total", 0)) - int(ctx.overall.get("excluded", 0)))
+    week_label = f"{week_start_dt.strftime('%b %d')} - {now_dt.strftime('%b %d')}"
+
+    return {
+        "overall": ctx.overall,
+        "overall_pct": db.pct(ctx.overall),
+        "countable": countable,
+        "week_label": week_label,
+        "current_streak": int(heatmap.get("current_streak") or 0),
+        "longest_streak": int(heatmap.get("longest_streak") or 0),
+        "top_improvements": top_improvements,
+    }
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
     ctx = Ctx(request)
@@ -2301,6 +2360,19 @@ def dashboard(request: Request):
             "recent_activity_groups": recent_activity_groups,
             "activity_total": activity_total,
             "heatmap": heatmap,
+            "active_sheet": None,
+        })
+    finally:
+        ctx.close()
+
+
+@app.get("/share-cards", response_class=HTMLResponse)
+def share_cards_page(request: Request):
+    ctx = Ctx(request)
+    try:
+        share = _share_cards_payload(ctx)
+        return ctx.render("share_cards.html", {
+            "share": share,
             "active_sheet": None,
         })
     finally:

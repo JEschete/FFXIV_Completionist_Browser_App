@@ -125,6 +125,50 @@ def test_dashboard_recent_activity_rows_include_done_only(conn, character_id, mo
     assert rows == []
 
 
+def test_dashboard_weekly_sheet_improvements_tracks_positive_net_done(conn, character_id, monkeypatch):
+    connection, run_id = conn
+
+    timestamps = iter([
+        "2026-06-02T09:00:00",
+    ])
+    monkeypatch.setattr(db, "now", lambda: next(timestamps))
+
+    db.set_row_state(connection, character_id, run_id, "Side Stuff", 5, "done")
+
+    improved = db.dashboard_weekly_sheet_improvements(
+        connection,
+        run_id,
+        character_id,
+        week_start_iso="2026-06-02T00:00:00",
+        limit=5,
+    )
+    assert improved
+    assert str(improved[0]["sheet_name"] or "") == "Side Stuff"
+    assert int(improved[0]["net_done"] or 0) == 1
+
+
+def test_dashboard_weekly_sheet_improvements_undoes_to_zero(conn, character_id, monkeypatch):
+    connection, run_id = conn
+
+    timestamps = iter([
+        "2026-06-02T09:00:00",
+        "2026-06-02T10:00:00",
+    ])
+    monkeypatch.setattr(db, "now", lambda: next(timestamps))
+
+    db.set_row_state(connection, character_id, run_id, "Side Stuff", 5, "done")
+    db.set_row_state(connection, character_id, run_id, "Side Stuff", 5, "todo")
+
+    improved = db.dashboard_weekly_sheet_improvements(
+        connection,
+        run_id,
+        character_id,
+        week_start_iso="2026-06-02T00:00:00",
+        limit=5,
+    )
+    assert improved == []
+
+
 def test_dashboard_recent_activity_fallback_honors_starting_class(conn, character_id):
     connection, run_id = conn
     db.set_character_class(connection, character_id, "GLADIATOR")
