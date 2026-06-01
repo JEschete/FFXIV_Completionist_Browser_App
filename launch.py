@@ -4,7 +4,6 @@ Invoked by launch.cmd after the virtualenv and dependencies are ready.
 """
 from __future__ import annotations
 
-from collections.abc import Callable
 import datetime as dt
 import json
 import os
@@ -15,6 +14,7 @@ import subprocess
 import sys
 import time
 import webbrowser
+from collections.abc import Callable
 from pathlib import Path
 from threading import Timer
 

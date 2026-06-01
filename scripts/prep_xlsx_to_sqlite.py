@@ -29,7 +29,8 @@ from openpyxl.utils import get_column_letter
 if __package__ in {None, ""}:
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from app import db as app_db, section_sort
+from app import db as app_db
+from app import section_sort
 
 
 def _row_hash(row_dict: dict) -> str:
