@@ -12,6 +12,7 @@ import datetime as dt
 import io
 import json
 import re
+import sqlite3
 import sys
 import threading
 import traceback
@@ -1331,16 +1332,43 @@ def _active_character_import_run(character_id: int) -> dict[str, Any] | None:
     return None
 
 
+def _active_any_character_import_run() -> dict[str, Any] | None:
+    with CHAR_IMPORT_RUNS_LOCK:
+        for run in CHAR_IMPORT_RUNS.values():
+            status = str(run.get("status") or "").lower()
+            if status not in {"queued", "running"}:
+                continue
+            return {
+                "id": str(run.get("id") or ""),
+                "status": status,
+                "character_id": int(run.get("character_id") or 0),
+            }
+    return None
+
+
 def _ensure_character_import_idle(character_id: int) -> None:
     active = _active_character_import_run(character_id)
-    if active is None:
+    if active is not None:
+        run_id = str(active.get("id") or "").strip()
+        status = str(active.get("status") or "running")
+        suffix = f" (run_id={run_id})" if run_id else ""
+        raise HTTPException(
+            409,
+            f"This character currently has an import {status}{suffix}. Wait for it to finish before editing progress.",
+        )
+
+    any_active = _active_any_character_import_run()
+    if any_active is None:
         return
-    run_id = str(active.get("id") or "").strip()
-    status = str(active.get("status") or "running")
+    run_id = str(any_active.get("id") or "").strip()
+    status = str(any_active.get("status") or "running")
+    active_character_id = int(any_active.get("character_id") or 0)
     suffix = f" (run_id={run_id})" if run_id else ""
     raise HTTPException(
         409,
-        f"This character currently has an import {status}{suffix}. Wait for it to finish before editing progress.",
+        "An import is currently "
+        f"{status} for character #{active_character_id}{suffix}. "
+        "Wait for it to finish before editing progress.",
     )
 
 
@@ -4104,44 +4132,56 @@ def api_bulk_set_section(
         )
 
         changed: set[int] = set()
-        if apply_chain_done:
-            for idx in checkbox_rows:
-                changed.update(
-                    db.complete_with_prerequisites(
-                        ctx.conn,
-                        ctx.character_id,
-                        ctx.run_id,
-                        sheet_name,
-                        idx,
-                        ctx.starting_class,
-                    )
-                )
-        else:
-            with progress_io.batch(ctx.conn, ctx.character_id):
+        try:
+            if apply_chain_done:
                 for idx in checkbox_rows:
-                    current_state = db.effective_state(
-                        ctx.conn,
-                        ctx.character_id,
-                        ctx.run_id,
-                        sheet_name,
-                        idx,
-                        ctx.starting_class,
+                    changed.update(
+                        db.complete_with_prerequisites(
+                            ctx.conn,
+                            ctx.character_id,
+                            ctx.run_id,
+                            sheet_name,
+                            idx,
+                            ctx.starting_class,
+                        )
                     )
-                    if current_state == target_state:
-                        continue
-                    db.set_row_state(
-                        ctx.conn,
-                        ctx.character_id,
-                        ctx.run_id,
-                        sheet_name,
-                        idx,
-                        target_state,
-                        commit=False,
-                        starting_class=ctx.starting_class,
-                    )
-                    changed.add(idx)
-            if changed:
-                ctx.conn.commit()
+            else:
+                with progress_io.batch(ctx.conn, ctx.character_id):
+                    for idx in checkbox_rows:
+                        current_state = db.effective_state(
+                            ctx.conn,
+                            ctx.character_id,
+                            ctx.run_id,
+                            sheet_name,
+                            idx,
+                            ctx.starting_class,
+                        )
+                        if current_state == target_state:
+                            continue
+                        db.set_row_state(
+                            ctx.conn,
+                            ctx.character_id,
+                            ctx.run_id,
+                            sheet_name,
+                            idx,
+                            target_state,
+                            commit=False,
+                            starting_class=ctx.starting_class,
+                        )
+                        changed.add(idx)
+                if changed:
+                    ctx.conn.commit()
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower():
+                try:
+                    ctx.conn.rollback()
+                except sqlite3.Error:
+                    pass
+                raise HTTPException(
+                    409,
+                    "Database is busy with another write. Please retry in a few seconds.",
+                ) from exc
+            raise
 
         changed_rows = sorted(set(int(i) for i in changed))
         after_snapshots = _row_snapshots(
@@ -4590,6 +4630,11 @@ def _progress_report_destination(next_url: str) -> str:
     return candidate if candidate.startswith("/") else "/progress-reports"
 
 
+def _with_progress_report_message(destination: str, key: str, message: str) -> str:
+    sep = "&" if "?" in destination else "?"
+    return f"{destination}{sep}{key}={quote(message)}"
+
+
 def _is_truthy_form_flag(raw: str | None) -> bool:
     return str(raw or "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -4703,6 +4748,7 @@ def progress_reports_page(
     character_id: int | None = None,
     show_advanced: int = 0,
     error: str = "",
+    ok: str = "",
 ):
     ctx = Ctx(request)
     try:
@@ -4724,6 +4770,8 @@ def progress_reports_page(
         review_items: list[dict[str, Any]] = []
         advanced_items: list[dict[str, Any]] = []
         orphaned_map: dict[str, int] = {}
+        integrity_alerts: list[dict[str, Any]] = []
+        integrity_summary: dict[str, int] = {"total": 0, "warning": 0, "critical": 0}
 
         if isinstance(report_doc, dict):
             report_reason = str(report_doc.get("reason") or "")
@@ -4736,12 +4784,31 @@ def progress_reports_page(
                 report_doc,
                 selected_character_id,
             )
+            for item in review_items:
+                raw_flags = item.get("integrity_flags")
+                if not isinstance(raw_flags, list):
+                    item["integrity_flags"] = []
+                    continue
+                item["integrity_flags"] = [
+                    flag
+                    for flag in raw_flags
+                    if isinstance(flag, dict)
+                ]
             review_items.sort(
                 key=lambda item: (
+                    0 if item.get("integrity_flags") else 1,
                     str(item.get("sheet_name") or ""),
                     int(item.get("row_index") or 0),
                     str(item.get("label") or ""),
                 )
+            )
+
+            integrity_alerts = progress_report.integrity_alerts_for_character(
+                report_doc,
+                selected_character_id,
+            )
+            integrity_summary = progress_report.summarize_integrity_alerts(
+                integrity_alerts,
             )
 
             advanced_raw = report_doc.get("advanced_items")
@@ -4778,14 +4845,71 @@ def progress_reports_page(
                 "report_review_items": review_items,
                 "report_advanced_items": advanced_items,
                 "report_orphaned_map": orphaned_map,
+                "report_integrity_alerts": integrity_alerts,
+                "report_integrity_summary": integrity_summary,
                 "report_show_advanced": bool(show_advanced),
                 "report_selected_character": selected_character,
                 "report_selected_character_id": selected_character_id,
                 "error": error,
+                "ok": ok,
             },
         )
     finally:
         ctx.close()
+
+
+@app.post("/progress-reports/reset-baseline")
+def progress_report_reset_baseline(
+    next_url: str = Form("/progress-reports"),
+):
+    destination = _progress_report_destination(next_url)
+    conn = db.get_connection()
+    try:
+        run_id, run_token = _latest_run_identity(conn)
+        if run_id is None or run_token is None:
+            return RedirectResponse(
+                _with_progress_report_message(destination, "error", "No ingest run found."),
+                status_code=303,
+            )
+
+        _save_session_baseline_snapshot(
+            conn,
+            run_id,
+            source="manual-baseline-reset",
+            run_token=run_token,
+        )
+
+        baseline = progress_report.load_baseline_snapshot()
+        reset_doc, reset_path = progress_report.create_between_run_report(
+            conn,
+            run_id,
+            reason="baseline-reset",
+            run_token=run_token,
+            baseline=baseline,
+            persist=True,
+        )
+
+        global LAST_BETWEEN_RUN_REPORT_PATH
+        if reset_path is not None:
+            LAST_BETWEEN_RUN_REPORT_PATH = reset_path
+
+        summary = reset_doc.get("summary") if isinstance(reset_doc, dict) else {}
+        unresolved = int((summary or {}).get("review_unresolved") or 0)
+        return RedirectResponse(
+            _with_progress_report_message(
+                destination,
+                "ok",
+                f"Baseline reset to current progress. Unresolved now: {unresolved}.",
+            ),
+            status_code=303,
+        )
+    except Exception as exc:
+        return RedirectResponse(
+            _with_progress_report_message(destination, "error", str(exc)),
+            status_code=303,
+        )
+    finally:
+        conn.close()
 
 
 @app.post("/progress-reports/resolve")

@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 
-from app import progress_report
+from app import db, progress_report
 
 
 def test_health(client):
@@ -407,6 +408,28 @@ def test_set_value_route_desynthesis_allows_two_decimals(client, conn):
     assert float(saved["progress_percent"]) == 324.52
 
 
+def test_bulk_set_section_returns_409_when_db_locked(client, monkeypatch):
+    import app.main as main_mod
+
+    def _raise_locked(*args, **kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(main_mod.db, "set_row_state", _raise_locked)
+
+    resp = client.post(
+        "/api/bulk-set-section",
+        data={
+            "sheet_name": "Side Stuff",
+            "target_state": "excluded",
+            "row_indices_json": "[5]",
+            "chain_done": "0",
+        },
+    )
+
+    assert resp.status_code == 409
+    assert "Database is busy with another write" in resp.text
+
+
 def test_search(client):
     resp = client.get("/api/search", params={"q": "Quest"})
     assert resp.status_code == 200
@@ -548,3 +571,82 @@ def test_progress_report_bulk_resolution_route(client):
     page_resp = client.get("/progress-reports", params={"character_id": str(character_id)})
     assert page_resp.status_code == 200
     assert "No unresolved review items for this character" in page_resp.text
+
+
+def test_progress_report_reset_baseline_route(client):
+    client.post("/api/toggle", data={"sheet_name": "Side Stuff", "row_index": "5"})
+    report_resp = client.get(
+        "/api/progress/between-run-report",
+        params={"persist": "true"},
+    )
+    assert report_resp.status_code == 200
+    report_doc = report_resp.json()
+    assert int(report_doc["summary"]["review_unresolved"]) >= 1
+
+    reset_resp = client.post(
+        "/progress-reports/reset-baseline",
+        data={"next_url": "/progress-reports"},
+        follow_redirects=True,
+    )
+    assert reset_resp.status_code == 200
+    assert "Baseline reset to current progress" in reset_resp.text
+
+    latest = progress_report.load_latest_report()
+    assert isinstance(latest, dict)
+    assert str(latest.get("reason") or "") == "baseline-reset"
+
+    summary = latest.get("summary")
+    assert isinstance(summary, dict)
+    assert int(summary.get("review_unresolved") or 0) == 0
+    assert int(summary.get("review_total") or 0) == 0
+
+
+def test_progress_report_page_shows_integrity_monitor(client):
+    connection = db.get_connection()
+    try:
+        run_id = db.latest_run_id(connection)
+        assert run_id is not None
+
+        chars = db.fetch_characters(connection)
+        assert chars
+        character_id = int(chars[0]["id"])
+
+        db.set_row_value(connection, character_id, run_id, "Classes-Jobs", 3, 50)
+        baseline = progress_report.build_snapshot(
+            connection,
+            run_id,
+            source="test-baseline",
+        )
+
+        db.set_row_value(connection, character_id, run_id, "Classes-Jobs", 3, 5)
+        report_doc, _ = progress_report.create_between_run_report(
+            connection,
+            run_id,
+            reason="web-integrity-check",
+            baseline=baseline,
+            persist=True,
+        )
+    finally:
+        connection.close()
+
+    items = report_doc.get("review_items")
+    assert isinstance(items, list)
+    target_item = next(
+        (
+            item
+            for item in items
+            if str(item.get("sheet_name") or "") == "Classes-Jobs"
+            and int(item.get("row_index") or 0) == 3
+        ),
+        None,
+    )
+    assert isinstance(target_item, dict)
+
+    flags = target_item.get("integrity_flags")
+    assert isinstance(flags, list)
+    assert any(str(flag.get("code") or "") == "abrupt_value_drop" for flag in flags if isinstance(flag, dict))
+
+    page_resp = client.get("/progress-reports", params={"character_id": str(character_id)})
+    assert page_resp.status_code == 200
+    assert "Data Integrity Monitor" in page_resp.text
+    assert "Abrupt value drop" in page_resp.text

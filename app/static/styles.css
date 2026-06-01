@@ -1780,6 +1780,19 @@ img.brand-mark { object-fit: cover; }
   color: var(--text);
   font-size: 13px;
 }
+.report-baseline-form {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.report-baseline-help {
+  margin: 0;
+  flex: 1 1 420px;
+}
 .report-filter-form {
   display: flex;
   align-items: center;
@@ -1839,6 +1852,34 @@ img.brand-mark { object-fit: cover; }
   margin-top: 4px;
   color: var(--muted);
   font-size: 11px;
+}
+.report-integrity-table {
+  width: 100%;
+}
+.report-integrity-row-critical {
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+}
+.report-integrity-row-warning {
+  background: color-mix(in srgb, var(--gold) 9%, transparent);
+}
+.report-integrity-flag {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 6px;
+}
+.report-integrity-flag:last-child {
+  margin-bottom: 0;
+}
+.report-integrity-flag-critical .badge {
+  border-color: color-mix(in srgb, var(--danger) 60%, var(--line));
+}
+.report-integrity-flag-warning .badge {
+  border-color: color-mix(in srgb, var(--gold) 60%, var(--line));
+}
+.report-integrity-muted {
+  color: var(--muted);
+  font-size: 12px;
 }
 .report-orphan-block {
   margin-bottom: 10px;

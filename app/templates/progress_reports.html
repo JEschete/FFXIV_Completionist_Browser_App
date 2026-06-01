@@ -13,6 +13,7 @@
 </div>
 
 {% if error %}<div class="error-banner">{{ error }}</div>{% endif %}
+{% if ok %}<div class="ok-banner">{{ ok }}</div>{% endif %}
 
 {% if not report_doc %}
 <section class="probe-card report-card">
@@ -27,10 +28,19 @@
     <div><span>Generated</span><strong>{{ report_generated_at or 'unknown' }}</strong></div>
     <div><span>Changed Characters</span><strong>{{ report_summary.characters_changed or 0 }}</strong></div>
     <div><span>Review Unresolved</span><strong>{{ report_summary.review_unresolved or 0 }}</strong></div>
+    <div><span>Integrity Alerts</span><strong>{{ report_integrity_summary.total or 0 }}</strong></div>
+    <div><span>Critical / Warning</span><strong>{{ report_integrity_summary.critical or 0 }} / {{ report_integrity_summary.warning or 0 }}</strong></div>
   </div>
   {% if report_path %}
   <p class="page-sub">Snapshot file: {{ report_path }}</p>
   {% endif %}
+  <form method="post" action="/progress-reports/reset-baseline" class="report-baseline-form">
+    <input type="hidden" name="next_url" value="/progress-reports?character_id={{ report_selected_character_id }}{% if report_show_advanced %}&show_advanced=1{% endif %}" />
+    <p class="page-sub report-baseline-help">
+      If this report is stale or unexpectedly huge, reset baseline to current progress and start fresh.
+    </p>
+    <button type="submit" class="btn-mini">Reset Baseline to Current</button>
+  </form>
 </section>
 
 <section class="probe-card report-card">
@@ -47,6 +57,47 @@
       Show advanced added/removed/orphaned details
     </label>
   </form>
+</section>
+
+<section class="probe-card report-card">
+  <h2>Data Integrity Monitor</h2>
+  {% if report_integrity_alerts %}
+  <div class="table-wrap report-table-wrap">
+    <table class="data-table report-table report-integrity-table">
+      <thead>
+        <tr>
+          <th>Severity</th>
+          <th>Type</th>
+          <th>Context</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for alert in report_integrity_alerts %}
+        <tr class="data-row report-integrity-row report-integrity-row-{{ alert.severity }}">
+          <td>
+            <span class="badge {{ 'badge-excluded' if alert.severity == 'critical' else 'badge-todo' }}">{{ alert.severity }}</span>
+          </td>
+          <td>{{ alert.title or alert.kind }}</td>
+          <td>
+            {% if alert.sheet_name %}
+            <div class="report-row-title">{{ alert.sheet_name }} #{{ alert.row_index or 0 }}</div>
+            {% if alert.label %}<div class="report-row-label">{{ alert.label }}</div>{% endif %}
+            {% elif alert.character_name %}
+            <div class="report-row-title">{{ alert.character_name }}</div>
+            {% else %}
+            <span class="report-integrity-muted">Global</span>
+            {% endif %}
+          </td>
+          <td>{{ alert.message }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="page-sub">No suspicious spikes, value drops, or timestamp anomalies detected for this character.</p>
+  {% endif %}
 </section>
 
 <section class="probe-card report-card">
@@ -72,6 +123,7 @@
           <th>Change</th>
           <th>Before</th>
           <th>After</th>
+          <th>Integrity</th>
           <th>Resolution</th>
         </tr>
       </thead>
@@ -93,6 +145,18 @@
           <td>
             <div>state: {{ item.after.state }}</div>
             <div>value: {{ item.after.value if item.after.value is not none else '—' }}</div>
+          </td>
+          <td>
+            {% if item.integrity_flags %}
+              {% for flag in item.integrity_flags %}
+              <div class="report-integrity-flag report-integrity-flag-{{ flag.severity }}">
+                <span class="badge {{ 'badge-excluded' if flag.severity == 'critical' else 'badge-todo' }}">{{ flag.label }}</span>
+                <span>{{ flag.message }}</span>
+              </div>
+              {% endfor %}
+            {% else %}
+            <span class="report-integrity-muted">—</span>
+            {% endif %}
           </td>
           <td>
             <form method="post" action="/progress-reports/resolve" class="report-resolution-form">
