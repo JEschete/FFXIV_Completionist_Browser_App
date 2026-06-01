@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Slide 15 · Minigames{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Slide 15</h1>
+    <p class="page-sub">
+      Classic 4x4 puzzle. Move tiles into the open slot by click or keyboard.
+      Score rewards fast clears, lower action count, and higher actions-per-second.
+    </p>
+  </div>
+  <a class="btn-mini" href="/minigames">Back to Minigames</a>
+</div>
+
+<section
+  class="slide15-shell"
+  data-slide15-app
+  data-history-url="/api/minigames/slide15/history"
+  data-record-url="/api/minigames/slide15/history"
+  data-delete-url="/api/minigames/slide15/history"
+  data-character-id="{{ character.id }}">
+
+  <div class="slide15-layout">
+    <div class="slide15-main-panel">
+      <div class="slide15-stat-grid" aria-label="Current run stats">
+        <div class="slide15-stat-card">
+          <span class="slide15-stat-label">Clock</span>
+          <strong data-slide15-clock>00:00.00</strong>
+        </div>
+        <div class="slide15-stat-card">
+          <span class="slide15-stat-label">Actions</span>
+          <strong data-slide15-actions>0</strong>
+        </div>
+        <div class="slide15-stat-card">
+          <span class="slide15-stat-label">Actions / sec</span>
+          <strong data-slide15-aps>0.00</strong>
+        </div>
+        <div class="slide15-stat-card">
+          <span class="slide15-stat-label">Score</span>
+          <strong data-slide15-score>0</strong>
+        </div>
+        <div class="slide15-stat-card">
+          <span class="slide15-stat-label">Best score</span>
+          <strong data-slide15-best>0</strong>
+        </div>
+      </div>
+
+      <div class="slide15-controls" role="group" aria-label="Puzzle controls">
+        <button type="button" class="btn-mini" data-slide15-restart>Restart</button>
+        <button type="button" class="btn-primary" data-slide15-new>New Puzzle</button>
+        <span class="slide15-status" data-slide15-status>Ready (timer starts on first move)</span>
+      </div>
+
+      <div
+        class="slide15-board"
+        data-slide15-board
+        role="grid"
+        aria-label="Slide 15 board">
+      </div>
+
+      <p class="slide15-help">
+        Controls: Click a tile adjacent to the empty slot, or use Arrow keys / WASD.
+      </p>
+    </div>
+
+    <div class="slide15-history-panel table-wrap">
+      <table class="data-table slide15-history-table">
+        <thead>
+          <tr>
+            <th>Date &amp; time</th>
+            <th>State</th>
+            <th>Clock</th>
+            <th>Actions</th>
+            <th>APS</th>
+            <th>Score</th>
+            <th class="slide15-col-manage">Manage</th>
+          </tr>
+        </thead>
+        <tbody data-slide15-history-body>
+          <tr>
+            <td colspan="7" class="cell-data">Loading history…</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<noscript>
+  <div class="error-banner">Slide 15 requires JavaScript.</div>
+</noscript>
+
+<script src="/minigames-static/Slide15/slide15.js?v=4"></script>
+{% endblock %}

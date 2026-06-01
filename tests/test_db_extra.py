@@ -2,9 +2,70 @@
 character CRUD, and section grouping."""
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from app import db
+
+
+def _clone_ingest_run(connection, run_id: int) -> int:
+    src = connection.execute(
+        """
+        SELECT source_file, sheet_count, row_count
+        FROM ingest_runs
+        WHERE id = ?
+        """,
+        (int(run_id),),
+    ).fetchone()
+    assert src is not None
+
+    ts = "2026-06-10T00:00:00"
+    new_run_id = connection.execute(
+        """
+        INSERT INTO ingest_runs (source_file, started_at, completed_at, sheet_count, row_count)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            str(src["source_file"] or "synthetic-updated.xlsx"),
+            ts,
+            ts,
+            int(src["sheet_count"] or 0),
+            int(src["row_count"] or 0),
+        ),
+    ).lastrowid
+    assert new_run_id is not None
+
+    connection.execute(
+        """
+        INSERT INTO sheets (
+            run_id, sheet_index, sheet_name, title, is_menu, is_readonly,
+            parent_sheet, parent_menu_section, data_columns_json,
+            label_key, value_key, total_rows
+        )
+        SELECT ?, sheet_index, sheet_name, title, is_menu, is_readonly,
+               parent_sheet, parent_menu_section, data_columns_json,
+               label_key, value_key, total_rows
+        FROM sheets
+        WHERE run_id = ?
+        """,
+        (int(new_run_id), int(run_id)),
+    )
+    connection.execute(
+        """
+        INSERT INTO nodes (
+            run_id, sheet_name, row_index, label, baseline_state,
+            row_type, section_label, seq, row_json, stable_hash
+        )
+        SELECT ?, sheet_name, row_index, label, baseline_state,
+               row_type, section_label, seq, row_json, stable_hash
+        FROM nodes
+        WHERE run_id = ?
+        """,
+        (int(new_run_id), int(run_id)),
+    )
+    connection.commit()
+    return int(new_run_id)
 
 
 # --- value caps -------------------------------------------------------------
@@ -58,6 +119,18 @@ def test_search_nodes(conn, character_id):
     labels = {h["label"] for h in hits}
     assert "Quest Alpha" in labels
 
+    sheet_hits = db.search_nodes(connection, run_id, character_id, "Character")
+    assert any(
+        h.get("result_kind") == "sheet" and h.get("label") == "Character Menu"
+        for h in sheet_hits
+    )
+
+    section_hits = db.search_nodes(connection, run_id, character_id, "MAIN STORY")
+    assert any(
+        h.get("result_kind") == "section" and h.get("label") == "MAIN STORY CHAIN"
+        for h in section_hits
+    )
+
 
 def test_fetch_export_rows(conn, character_id):
     connection, run_id = conn
@@ -74,6 +147,228 @@ def test_snapshot_trackable_rows(conn, character_id):
     assert ("Story Quests", 3) in snap
     assert snap[("Story Quests", 3)]["state"] == "done"
     assert snap[("Side Stuff", 5)]["state"] == "todo"
+
+
+def test_dashboard_contribution_counts_include_done_only(conn, character_id, monkeypatch):
+    connection, run_id = conn
+
+    timestamps = iter([
+        "2026-05-30T10:00:00",
+        "2026-05-31T10:00:00",
+    ])
+    monkeypatch.setattr(db, "now", lambda: next(timestamps))
+
+    db.set_row_state(connection, character_id, run_id, "Side Stuff", 5, "done")
+    db.set_row_state(connection, character_id, run_id, "Side Stuff", 5, "excluded")
+
+    day_counts = db.dashboard_contribution_day_counts(connection, run_id, character_id)
+    assert day_counts == {}
+
+
+def test_dashboard_recent_activity_rows_include_done_only(conn, character_id, monkeypatch):
+    connection, run_id = conn
+
+    timestamps = iter([
+        "2026-05-30T09:00:00",
+        "2026-05-30T10:00:00",
+    ])
+    monkeypatch.setattr(db, "now", lambda: next(timestamps))
+
+    db.set_row_state(connection, character_id, run_id, "Side Stuff", 5, "done")
+    db.set_row_state(connection, character_id, run_id, "Side Stuff", 5, "todo")
+
+    rows = db.dashboard_recent_activity_rows(
+        connection,
+        run_id,
+        character_id,
+        limit=10,
+    )
+    assert rows == []
+
+
+def test_dashboard_weekly_sheet_improvements_tracks_positive_net_done(conn, character_id, monkeypatch):
+    connection, run_id = conn
+
+    timestamps = iter([
+        "2026-06-02T09:00:00",
+    ])
+    monkeypatch.setattr(db, "now", lambda: next(timestamps))
+
+    db.set_row_state(connection, character_id, run_id, "Side Stuff", 5, "done")
+
+    improved = db.dashboard_weekly_sheet_improvements(
+        connection,
+        run_id,
+        character_id,
+        week_start_iso="2026-06-02T00:00:00",
+        limit=5,
+    )
+    assert improved
+    assert str(improved[0]["sheet_name"] or "") == "Side Stuff"
+    assert int(improved[0]["net_done"] or 0) == 1
+
+
+def test_dashboard_weekly_sheet_improvements_undoes_to_zero(conn, character_id, monkeypatch):
+    connection, run_id = conn
+
+    timestamps = iter([
+        "2026-06-02T09:00:00",
+        "2026-06-02T10:00:00",
+    ])
+    monkeypatch.setattr(db, "now", lambda: next(timestamps))
+
+    db.set_row_state(connection, character_id, run_id, "Side Stuff", 5, "done")
+    db.set_row_state(connection, character_id, run_id, "Side Stuff", 5, "todo")
+
+    improved = db.dashboard_weekly_sheet_improvements(
+        connection,
+        run_id,
+        character_id,
+        week_start_iso="2026-06-02T00:00:00",
+        limit=5,
+    )
+    assert improved == []
+
+
+def test_dashboard_recent_activity_fallback_honors_starting_class(conn, character_id):
+    connection, run_id = conn
+    db.set_character_class(connection, character_id, "GLADIATOR")
+
+    db.set_row_state(
+        connection,
+        character_id,
+        run_id,
+        "Side Stuff",
+        5,
+        "done",
+        starting_class="GLADIATOR",
+    )
+    connection.execute("DELETE FROM progress_activity")
+    connection.commit()
+
+    rows = db.dashboard_recent_activity_rows(
+        connection,
+        run_id,
+        character_id,
+        starting_class="GLADIATOR",
+        limit=10,
+    )
+    assert any(
+        str(r["sheet_name"] or "") == "Side Stuff" and int(r["row_index"] or 0) == 5
+        for r in rows
+    )
+
+
+def test_latest_ingest_new_items_handles_single_run(conn):
+    connection, run_id = conn
+    report = db.latest_ingest_new_items(connection, run_id=run_id)
+
+    latest = report.get("latest_run")
+    assert isinstance(latest, dict)
+    assert int(latest["id"]) == run_id
+    assert report["previous_run"] is None
+    assert int(report["total_new_items"]) == 0
+
+
+def test_latest_ingest_new_items_detects_added_rows(conn):
+    connection, run_id = conn
+    new_run_id = _clone_ingest_run(connection, run_id)
+
+    connection.execute(
+        """
+        INSERT INTO nodes (
+            run_id, sheet_name, row_index, label, baseline_state,
+            row_type, section_label, seq, row_json, stable_hash
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            new_run_id,
+            "Side Stuff",
+            999,
+            "Thing Four",
+            "todo",
+            "checkbox",
+            "ODDS AND ENDS",
+            999,
+            json.dumps({"label": "Thing Four", "row": 999}),
+            "aa11bb22cc33",
+        ),
+    )
+    connection.execute(
+        "UPDATE ingest_runs SET row_count = row_count + 1 WHERE id = ?",
+        (new_run_id,),
+    )
+    connection.execute(
+        """
+        UPDATE sheets
+        SET total_rows = total_rows + 1
+        WHERE run_id = ? AND sheet_name = ?
+        """,
+        (new_run_id, "Side Stuff"),
+    )
+    connection.commit()
+
+    report = db.latest_ingest_new_items(connection)
+    latest = report.get("latest_run")
+    previous = report.get("previous_run")
+    assert isinstance(latest, dict) and isinstance(previous, dict)
+    assert int(latest["id"]) == new_run_id
+    assert int(previous["id"]) == run_id
+    assert int(report["total_new_items"]) == 1
+    labels = {str(item.get("label") or "") for item in report["new_items"]}
+    assert "Thing Four" in labels
+    sheet_counts = {
+        str(item.get("sheet_name") or ""): int(item.get("new_count") or 0)
+        for item in report["new_items_by_sheet"]
+    }
+    assert sheet_counts.get("Side Stuff") == 1
+
+
+def test_latest_ingest_new_items_uses_fallback_snapshot_when_history_resets(conn):
+    connection, run_id = conn
+    rows = connection.execute(
+        """
+        SELECT n.sheet_name, n.row_index, n.row_type, n.section_label,
+               n.label, n.row_json, n.stable_hash, s.title AS sheet_title
+        FROM nodes n
+        JOIN sheets s
+          ON s.run_id = n.run_id AND s.sheet_name = n.sheet_name
+        WHERE n.run_id = ?
+          AND n.row_type IN ('checkbox', 'value')
+        ORDER BY n.sheet_name, n.row_index
+        """,
+        (run_id,),
+    ).fetchall()
+
+    fallback_rows = [
+        dict(row)
+        for row in rows
+        if not (
+            str(row["sheet_name"] or "") == "Side Stuff"
+            and int(row["row_index"] or 0) == 5
+        )
+    ]
+
+    report = db.latest_ingest_new_items(
+        connection,
+        run_id=run_id,
+        previous_rows_fallback=fallback_rows,
+        previous_meta_fallback={
+            "id": 77,
+            "source_file": "old-checklist.xlsx",
+            "started_at": "2026-05-30T09:00:00",
+            "completed_at": "2026-05-30T09:01:00",
+            "sheet_count": 3,
+            "row_count": len(fallback_rows),
+        },
+    )
+
+    previous = report.get("previous_run")
+    assert isinstance(previous, dict)
+    assert int(previous["id"]) == 77
+    assert int(report["total_new_items"]) == 1
+    assert any(str(item.get("label") or "") == "Thing Three" for item in report["new_items"])
 
 
 # --- chains -----------------------------------------------------------------
@@ -179,6 +474,43 @@ def test_create_and_delete_character(conn):
     db.delete_character(connection, new_id)
     with pytest.raises(ValueError):
         db.delete_character(connection, 1)         # only one left
+
+
+def test_rename_character_preserves_progress_and_migrates_sidecar(conn, character_id):
+    connection, run_id = conn
+    from app import progress_io
+
+    db.set_row_state(connection, character_id, run_id, "Side Stuff", 5, "done")
+
+    old_name = str(db.get_character(connection, character_id)["name"])
+    old_sidecar = progress_io.sidecar_path(old_name)
+    assert old_sidecar.exists()
+
+    db.rename_character(connection, character_id, "Renamed Adventurer")
+
+    renamed = db.get_character(connection, character_id)
+    assert renamed is not None
+    assert renamed["name"] == "Renamed Adventurer"
+    assert db.effective_state(connection, character_id, run_id, "Side Stuff", 5) == "done"
+
+    new_sidecar = progress_io.sidecar_path("Renamed Adventurer")
+    assert new_sidecar.exists()
+    doc = progress_io.load_sidecar(new_sidecar)
+    assert isinstance(doc, dict)
+    assert str((doc.get("character") or {}).get("name") or "") == "Renamed Adventurer"
+    if new_sidecar != old_sidecar:
+        assert not old_sidecar.exists()
+
+
+def test_rename_character_validation(conn, character_id):
+    connection, _ = conn
+    second_id = db.create_character(connection, "Second Rename Target", "GLADIATOR")
+
+    with pytest.raises(ValueError):
+        db.rename_character(connection, character_id, "   ")
+
+    with pytest.raises(ValueError):
+        db.rename_character(connection, second_id, db.get_character(connection, character_id)["name"])
 
 
 def test_set_character_class_validation(conn, character_id):

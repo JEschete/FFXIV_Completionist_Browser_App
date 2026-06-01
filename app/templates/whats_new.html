@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}What's New - FFXIV Tracker{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>What's New in Latest Ingest</h1>
+    <p class="page-sub">
+      Trackable rows that exist in the newest workbook ingest but did not exist in the prior run.
+    </p>
+  </div>
+</div>
+
+<section class="probe-card report-card">
+  <h2>Run comparison</h2>
+  <div class="report-meta-grid">
+    <div>
+      <span>Latest Run</span>
+      <strong>#{{ latest_run.id if latest_run else 'N/A' }}</strong>
+    </div>
+    <div>
+      <span>Previous Run</span>
+      <strong>#{{ previous_run.id if previous_run else 'N/A' }}</strong>
+    </div>
+    <div>
+      <span>Latest Workbook</span>
+      <strong>{{ latest_source_file or 'N/A' }}</strong>
+    </div>
+    <div>
+      <span>Previous Workbook</span>
+      <strong>{{ previous_source_file or 'N/A' }}</strong>
+    </div>
+    <div>
+      <span>New Items</span>
+      <strong>{{ whats_new.total_new_items }}</strong>
+    </div>
+    <div>
+      <span>Shown</span>
+      <strong>{{ whats_new.shown_count }}</strong>
+    </div>
+  </div>
+</section>
+
+{% if not previous_run %}
+<section class="probe-card report-card">
+  <h2>No previous ingest run yet</h2>
+  <p class="page-sub">
+    Run another workbook ingest and this page will list only the rows that were newly added.
+  </p>
+</section>
+{% elif whats_new.total_new_items == 0 %}
+<section class="probe-card report-card">
+  <h2>No new rows detected</h2>
+  <p class="page-sub">
+    The latest ingest did not add any new trackable checkbox/value rows compared with the previous run.
+  </p>
+</section>
+{% else %}
+<section class="probe-card report-card">
+  <h2>New items by sheet</h2>
+  <div class="table-wrap report-table-wrap">
+    <table class="data-table report-table">
+      <thead>
+        <tr>
+          <th>Sheet</th>
+          <th>Count</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for bucket in whats_new.new_items_by_sheet %}
+        <tr class="data-row">
+          <td>
+            <div class="report-row-title">{{ bucket.sheet_title }}</div>
+            <div class="report-row-label">{{ bucket.sheet_name }}</div>
+          </td>
+          <td>{{ bucket.new_count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="probe-card report-card">
+  <h2>Added rows</h2>
+  {% if whats_new.omitted_count > 0 %}
+  <p class="page-sub">
+    Showing {{ whats_new.shown_count }} of {{ whats_new.total_new_items }} new rows
+    ({{ whats_new.omitted_count }} omitted for page size).
+  </p>
+  {% endif %}
+  <div class="table-wrap report-table-wrap">
+    <table class="data-table report-table">
+      <thead>
+        <tr>
+          <th>Sheet</th>
+          <th>Section</th>
+          <th>Row</th>
+          <th>Label</th>
+          <th>Type</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in whats_new.new_items %}
+        <tr class="data-row">
+          <td>
+            <div class="report-row-title">{{ item.sheet_title }}</div>
+            <div class="report-row-label">{{ item.sheet_name }}</div>
+          </td>
+          <td>{{ item.section_label or '-' }}</td>
+          <td>#{{ item.row_index }}</td>
+          <td>{{ item.label }}</td>
+          <td><span class="badge badge-todo">{{ item.row_type }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

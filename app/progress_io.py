@@ -38,6 +38,7 @@ import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 PROGRESS_DIR = ROOT / "data" / "progress"
@@ -281,6 +282,7 @@ def _new_doc(character: dict, entries: list | None = None) -> dict:
             "created_at": character.get("created_at") or _now_iso(),
         },
         "progress": list(entries or []),
+        "notes": [],
     }
 
 
@@ -737,6 +739,178 @@ def remove_state_change(
             _dirty.add(path)
             if _batch_depth.get(path, 0) == 0:
                 _flush(path)
+
+
+def _notes_list(doc: dict) -> list[dict[str, Any]]:
+    notes = doc.get("notes")
+    if isinstance(notes, list):
+        if all(isinstance(entry, dict) for entry in notes):
+            return notes
+        cleaned = [entry for entry in notes if isinstance(entry, dict)]
+        doc["notes"] = cleaned
+        return cleaned
+    doc["notes"] = []
+    return doc["notes"]
+
+
+def load_character_notes(
+    conn: sqlite3.Connection,
+    character_id: int,
+) -> list[dict[str, Any]]:
+    """Return a safe copy of sidecar notes for a character."""
+    with _io_gate:
+        char = conn.execute(
+            "SELECT name, starting_class, created_at FROM characters WHERE id = ?",
+            (character_id,),
+        ).fetchone()
+        if not char or not char["name"]:
+            return []
+
+        path = sidecar_path(char["name"])
+        char_dict = dict(char)
+        with _path_lock(path):
+            doc = _get_doc(path, lambda: _new_doc(char_dict))
+            notes = _notes_list(doc)
+
+            out: list[dict[str, Any]] = []
+            for entry in notes:
+                ids = entry.get("ids") if isinstance(entry.get("ids"), dict) else {}
+                cloned = {
+                    "ids": dict(ids),
+                    "note": str(entry.get("note") or ""),
+                    "reminder_date": str(entry.get("reminder_date") or ""),
+                    "ts": str(entry.get("ts") or ""),
+                }
+                out.append(cloned)
+            return out
+
+
+def match_note_entry(
+    notes: list[dict[str, Any]],
+    target_ids: dict[str, str],
+) -> dict[str, Any] | None:
+    """Return the best matching note entry for the target tiered ids."""
+    idx = _select_update_match(notes, target_ids)
+    if idx is None:
+        return None
+    entry = notes[idx]
+    if not isinstance(entry, dict):
+        return None
+    return entry
+
+
+def record_row_note(
+    conn: sqlite3.Connection,
+    character_id: int,
+    run_id: int,
+    sheet_name: str,
+    row_index: int,
+    note_text: str,
+    reminder_date: str | None = None,
+) -> dict[str, Any]:
+    """Create/update a row note in the sidecar, or remove it when empty."""
+    with _io_gate:
+        char = conn.execute(
+            "SELECT name, starting_class, created_at FROM characters WHERE id = ?",
+            (character_id,),
+        ).fetchone()
+        if not char or not char["name"]:
+            raise ValueError(f"missing character metadata for id={character_id}")
+
+        path = sidecar_path(char["name"])
+        node = _node_for_row(conn, run_id, sheet_name, row_index)
+        if not node:
+            raise ValueError(
+                "missing node for note write-through "
+                f"(character_id={character_id}, run_id={run_id}, "
+                f"sheet={sheet_name}, row={row_index})"
+            )
+
+        ids = compute_stable_ids(
+            sheet_name,
+            node["section_label"],
+            node["label"],
+            node["row_json"],
+            row_index,
+            precomputed_hash=node["stable_hash"] or None,
+        )
+
+        note_clean = str(note_text or "").strip()
+        reminder_clean = str(reminder_date or "").strip()
+        if reminder_clean and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", reminder_clean):
+            raise ValueError("Reminder date must use YYYY-MM-DD")
+        if not reminder_clean:
+            reminder_clean = ""
+
+        char_dict = dict(char)
+        with _path_lock(path):
+            doc = _get_doc(path, lambda: _new_doc(char_dict))
+            notes = _notes_list(doc)
+            match_idx = _select_update_match(notes, ids)
+
+            has_note = bool(note_clean or reminder_clean)
+            if not has_note:
+                remove_indexes = set(_select_remove_indexes(notes, ids))
+                if match_idx is not None:
+                    remove_indexes.add(match_idx)
+                if remove_indexes:
+                    doc["notes"] = [
+                        entry for idx, entry in enumerate(notes)
+                        if idx not in remove_indexes
+                    ]
+                    _dirty.add(path)
+                    if _batch_depth.get(path, 0) == 0:
+                        _flush(path)
+                return {
+                    "has_note": False,
+                    "note": "",
+                    "reminder_date": "",
+                    "updated_at": _now_iso(),
+                }
+
+            update = {
+                "ids": ids,
+                "note": note_clean,
+                "reminder_date": reminder_clean,
+                "ts": _now_iso(),
+            }
+
+            if match_idx is None:
+                notes.append(update)
+            else:
+                prev = notes[match_idx]
+                prev.update(update)
+                prev.pop("orphan", None)
+
+            _dirty.add(path)
+            if _batch_depth.get(path, 0) == 0:
+                _flush(path)
+
+            return {
+                "has_note": True,
+                "note": note_clean,
+                "reminder_date": reminder_clean,
+                "updated_at": update["ts"],
+            }
+
+
+def delete_row_note(
+    conn: sqlite3.Connection,
+    character_id: int,
+    run_id: int,
+    sheet_name: str,
+    row_index: int,
+) -> dict[str, Any]:
+    """Remove a row note from the sidecar."""
+    return record_row_note(
+        conn,
+        character_id,
+        run_id,
+        sheet_name,
+        row_index,
+        note_text="",
+        reminder_date="",
+    )
 
 
 # --- reconcile JSON sidecars -> DB at startup ------------------------------

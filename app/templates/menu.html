@@ -25,7 +25,7 @@
     {% endif %}
     <section class="cat-grid">
       {% for child in group.cards %}
-        {{ category_card(child) }}
+        {{ category_card(child, page_completion_behavior) }}
       {% endfor %}
     </section>
   {% endfor %}

@@ -11,16 +11,21 @@ States: 'done' | 'todo' | 'excluded'. Excluded rows leave the denominator.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import re
 import sqlite3
+from collections import deque
 from pathlib import Path
 from typing import Any
 
-from app import section_sort
+from app import progress_io, section_sort
 
 DB_PATH = Path("data/ffxiv_tracker.sqlite")
 VALUE_CAPS_PATH = Path("data/value_caps.json")
+WHATS_NEW_PREVIOUS_INGEST_PATH = Path(
+    "data/logs/progress_reports/whats_new_previous_ingest.json"
+)
 
 _VALUE_CAPS_CACHE_MTIME_NS: int | None = None
 _VALUE_CAPS_CACHE_DATA: dict[str, float] = {}
@@ -296,11 +301,14 @@ def classes_jobs_cap_rows(conn: sqlite3.Connection, run_id: int) -> list[dict[st
 def _state_clauses(starting_class: str | None) -> tuple[str, str, list]:
     """Return (eff_expression, extra_join_sql, extra_join_params) used to splice
     class-overlay support into queries. With no class chosen, behavior is
-    identical to plain `COALESCE(progress, baseline)`."""
+    identical to plain `COALESCE(progress, baseline)`.
+
+    Class overlays that mark a row excluded always win over explicit progress
+    state so imports cannot resurrect quests gated by starting city."""
     if not starting_class:
         return "COALESCE(p.state, n.baseline_state)", "", []
     return (
-        "COALESCE(p.state, co.state, n.baseline_state)",
+        "COALESCE(CASE WHEN co.state = 'excluded' THEN 'excluded' END, p.state, co.state, n.baseline_state)",
         ("LEFT JOIN class_overrides co "
          "ON co.run_id = n.run_id AND co.sheet_name = n.sheet_name "
          "AND co.row_index = n.row_index AND co.starting_class = ?"),
@@ -322,13 +330,52 @@ CREATE TABLE IF NOT EXISTS progress_rollup (
 );
 """
 
+WATCHLIST_SCHEMA = """
+CREATE TABLE IF NOT EXISTS watchlist_entries (
+    character_id       INTEGER NOT NULL,
+    stable_key         TEXT NOT NULL,
+    id_section_label   TEXT,
+    id_label           TEXT,
+    id_hash            TEXT,
+    id_position        TEXT NOT NULL,
+    stable_hash_hint   TEXT,
+    sheet_name         TEXT NOT NULL,
+    row_index_hint     INTEGER NOT NULL,
+    row_label          TEXT,
+    section_label      TEXT,
+    row_type           TEXT NOT NULL,
+    created_at         TEXT NOT NULL,
+    updated_at         TEXT NOT NULL,
+    PRIMARY KEY (character_id, stable_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_watchlist_character_updated
+    ON watchlist_entries (character_id, updated_at DESC, stable_key);
+"""
+
+PROGRESS_ACTIVITY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS progress_activity (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    character_id     INTEGER NOT NULL,
+    run_id           INTEGER NOT NULL,
+    sheet_name       TEXT NOT NULL,
+    row_index        INTEGER NOT NULL,
+    state            TEXT NOT NULL,
+    progress_percent REAL,
+    updated_at       TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_progress_activity_character_run_updated
+    ON progress_activity (character_id, run_id, updated_at DESC, id DESC);
+"""
+
 
 def get_connection() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.executescript(ROLLUP_SCHEMA)  # idempotent; bootstraps on first connect
+    conn.executescript(ROLLUP_SCHEMA + WATCHLIST_SCHEMA + PROGRESS_ACTIVITY_SCHEMA)
     return conn
 
 
@@ -341,6 +388,640 @@ def now() -> str:
     return dt.datetime.now().isoformat(timespec="seconds")
 
 
+def _hash_row_json(row_json: str) -> str:
+    if not row_json:
+        return ""
+    try:
+        normalized = json.dumps(json.loads(row_json), sort_keys=True, ensure_ascii=True)
+    except json.JSONDecodeError:
+        normalized = row_json
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:12]
+
+
+def _row_stable_ids(
+    *,
+    sheet_name: str,
+    row_index: int,
+    section_label: str | None,
+    label: str | None,
+    row_json: str | None,
+    stable_hash: str | None,
+) -> dict[str, str]:
+    ids: dict[str, str] = {}
+    sheet = str(sheet_name or "")
+    section = str(section_label or "")
+    row_label = str(label or "")
+    if section and row_label:
+        ids["section_label"] = f"sheet:{sheet}|section:{section}|label:{row_label}"
+    if row_label:
+        ids["label"] = f"sheet:{sheet}|label:{row_label}"
+
+    stable_hash_value = str(stable_hash or "").strip()
+    if not stable_hash_value:
+        stable_hash_value = _hash_row_json(str(row_json or ""))
+    if stable_hash_value:
+        ids["hash"] = f"sheet:{sheet}|hash:{stable_hash_value}"
+
+    ids["position"] = f"sheet:{sheet}|row:{int(row_index)}"
+    return ids
+
+
+def _watchlist_primary_key(ids: dict[str, str]) -> str:
+    for key in ("section_label", "label", "hash", "position"):
+        value = str(ids.get(key) or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _node_for_watchlist(
+    conn: sqlite3.Connection,
+    *,
+    run_id: int,
+    sheet_name: str,
+    row_index: int,
+) -> sqlite3.Row | None:
+    return conn.execute(
+        """
+        SELECT sheet_name, row_index, row_type, label, section_label, row_json, stable_hash
+        FROM nodes
+        WHERE run_id = ? AND sheet_name = ? AND row_index = ?
+        LIMIT 1
+        """,
+        (run_id, sheet_name, row_index),
+    ).fetchone()
+
+
+def _watchlist_identity_for_node(node: sqlite3.Row) -> tuple[str, dict[str, str], str]:
+    sheet_name = str(node["sheet_name"] or "")
+    row_json = str(node["row_json"] or "")
+    stable_hash = str(node["stable_hash"] or "").strip()
+    if not stable_hash:
+        stable_hash = _hash_row_json(row_json)
+
+    ids = _row_stable_ids(
+        sheet_name=sheet_name,
+        row_index=int(node["row_index"]),
+        section_label=str(node["section_label"] or ""),
+        label=str(node["label"] or ""),
+        row_json=row_json,
+        stable_hash=stable_hash,
+    )
+    stable_key = _watchlist_primary_key(ids)
+    return stable_key, ids, stable_hash
+
+
+def toggle_watchlist_row(
+    conn: sqlite3.Connection,
+    character_id: int,
+    run_id: int,
+    sheet_name: str,
+    row_index: int,
+    *,
+    commit: bool = True,
+) -> dict[str, Any]:
+    node = _node_for_watchlist(
+        conn,
+        run_id=run_id,
+        sheet_name=sheet_name,
+        row_index=row_index,
+    )
+    if node is None:
+        raise ValueError("Target row does not exist.")
+
+    stable_key, ids, stable_hash = _watchlist_identity_for_node(node)
+    if not stable_key:
+        raise ValueError("Could not compute stable id for watchlist row.")
+
+    existing = conn.execute(
+        """
+        SELECT 1
+        FROM watchlist_entries
+        WHERE character_id = ? AND stable_key = ?
+        LIMIT 1
+        """,
+        (character_id, stable_key),
+    ).fetchone()
+
+    if existing is not None:
+        conn.execute(
+            """
+            DELETE FROM watchlist_entries
+            WHERE character_id = ? AND stable_key = ?
+            """,
+            (character_id, stable_key),
+        )
+        if commit:
+            conn.commit()
+        return {
+            "stable_key": stable_key,
+            "pinned": False,
+        }
+
+    created_at = now()
+    conn.execute(
+        """
+        INSERT INTO watchlist_entries (
+            character_id,
+            stable_key,
+            id_section_label,
+            id_label,
+            id_hash,
+            id_position,
+            stable_hash_hint,
+            sheet_name,
+            row_index_hint,
+            row_label,
+            section_label,
+            row_type,
+            created_at,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(character_id, stable_key) DO UPDATE SET
+            id_section_label = excluded.id_section_label,
+            id_label = excluded.id_label,
+            id_hash = excluded.id_hash,
+            id_position = excluded.id_position,
+            stable_hash_hint = excluded.stable_hash_hint,
+            sheet_name = excluded.sheet_name,
+            row_index_hint = excluded.row_index_hint,
+            row_label = excluded.row_label,
+            section_label = excluded.section_label,
+            row_type = excluded.row_type,
+            updated_at = excluded.updated_at
+        """,
+        (
+            character_id,
+            stable_key,
+            ids.get("section_label"),
+            ids.get("label"),
+            ids.get("hash"),
+            ids.get("position") or f"sheet:{sheet_name}|row:{int(row_index)}",
+            stable_hash,
+            str(node["sheet_name"] or sheet_name),
+            int(node["row_index"]),
+            str(node["label"] or ""),
+            str(node["section_label"] or ""),
+            str(node["row_type"] or "checkbox"),
+            created_at,
+            created_at,
+        ),
+    )
+    if commit:
+        conn.commit()
+    return {
+        "stable_key": stable_key,
+        "pinned": True,
+    }
+
+
+def unpin_watchlist_key(
+    conn: sqlite3.Connection,
+    character_id: int,
+    stable_key: str,
+    *,
+    commit: bool = True,
+) -> bool:
+    key = str(stable_key or "").strip()
+    if not key:
+        return False
+    cur = conn.execute(
+        """
+        DELETE FROM watchlist_entries
+        WHERE character_id = ? AND stable_key = ?
+        """,
+        (character_id, key),
+    )
+    if commit:
+        conn.commit()
+    return cur.rowcount > 0
+
+
+def annotate_watchlist_state(
+    conn: sqlite3.Connection,
+    character_id: int,
+    sheet_name: str,
+    rows: list[dict[str, Any]],
+) -> None:
+    stable_keys: list[str] = []
+    for row in rows:
+        if bool(row.get("is_section")):
+            row["watch_pinned"] = False
+            row["watch_stable_key"] = ""
+            continue
+        ids = _row_stable_ids(
+            sheet_name=sheet_name,
+            row_index=int(row.get("row_index") or 0),
+            section_label=str(row.get("section_label") or ""),
+            label=str(row.get("label") or ""),
+            row_json=str(row.get("row_json") or ""),
+            stable_hash=str(row.get("stable_hash") or ""),
+        )
+        stable_key = _watchlist_primary_key(ids)
+        row["watch_stable_key"] = stable_key
+        row["watch_pinned"] = False
+        if stable_key:
+            stable_keys.append(stable_key)
+
+    if not stable_keys:
+        return
+
+    pinned: set[str] = set()
+    keys = sorted(set(stable_keys))
+    chunk_size = 400
+    for idx in range(0, len(keys), chunk_size):
+        chunk = keys[idx: idx + chunk_size]
+        placeholders = ",".join("?" for _ in chunk)
+        rows_found = conn.execute(
+            f"""
+            SELECT stable_key
+            FROM watchlist_entries
+            WHERE character_id = ?
+              AND stable_key IN ({placeholders})
+            """,
+            (character_id, *chunk),
+        ).fetchall()
+        for found in rows_found:
+            pinned.add(str(found["stable_key"] or ""))
+
+    for row in rows:
+        key = str(row.get("watch_stable_key") or "")
+        row["watch_pinned"] = bool(key and key in pinned)
+
+
+def annotate_watchlist_state_for_row(
+    conn: sqlite3.Connection,
+    character_id: int,
+    sheet_name: str,
+    row: dict[str, Any],
+) -> None:
+    ids = _row_stable_ids(
+        sheet_name=sheet_name,
+        row_index=int(row.get("row_index") or 0),
+        section_label=str(row.get("section_label") or ""),
+        label=str(row.get("label") or ""),
+        row_json=str(row.get("row_json") or ""),
+        stable_hash=str(row.get("stable_hash") or ""),
+    )
+    stable_key = _watchlist_primary_key(ids)
+    row["watch_stable_key"] = stable_key
+    if not stable_key:
+        row["watch_pinned"] = False
+        return
+
+    pinned = conn.execute(
+        """
+        SELECT 1
+        FROM watchlist_entries
+        WHERE character_id = ? AND stable_key = ?
+        LIMIT 1
+        """,
+        (character_id, stable_key),
+    ).fetchone()
+    row["watch_pinned"] = pinned is not None
+
+
+def _apply_note_entry_to_row(
+    row: dict[str, Any],
+    note_entry: dict[str, Any] | None,
+) -> None:
+    note_text = ""
+    reminder_date = ""
+    if isinstance(note_entry, dict):
+        note_text = str(note_entry.get("note") or "").strip()
+        reminder_date = str(note_entry.get("reminder_date") or "").strip()
+
+    row["note_text"] = note_text
+    row["note_reminder_date"] = reminder_date
+    row["has_note"] = bool(note_text or reminder_date)
+
+
+def annotate_row_notes(
+    conn: sqlite3.Connection,
+    character_id: int,
+    rows: list[dict[str, Any]],
+    *,
+    sheet_name: str | None = None,
+) -> None:
+    notes = progress_io.load_character_notes(conn, character_id)
+
+    for row in rows:
+        if bool(row.get("is_section")):
+            _apply_note_entry_to_row(row, None)
+            continue
+
+        current_sheet = str(sheet_name or row.get("sheet_name") or "").strip()
+        if not current_sheet:
+            _apply_note_entry_to_row(row, None)
+            continue
+
+        ids = _row_stable_ids(
+            sheet_name=current_sheet,
+            row_index=int(row.get("row_index") or 0),
+            section_label=str(row.get("section_label") or ""),
+            label=str(row.get("label") or ""),
+            row_json=str(row.get("row_json") or ""),
+            stable_hash=str(row.get("stable_hash") or ""),
+        )
+        _apply_note_entry_to_row(row, progress_io.match_note_entry(notes, ids))
+
+
+def annotate_row_note_for_row(
+    conn: sqlite3.Connection,
+    character_id: int,
+    sheet_name: str,
+    row: dict[str, Any],
+) -> None:
+    annotate_row_notes(
+        conn,
+        character_id,
+        [row],
+        sheet_name=sheet_name,
+    )
+
+
+def _resolve_watchlist_live_row(
+    conn: sqlite3.Connection,
+    *,
+    run_id: int,
+    entry: sqlite3.Row,
+) -> tuple[str, int] | None:
+    sheet_name = str(entry["sheet_name"] or "")
+    row_index_hint = int(entry["row_index_hint"] or 0)
+    row_label = str(entry["row_label"] or "")
+    section_label = str(entry["section_label"] or "")
+    stable_hash_hint = str(entry["stable_hash_hint"] or "")
+
+    if sheet_name and section_label and row_label:
+        hit = conn.execute(
+            """
+            SELECT sheet_name, row_index
+            FROM nodes
+            WHERE run_id = ? AND sheet_name = ?
+              AND section_label = ? AND label = ?
+            ORDER BY ABS(row_index - ?), row_index
+            LIMIT 1
+            """,
+            (run_id, sheet_name, section_label, row_label, row_index_hint),
+        ).fetchone()
+        if hit is not None:
+            return str(hit["sheet_name"]), int(hit["row_index"])
+
+    if sheet_name and row_label:
+        hit = conn.execute(
+            """
+            SELECT sheet_name, row_index
+            FROM nodes
+            WHERE run_id = ? AND sheet_name = ?
+              AND label = ?
+            ORDER BY ABS(row_index - ?), row_index
+            LIMIT 1
+            """,
+            (run_id, sheet_name, row_label, row_index_hint),
+        ).fetchone()
+        if hit is not None:
+            return str(hit["sheet_name"]), int(hit["row_index"])
+
+    if sheet_name and stable_hash_hint:
+        hit = conn.execute(
+            """
+            SELECT sheet_name, row_index
+            FROM nodes
+            WHERE run_id = ? AND sheet_name = ?
+              AND stable_hash = ?
+            ORDER BY ABS(row_index - ?), row_index
+            LIMIT 1
+            """,
+            (run_id, sheet_name, stable_hash_hint, row_index_hint),
+        ).fetchone()
+        if hit is not None:
+            return str(hit["sheet_name"]), int(hit["row_index"])
+
+    if sheet_name and row_index_hint > 0:
+        hit = conn.execute(
+            """
+            SELECT sheet_name, row_index
+            FROM nodes
+            WHERE run_id = ? AND sheet_name = ?
+              AND row_index = ?
+            LIMIT 1
+            """,
+            (run_id, sheet_name, row_index_hint),
+        ).fetchone()
+        if hit is not None:
+            return str(hit["sheet_name"]), int(hit["row_index"])
+
+    return None
+
+
+def watchlist_rows_for_character(
+    conn: sqlite3.Connection,
+    run_id: int,
+    character_id: int,
+    starting_class: str | None = None,
+) -> list[dict[str, Any]]:
+    entries = conn.execute(
+        """
+        SELECT stable_key, sheet_name, row_index_hint,
+               row_label, section_label, row_type,
+               stable_hash_hint, created_at, updated_at,
+               id_section_label, id_label, id_hash, id_position
+        FROM watchlist_entries
+        WHERE character_id = ?
+        ORDER BY updated_at DESC, created_at DESC, stable_key
+        """,
+        (character_id,),
+    ).fetchall()
+
+    out: list[dict[str, Any]] = []
+    for entry in entries:
+        resolved = _resolve_watchlist_live_row(
+            conn,
+            run_id=run_id,
+            entry=entry,
+        )
+        if resolved is not None:
+            live_sheet, live_row_index = resolved
+            live_row = fetch_row(
+                conn,
+                run_id,
+                character_id,
+                live_sheet,
+                live_row_index,
+                starting_class,
+            )
+        else:
+            live_row = None
+
+        if isinstance(live_row, dict):
+            out.append(
+                {
+                    "stable_key": str(entry["stable_key"] or ""),
+                    "sheet_name": str(live_sheet),
+                    "row_index": int(live_row_index),
+                    "label": str(live_row.get("label") or ""),
+                    "section_label": str(live_row.get("section_label") or ""),
+                    "row_type": str(live_row.get("row_type") or "checkbox"),
+                    "state": str(live_row.get("eff") or "todo"),
+                    "progress_percent": live_row.get("progress_percent"),
+                    "row_json": str(live_row.get("row_json") or ""),
+                    "stable_hash": str(live_row.get("stable_hash") or ""),
+                    "resolved": True,
+                    "created_at": str(entry["created_at"] or ""),
+                    "updated_at": str(entry["updated_at"] or ""),
+                }
+            )
+            continue
+
+        out.append(
+            {
+                "stable_key": str(entry["stable_key"] or ""),
+                "sheet_name": str(entry["sheet_name"] or ""),
+                "row_index": int(entry["row_index_hint"] or 0),
+                "label": str(entry["row_label"] or ""),
+                "section_label": str(entry["section_label"] or ""),
+                "row_type": str(entry["row_type"] or "checkbox"),
+                "state": "missing",
+                "progress_percent": None,
+                "row_json": "",
+                "stable_hash": str(entry["stable_hash_hint"] or ""),
+                "resolved": False,
+                "created_at": str(entry["created_at"] or ""),
+                "updated_at": str(entry["updated_at"] or ""),
+            }
+        )
+
+    return out
+
+
+def dashboard_recent_activity_rows(
+    conn: sqlite3.Connection,
+    run_id: int,
+    character_id: int,
+    *,
+    starting_class: str | None = None,
+    limit: int = 40,
+) -> list[dict[str, Any]]:
+    """Most-recent explicit rows currently in done state."""
+    eff, join, jparams = _state_clauses(starting_class)
+    rows = conn.execute(
+        f"""
+        SELECT p.sheet_name, p.row_index, p.updated_at, p.progress_percent,
+               n.label, n.section_label, n.row_type,
+               {eff} AS eff
+        FROM character_progress p
+        JOIN nodes n
+          ON n.run_id = p.run_id AND n.sheet_name = p.sheet_name
+         AND n.row_index = p.row_index
+        {join}
+        WHERE p.character_id = ? AND p.run_id = ?
+          AND n.row_type IN ('checkbox', 'value')
+          AND {eff} = 'done'
+          AND p.updated_at IS NOT NULL AND p.updated_at != ''
+        ORDER BY p.updated_at DESC, p.sheet_name, p.row_index DESC
+        LIMIT ?
+        """,
+        (*jparams, character_id, run_id, max(1, int(limit))),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _day_count_map(rows: list[sqlite3.Row]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for row in rows:
+        day_key = str(row["day_key"] or "").strip()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day_key):
+            continue
+        out[day_key] = int(row["c"] or 0)
+    return out
+
+
+def dashboard_contribution_day_counts(
+    conn: sqlite3.Connection,
+    run_id: int,
+    character_id: int,
+    *,
+    starting_class: str | None = None,
+) -> dict[str, int]:
+    """Map YYYY-MM-DD -> number of rows currently done on that update day."""
+    eff, join, jparams = _state_clauses(starting_class)
+    rows = conn.execute(
+        f"""
+        SELECT SUBSTR(p.updated_at, 1, 10) AS day_key, COUNT(*) AS c
+        FROM character_progress p
+        JOIN nodes n
+          ON n.run_id = p.run_id AND n.sheet_name = p.sheet_name
+         AND n.row_index = p.row_index
+        {join}
+        WHERE p.character_id = ? AND p.run_id = ?
+          AND n.row_type IN ('checkbox', 'value')
+          AND {eff} = 'done'
+          AND p.updated_at IS NOT NULL AND p.updated_at != ''
+        GROUP BY day_key
+        ORDER BY day_key
+        """,
+        (*jparams, character_id, run_id),
+    ).fetchall()
+    return _day_count_map(rows)
+
+
+def dashboard_weekly_sheet_improvements(
+    conn: sqlite3.Connection,
+    run_id: int,
+    character_id: int,
+    *,
+    week_start_iso: str,
+    limit: int = 5,
+) -> list[dict[str, Any]]:
+    """Top sheets by net done gains since week_start_iso.
+
+    Net gain is computed from explicit transitions in progress_activity:
+    entering done counts +1, leaving done counts -1.
+    """
+    rows = conn.execute(
+        """
+        WITH all_events AS (
+            SELECT a.id, a.sheet_name, a.row_index, a.state, a.updated_at
+            FROM progress_activity a
+            JOIN nodes n
+              ON n.run_id = a.run_id AND n.sheet_name = a.sheet_name
+             AND n.row_index = a.row_index
+            WHERE a.character_id = ? AND a.run_id = ?
+              AND n.row_type IN ('checkbox', 'value')
+        ),
+        ordered AS (
+            SELECT id, sheet_name, row_index, state, updated_at,
+                   LAG(state) OVER (
+                       PARTITION BY sheet_name, row_index
+                       ORDER BY updated_at, id
+                   ) AS prev_state
+            FROM all_events
+        ),
+        week_events AS (
+            SELECT sheet_name, state, prev_state
+            FROM ordered
+            WHERE updated_at >= ?
+        )
+        SELECT sheet_name,
+               SUM(
+                   CASE
+                       WHEN state = 'done' AND COALESCE(prev_state, '') != 'done' THEN 1
+                       WHEN state != 'done' AND prev_state = 'done' THEN -1
+                       ELSE 0
+                   END
+               ) AS net_done
+        FROM week_events
+        GROUP BY sheet_name
+        HAVING net_done > 0
+        ORDER BY net_done DESC, sheet_name
+        LIMIT ?
+        """,
+        (character_id, run_id, str(week_start_iso), max(1, int(limit))),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def latest_run_id(conn: sqlite3.Connection) -> int | None:
     """Return the newest ingest run id, or None if there hasn't been one
     yet. A fresh / never-prepped DB is allowed — the table simply doesn't
@@ -350,6 +1031,319 @@ def latest_run_id(conn: sqlite3.Connection) -> int | None:
     except sqlite3.OperationalError:
         return None
     return int(row["m"]) if row and row["m"] is not None else None
+
+
+def _ingest_run_meta(conn: sqlite3.Connection, run_id: int) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT id, source_file, started_at, completed_at, sheet_count, row_count
+        FROM ingest_runs
+        WHERE id = ?
+        """,
+        (int(run_id),),
+    ).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": int(row["id"]),
+        "source_file": str(row["source_file"] or ""),
+        "started_at": str(row["started_at"] or ""),
+        "completed_at": str(row["completed_at"] or ""),
+        "sheet_count": int(row["sheet_count"] or 0),
+        "row_count": int(row["row_count"] or 0),
+    }
+
+
+def _normalize_ingest_meta(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+
+    run_id_raw = raw.get("id")
+    run_id_value: Any = "snapshot"
+    if run_id_raw not in {None, ""}:
+        try:
+            run_id_value = int(run_id_raw)
+        except (TypeError, ValueError):
+            run_id_value = str(run_id_raw)
+
+    return {
+        "id": run_id_value,
+        "source_file": str(raw.get("source_file") or ""),
+        "started_at": str(raw.get("started_at") or ""),
+        "completed_at": str(raw.get("completed_at") or ""),
+        "sheet_count": int(raw.get("sheet_count") or 0),
+        "row_count": int(raw.get("row_count") or 0),
+    }
+
+
+def _ingest_meta_token(meta: dict[str, Any]) -> tuple[str, str, str, int, int]:
+    return (
+        str(meta.get("source_file") or ""),
+        str(meta.get("started_at") or ""),
+        str(meta.get("completed_at") or ""),
+        int(meta.get("sheet_count") or 0),
+        int(meta.get("row_count") or 0),
+    )
+
+
+def _trackable_rows_for_run(
+    conn: sqlite3.Connection,
+    run_id: int,
+) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT n.sheet_name, n.row_index, n.row_type, n.section_label,
+               n.label, n.row_json, n.stable_hash,
+               s.title AS sheet_title
+        FROM nodes n
+        JOIN sheets s
+          ON s.run_id = n.run_id AND s.sheet_name = n.sheet_name
+        WHERE n.run_id = ?
+          AND n.row_type IN ('checkbox', 'value')
+        ORDER BY n.sheet_name, n.row_index
+        """,
+        (int(run_id),),
+    ).fetchall()
+
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        sheet_name = str(row["sheet_name"] or "")
+        out.append(
+            {
+                "sheet_name": sheet_name,
+                "sheet_title": str(row["sheet_title"] or sheet_name),
+                "row_index": int(row["row_index"] or 0),
+                "row_type": str(row["row_type"] or "checkbox"),
+                "section_label": str(row["section_label"] or ""),
+                "label": str(row["label"] or "").strip(),
+                "row_json": str(row["row_json"] or ""),
+                "stable_hash": str(row["stable_hash"] or ""),
+            }
+        )
+    return out
+
+
+def _normalize_trackable_rows(raw_rows: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    if not isinstance(raw_rows, list):
+        return out
+
+    for entry in raw_rows:
+        if not isinstance(entry, dict):
+            continue
+        sheet_name = str(entry.get("sheet_name") or "")
+        if not sheet_name:
+            continue
+        try:
+            row_index = int(entry.get("row_index") or 0)
+        except (TypeError, ValueError):
+            row_index = 0
+        out.append(
+            {
+                "sheet_name": sheet_name,
+                "sheet_title": str(entry.get("sheet_title") or sheet_name),
+                "row_index": row_index,
+                "row_type": str(entry.get("row_type") or "checkbox"),
+                "section_label": str(entry.get("section_label") or ""),
+                "label": str(entry.get("label") or "").strip(),
+                "row_json": str(entry.get("row_json") or ""),
+                "stable_hash": str(entry.get("stable_hash") or ""),
+            }
+        )
+    return out
+
+
+def _new_trackable_items(
+    previous_rows: list[dict[str, Any]],
+    current_rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    tiers = ("section_label", "label", "hash", "position")
+    buckets: dict[str, dict[str, deque[int]]] = {tier: {} for tier in tiers}
+    available_previous: set[int] = set()
+
+    for idx, row in enumerate(previous_rows):
+        available_previous.add(idx)
+        ids = _row_stable_ids(
+            sheet_name=str(row["sheet_name"] or ""),
+            row_index=int(row["row_index"] or 0),
+            section_label=str(row["section_label"] or ""),
+            label=str(row["label"] or ""),
+            row_json=str(row["row_json"] or ""),
+            stable_hash=str(row["stable_hash"] or ""),
+        )
+        for tier in tiers:
+            key = str(ids.get(tier) or "")
+            if not key:
+                continue
+            queue = buckets[tier].setdefault(key, deque())
+            queue.append(idx)
+
+    added_items: list[dict[str, Any]] = []
+    by_sheet: dict[str, dict[str, Any]] = {}
+
+    for row in current_rows:
+        ids = _row_stable_ids(
+            sheet_name=str(row["sheet_name"] or ""),
+            row_index=int(row["row_index"] or 0),
+            section_label=str(row["section_label"] or ""),
+            label=str(row["label"] or ""),
+            row_json=str(row["row_json"] or ""),
+            stable_hash=str(row["stable_hash"] or ""),
+        )
+
+        matched = False
+        for tier in tiers:
+            key = str(ids.get(tier) or "")
+            if not key:
+                continue
+            queue = buckets[tier].get(key)
+            if not queue:
+                continue
+            while queue:
+                candidate = queue[0]
+                if candidate in available_previous:
+                    available_previous.remove(candidate)
+                    matched = True
+                    break
+                queue.popleft()
+            if matched:
+                break
+
+        if matched:
+            continue
+
+        sheet_name = str(row["sheet_name"] or "")
+        sheet_title = str(row["sheet_title"] or sheet_name)
+        row_index = int(row["row_index"] or 0)
+        label = str(row["label"] or "").strip() or f"Row {row_index}"
+        row_type = str(row["row_type"] or "checkbox")
+        section_label = str(row["section_label"] or "")
+
+        added_items.append(
+            {
+                "sheet_name": sheet_name,
+                "sheet_title": sheet_title,
+                "row_index": row_index,
+                "row_type": row_type,
+                "section_label": section_label,
+                "label": label,
+            }
+        )
+        sheet_bucket = by_sheet.setdefault(
+            sheet_name,
+            {
+                "sheet_name": sheet_name,
+                "sheet_title": sheet_title,
+                "new_count": 0,
+            },
+        )
+        sheet_bucket["new_count"] = int(sheet_bucket["new_count"] or 0) + 1
+
+    sheet_summary = sorted(
+        by_sheet.values(),
+        key=lambda entry: (-int(entry["new_count"]), str(entry["sheet_title"])),
+    )
+
+    return added_items, sheet_summary
+
+
+def latest_ingest_new_items(
+    conn: sqlite3.Connection,
+    *,
+    run_id: int | None = None,
+    limit: int = 400,
+    previous_rows_fallback: list[dict[str, Any]] | None = None,
+    previous_meta_fallback: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return workbook rows newly introduced in the latest ingest.
+
+    Comparison is run-level (latest vs immediate previous ingest run) and uses
+    tiered stable row identities so shifted row indexes do not appear as new.
+    """
+    effective_run_id = int(run_id) if run_id is not None else int(latest_run_id(conn) or 0)
+    if effective_run_id <= 0:
+        return {
+            "latest_run": None,
+            "previous_run": None,
+            "total_new_items": 0,
+            "shown_count": 0,
+            "omitted_count": 0,
+            "new_items": [],
+            "new_items_by_sheet": [],
+        }
+
+    latest_meta = _ingest_run_meta(conn, effective_run_id)
+    prev_raw = conn.execute(
+        """
+        SELECT id FROM ingest_runs
+        WHERE id < ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (effective_run_id,),
+    ).fetchone()
+    previous_meta = (
+        _ingest_run_meta(conn, int(prev_raw["id"]))
+        if prev_raw is not None
+        else None
+    )
+
+    if latest_meta is None:
+        return {
+            "latest_run": latest_meta,
+            "previous_run": previous_meta,
+            "total_new_items": 0,
+            "shown_count": 0,
+            "omitted_count": 0,
+            "new_items": [],
+            "new_items_by_sheet": [],
+        }
+
+    current_rows = _trackable_rows_for_run(conn, effective_run_id)
+
+    previous_rows: list[dict[str, Any]] | None = None
+    if previous_meta is not None:
+        previous_rows = _trackable_rows_for_run(conn, int(previous_meta["id"]))
+    elif previous_rows_fallback is not None:
+        previous_rows = _normalize_trackable_rows(previous_rows_fallback)
+        previous_meta = _normalize_ingest_meta(previous_meta_fallback) or {
+            "id": "snapshot",
+            "source_file": "",
+            "started_at": "",
+            "completed_at": "",
+            "sheet_count": 0,
+            "row_count": len(previous_rows),
+        }
+        if _ingest_meta_token(previous_meta) == _ingest_meta_token(latest_meta):
+            previous_meta = None
+            previous_rows = None
+
+    if previous_meta is None or previous_rows is None:
+        return {
+            "latest_run": latest_meta,
+            "previous_run": previous_meta,
+            "total_new_items": 0,
+            "shown_count": 0,
+            "omitted_count": 0,
+            "new_items": [],
+            "new_items_by_sheet": [],
+        }
+
+    added_items, sheet_summary = _new_trackable_items(previous_rows, current_rows)
+
+    bounded_limit = max(1, int(limit))
+    shown_items = added_items[:bounded_limit]
+    omitted = max(0, len(added_items) - len(shown_items))
+
+    return {
+        "latest_run": latest_meta,
+        "previous_run": previous_meta,
+        "total_new_items": len(added_items),
+        "shown_count": len(shown_items),
+        "omitted_count": omitted,
+        "new_items": shown_items,
+        "new_items_by_sheet": sheet_summary,
+    }
 
 
 # --- characters -------------------------------------------------------------
@@ -367,17 +1361,102 @@ def get_character(conn: sqlite3.Connection, character_id: int) -> sqlite3.Row | 
     ).fetchone()
 
 
-def create_character(conn: sqlite3.Connection, name: str) -> int:
+def create_character(
+    conn: sqlite3.Connection,
+    name: str,
+    starting_class: str | None = None,
+) -> int:
     clean = name.strip()
     if not clean:
         raise ValueError("Character name is required.")
+    cls = str(starting_class or "").strip().upper() or None
+    if cls and cls not in STARTING_CLASSES:
+        raise ValueError(f"Unknown starting class: {cls}")
     cur = conn.execute(
-        "INSERT INTO characters (name, created_at) VALUES (?, ?)", (clean, now())
+        "INSERT INTO characters (name, starting_class, created_at) VALUES (?, ?, ?)",
+        (clean, cls, now()),
     )
     conn.commit()
     if cur.lastrowid is None:
         raise ValueError(f"Could not create character '{clean}'")
     return int(cur.lastrowid)
+
+
+def rename_character(
+    conn: sqlite3.Connection,
+    character_id: int,
+    new_name: str,
+) -> str:
+    """Rename a character while preserving progress and sidecar ownership.
+
+    Progress rows are keyed by character_id, so DB progress remains intact.
+    We still migrate the sidecar header/path to the new name so reconcile does
+    not resurrect the old character name on next startup.
+    """
+    row = conn.execute(
+        "SELECT name, starting_class, created_at FROM characters WHERE id = ?",
+        (character_id,),
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"Character id {character_id} was not found")
+
+    clean = new_name.strip()
+    if not clean:
+        raise ValueError("Character name is required.")
+
+    old_name = str(row["name"] or "").strip()
+    if not old_name:
+        raise ValueError("Character name is required.")
+    if clean == old_name:
+        return clean
+
+    try:
+        conn.execute(
+            "UPDATE characters SET name = ? WHERE id = ?",
+            (clean, character_id),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError as exc:
+        raise ValueError("Character name already exists") from exc
+
+    from app import progress_io
+
+    old_sidecar = progress_io.sidecar_path(old_name)
+    old_doc = progress_io.load_sidecar(old_sidecar) if old_sidecar.exists() else None
+    if old_doc is not None:
+        header = old_doc.get("character")
+        if not isinstance(header, dict):
+            header = {}
+        header["name"] = clean
+        if "starting_class" not in header:
+            header["starting_class"] = row["starting_class"]
+        if "created_at" not in header:
+            header["created_at"] = row["created_at"]
+        old_doc["character"] = header
+
+        new_sidecar = progress_io.sidecar_path(clean)
+        if new_sidecar != old_sidecar and new_sidecar.exists():
+            suffix = dt.datetime.now().strftime("%Y%m%d%H%M%S")
+            backup = new_sidecar.with_name(f"{new_sidecar.name}.rename-backup-{suffix}")
+            try:
+                new_sidecar.replace(backup)
+            except OSError:
+                pass
+
+        progress_io.save_sidecar(new_sidecar, old_doc)
+        if new_sidecar != old_sidecar:
+            try:
+                old_sidecar.unlink(missing_ok=True)
+            except OSError:
+                pass
+        progress_io.invalidate_cache(old_sidecar)
+        progress_io.invalidate_cache(new_sidecar)
+    else:
+        # Old sidecar may not exist yet (or may be unreadable/corrupt already).
+        # Clearing cache keeps subsequent writes consistent with the new name.
+        progress_io.invalidate_cache()
+
+    return clean
 
 
 def delete_character(conn: sqlite3.Connection, character_id: int) -> int:
@@ -516,6 +1595,23 @@ def set_row_state(
     if state not in ("done", "todo", "excluded"):
         raise ValueError(f"Bad state: {state}")
 
+    # Starting-class exclusions are immutable and should out-prioritize
+    # imported explicit states. If the class overlay says this row is excluded,
+    # force the write to excluded so effective state and rollup deltas stay
+    # consistent.
+    if starting_class and state != "excluded":
+        class_row = conn.execute(
+            """
+            SELECT state
+            FROM class_overrides
+            WHERE run_id = ? AND starting_class = ?
+              AND sheet_name = ? AND row_index = ?
+            """,
+            (run_id, starting_class, sheet_name, row_index),
+        ).fetchone()
+        if class_row is not None and str(class_row["state"] or "").lower() == "excluded":
+            state = "excluded"
+
     # Acquire a write transaction before reading old effective state. This
     # serializes concurrent same-row writes across connections so rollup delta
     # math doesn't race on stale old_eff snapshots.
@@ -548,6 +1644,7 @@ def set_row_state(
     # a write that equals the baseline is stored anyway so toggles are explicit.
     # progress_percent is preserved across writes that don't supply one — so
     # toggling a value row to excluded and back keeps its level intact.
+    touched_at = now()
     conn.execute(
         """
         INSERT INTO character_progress
@@ -558,7 +1655,15 @@ def set_row_state(
             progress_percent = COALESCE(excluded.progress_percent, character_progress.progress_percent),
             updated_at = excluded.updated_at
         """,
-        (character_id, run_id, sheet_name, row_index, state, progress_percent, now()),
+        (character_id, run_id, sheet_name, row_index, state, progress_percent, touched_at),
+    )
+    conn.execute(
+        """
+        INSERT INTO progress_activity
+            (character_id, run_id, sheet_name, row_index, state, progress_percent, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (character_id, run_id, sheet_name, row_index, state, progress_percent, touched_at),
     )
 
     new_row = dict(old_row) if old_row is not None else {
@@ -679,6 +1784,24 @@ def clear_row_override(
             WHERE character_id = ? AND run_id = ? AND sheet_name = ?
             """,
             (d_done, d_excl, d_total, character_id, run_id, sheet_name),
+        )
+
+    if removed and now_eff_row is not None:
+        conn.execute(
+            """
+            INSERT INTO progress_activity
+                (character_id, run_id, sheet_name, row_index, state, progress_percent, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                character_id,
+                run_id,
+                sheet_name,
+                row_index,
+                str(now_eff_row["eff"] or "todo"),
+                now_eff_row["progress_percent"],
+                now(),
+            ),
         )
 
     try:
@@ -1983,6 +3106,7 @@ def fetch_rows(
     sheet_name: str,
     q: str = "",
     state: str = "all",
+    states: list[str] | None = None,
     starting_class: str | None = None,
 ) -> list[dict]:
     """All nodes for a sheet with effective state + parsed data, in row order."""
@@ -1996,8 +3120,8 @@ def fetch_rows(
         params.append(f"%{q.strip()}%")
     rows = conn.execute(
         f"""
-        SELECT n.row_index, n.label, n.baseline_state, n.row_type,
-               n.section_label, n.seq, n.row_json,
+         SELECT n.sheet_name, n.row_index, n.label, n.baseline_state, n.row_type,
+             n.section_label, n.seq, n.row_json, n.stable_hash,
                {eff} AS eff,
                p.progress_percent
         FROM nodes n
@@ -2010,6 +3134,23 @@ def fetch_rows(
         """,
         params,
     ).fetchall()
+
+    explicit_state_selection = states is not None
+    allowed_states = {
+        str(s).strip().lower()
+        for s in (states or [])
+        if str(s).strip().lower() in {"todo", "done", "excluded"}
+    }
+    state_norm = str(state or "").strip().lower()
+    if not explicit_state_selection and not allowed_states and state_norm in {"todo", "done", "excluded"}:
+        allowed_states = {state_norm}
+    all_states_selected = len(allowed_states) == 3
+    # Selecting all three state buckets is equivalent to no state filter.
+    if all_states_selected:
+        allowed_states = set()
+
+    explicit_empty_selection = explicit_state_selection and not all_states_selected and not allowed_states
+
     out: list[dict] = []
     for r in rows:
         d = dict(r)
@@ -2021,7 +3162,9 @@ def fetch_rows(
                 d.get("section_label"),
                 d.get("label"),
             )
-        if state != "all" and not d["is_section"] and d["eff"] != state:
+        if explicit_empty_selection and not d["is_section"]:
+            continue
+        if allowed_states and not d["is_section"] and d["eff"] not in allowed_states:
             continue
         out.append(d)
     return out
@@ -2185,7 +3328,8 @@ def fetch_row(
     eff, join, jparams = _state_clauses(starting_class)
     r = conn.execute(
         f"""
-        SELECT n.row_index, n.label, n.row_type, n.section_label, n.row_json,
+           SELECT n.sheet_name, n.row_index, n.label, n.row_type, n.section_label,
+               n.row_json, n.stable_hash,
              {eff} AS eff, p.state AS explicit_state, p.progress_percent
         FROM nodes n
         LEFT JOIN character_progress p
@@ -2330,20 +3474,68 @@ def search_nodes(
     eff, join, jparams = _state_clauses(starting_class)
     rows = conn.execute(
         f"""
-        SELECT n.sheet_name, n.row_index, n.label,
-               {eff} AS eff,
-               s.title AS sheet_title
-        FROM nodes n
-        JOIN sheets s ON s.run_id = n.run_id AND s.sheet_name = n.sheet_name
-        LEFT JOIN character_progress p
-          ON p.character_id = ? AND p.run_id = n.run_id
-         AND p.sheet_name = n.sheet_name AND p.row_index = n.row_index
-        {join}
-        WHERE n.run_id = ? AND n.row_type != 'section' AND n.label LIKE ?
-        ORDER BY n.label
+                SELECT x.sheet_name, x.row_index, x.label, x.eff, x.sheet_title, x.result_kind
+                FROM (
+                        -- Direct sheet/page title hits (menu and content pages).
+                        SELECT
+                                s.sheet_name AS sheet_name,
+                                NULL AS row_index,
+                                s.title AS label,
+                                NULL AS eff,
+                                s.title AS sheet_title,
+                                'sheet' AS result_kind,
+                                0 AS rank_kind
+                        FROM sheets s
+                        WHERE s.run_id = ?
+                            AND (s.title LIKE ? OR s.sheet_name LIKE ?)
+
+                        UNION ALL
+
+                        -- Section banner hits.
+                        SELECT
+                                n.sheet_name AS sheet_name,
+                                n.row_index AS row_index,
+                                n.label AS label,
+                                NULL AS eff,
+                                s.title AS sheet_title,
+                                'section' AS result_kind,
+                                1 AS rank_kind
+                        FROM nodes n
+                        JOIN sheets s ON s.run_id = n.run_id AND s.sheet_name = n.sheet_name
+                        WHERE n.run_id = ?
+                            AND n.row_type = 'section'
+                            AND n.label LIKE ?
+
+                        UNION ALL
+
+                        -- Row label hits.
+                        SELECT
+                                n.sheet_name AS sheet_name,
+                                n.row_index AS row_index,
+                                n.label AS label,
+                                {eff} AS eff,
+                                s.title AS sheet_title,
+                                'row' AS result_kind,
+                                2 AS rank_kind
+                        FROM nodes n
+                        JOIN sheets s ON s.run_id = n.run_id AND s.sheet_name = n.sheet_name
+                        LEFT JOIN character_progress p
+                            ON p.character_id = ? AND p.run_id = n.run_id
+                         AND p.sheet_name = n.sheet_name AND p.row_index = n.row_index
+                        {join}
+                        WHERE n.run_id = ?
+                            AND n.row_type != 'section'
+                            AND n.label LIKE ?
+                ) x
+                ORDER BY x.rank_kind, x.label, x.sheet_title
         LIMIT ?
         """,
-        (character_id, *jparams, run_id, f"%{q}%", limit),
+                (
+                        run_id, f"%{q}%", f"%{q}%",
+                        run_id, f"%{q}%",
+                        character_id, *jparams, run_id, f"%{q}%",
+                        limit,
+                ),
     ).fetchall()
     return [dict(r) for r in rows]
 

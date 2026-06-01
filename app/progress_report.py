@@ -21,6 +21,11 @@ LATEST_REPORT_FILE_NAME = "latest.json"
 SAMPLE_LIMIT_DEFAULT = 40
 RESOLUTION_VALUES = {"done", "excluded", "todo"}
 MAX_PERSISTED_BETWEEN_RUN_REPORTS = 10
+INTEGRITY_EXCLUDED_SPIKE_ABS_MIN = 2
+INTEGRITY_EXCLUDED_SPIKE_RATIO_THRESHOLD = 0.20
+INTEGRITY_VALUE_DROP_ABS_THRESHOLD = 15.0
+INTEGRITY_VALUE_DROP_RATIO_THRESHOLD = 0.35
+INTEGRITY_TIMESTAMP_ANOMALY_SKEW_SECONDS = 300
 
 
 def _now_iso() -> str:
@@ -391,6 +396,228 @@ def _summarize_review_items(review_items: list[dict[str, Any]]) -> dict[str, int
     }
 
 
+def _int_or_zero(raw: Any) -> int:
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _parse_iso_timestamp(raw: Any) -> dt.datetime | None:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    normalized = text.replace("Z", "+00:00")
+    try:
+        parsed = dt.datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=dt.timezone.utc)
+    return parsed.astimezone(dt.timezone.utc)
+
+
+def _integrity_alert_id(*parts: Any) -> str:
+    source = "|".join(str(part or "") for part in parts)
+    digest = hashlib.sha256(source.encode("utf-8")).hexdigest()[:16]
+    return f"ia_{digest}"
+
+
+def _make_integrity_flag(
+    *,
+    code: str,
+    severity: str,
+    label: str,
+    message: str,
+    before: float | None = None,
+    after: float | None = None,
+    delta: float | None = None,
+    ratio: float | None = None,
+) -> dict[str, Any]:
+    return {
+        "code": str(code),
+        "severity": str(severity),
+        "label": str(label),
+        "message": str(message),
+        "before": before,
+        "after": after,
+        "delta": delta,
+        "ratio": ratio,
+    }
+
+
+def _make_integrity_alert(
+    *,
+    kind: str,
+    severity: str,
+    title: str,
+    message: str,
+    character_id: int | None = None,
+    character_name: str | None = None,
+    item_id: str | None = None,
+    sheet_name: str | None = None,
+    row_index: int | None = None,
+    label: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    cid = _int_or_zero(character_id)
+    row = _int_or_zero(row_index)
+    iid = str(item_id or "")
+    sheet = str(sheet_name or "")
+    row_label = str(label or "")
+    alert_id = _integrity_alert_id(kind, severity, cid, iid, sheet, row, row_label, message)
+    return {
+        "id": alert_id,
+        "kind": str(kind),
+        "severity": str(severity),
+        "title": str(title),
+        "message": str(message),
+        "character_id": cid,
+        "character_name": str(character_name or ""),
+        "item_id": iid,
+        "sheet_name": sheet,
+        "row_index": row,
+        "label": row_label,
+        "metadata": metadata or {},
+    }
+
+
+def _summarize_integrity_alerts(alerts: list[dict[str, Any]]) -> dict[str, int]:
+    out = {
+        "total": 0,
+        "critical": 0,
+        "warning": 0,
+    }
+    for alert in alerts:
+        if not isinstance(alert, dict):
+            continue
+        out["total"] += 1
+        severity = str(alert.get("severity") or "warning").strip().lower()
+        if severity == "critical":
+            out["critical"] += 1
+        else:
+            out["warning"] += 1
+    return out
+
+
+def summarize_integrity_alerts(alerts: list[dict[str, Any]]) -> dict[str, int]:
+    return _summarize_integrity_alerts(alerts)
+
+
+def _timestamp_integrity_alerts(
+    baseline_snapshot: dict[str, Any] | None,
+    current_snapshot: dict[str, Any],
+) -> list[dict[str, Any]]:
+    alerts: list[dict[str, Any]] = []
+
+    baseline_run = baseline_snapshot.get("run") if isinstance(baseline_snapshot, dict) else {}
+    current_run = current_snapshot.get("run") if isinstance(current_snapshot, dict) else {}
+
+    baseline_started = _parse_iso_timestamp((baseline_run or {}).get("started_at"))
+    baseline_completed = _parse_iso_timestamp((baseline_run or {}).get("completed_at"))
+    current_started = _parse_iso_timestamp((current_run or {}).get("started_at"))
+    current_completed = _parse_iso_timestamp((current_run or {}).get("completed_at"))
+
+    baseline_captured = _parse_iso_timestamp(
+        baseline_snapshot.get("captured_at") if isinstance(baseline_snapshot, dict) else None
+    )
+    current_captured = _parse_iso_timestamp(current_snapshot.get("captured_at"))
+
+    skew = dt.timedelta(seconds=INTEGRITY_TIMESTAMP_ANOMALY_SKEW_SECONDS)
+
+    if baseline_started and baseline_completed and baseline_started > baseline_completed:
+        alerts.append(
+            _make_integrity_alert(
+                kind="timestamp_anomaly",
+                severity="warning",
+                title="Baseline timestamp anomaly",
+                message="Baseline run start is after baseline run completion.",
+                metadata={
+                    "baseline_started_at": baseline_started.isoformat(),
+                    "baseline_completed_at": baseline_completed.isoformat(),
+                },
+            )
+        )
+
+    if current_started and current_completed and current_started > current_completed:
+        alerts.append(
+            _make_integrity_alert(
+                kind="timestamp_anomaly",
+                severity="critical",
+                title="Current timestamp anomaly",
+                message="Current run start is after current run completion.",
+                metadata={
+                    "current_started_at": current_started.isoformat(),
+                    "current_completed_at": current_completed.isoformat(),
+                },
+            )
+        )
+
+    if baseline_completed and current_completed and (current_completed + skew) < baseline_completed:
+        alerts.append(
+            _make_integrity_alert(
+                kind="timestamp_anomaly",
+                severity="critical",
+                title="Run chronology anomaly",
+                message="Current run completion timestamp is earlier than baseline run completion.",
+                metadata={
+                    "baseline_completed_at": baseline_completed.isoformat(),
+                    "current_completed_at": current_completed.isoformat(),
+                },
+            )
+        )
+
+    if baseline_captured and current_captured and (current_captured + skew) < baseline_captured:
+        alerts.append(
+            _make_integrity_alert(
+                kind="timestamp_anomaly",
+                severity="warning",
+                title="Snapshot capture anomaly",
+                message="Current snapshot capture timestamp is earlier than baseline capture.",
+                metadata={
+                    "baseline_captured_at": baseline_captured.isoformat(),
+                    "current_captured_at": current_captured.isoformat(),
+                },
+            )
+        )
+
+    return alerts
+
+
+def integrity_alerts_for_character(
+    report_doc: dict[str, Any],
+    character_id: int,
+) -> list[dict[str, Any]]:
+    selected_id = int(character_id)
+    integrity = report_doc.get("integrity") if isinstance(report_doc, dict) else None
+    if not isinstance(integrity, dict):
+        return []
+
+    raw_alerts = integrity.get("alerts")
+    if not isinstance(raw_alerts, list):
+        return []
+
+    out: list[dict[str, Any]] = []
+    for alert in raw_alerts:
+        if not isinstance(alert, dict):
+            continue
+        alert_character_id = _int_or_zero(alert.get("character_id"))
+        if alert_character_id not in (0, selected_id):
+            continue
+        out.append(alert)
+
+    severity_rank = {"critical": 0, "warning": 1}
+    out.sort(
+        key=lambda item: (
+            severity_rank.get(str(item.get("severity") or "warning").strip().lower(), 9),
+            str(item.get("sheet_name") or ""),
+            _int_or_zero(item.get("row_index")),
+            str(item.get("title") or ""),
+        )
+    )
+    return out
+
+
 def count_unresolved_review_items(
     report_doc: dict[str, Any],
     *,
@@ -502,7 +729,13 @@ def compare_snapshots(
     current: dict[str, Any],
     *,
     sample_limit: int = SAMPLE_LIMIT_DEFAULT,
-) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[
+    dict[str, Any],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
     baseline_chars = _character_index(baseline)
     current_chars = _character_index(current)
 
@@ -510,6 +743,7 @@ def compare_snapshots(
     character_rows: list[dict[str, Any]] = []
     review_items: list[dict[str, Any]] = []
     advanced_items: list[dict[str, Any]] = []
+    integrity_alerts: list[dict[str, Any]] = []
 
     summary = {
         "baseline_available": True,
@@ -696,9 +930,40 @@ def compare_snapshots(
                 "state" if state_changed else "value"
             )
 
+            integrity_flags: list[dict[str, Any]] = []
+            before_value = before_entry.get("value")
+            after_value = after_entry.get("value")
+            if (
+                isinstance(before_value, (int, float))
+                and isinstance(after_value, (int, float))
+                and after_value < before_value
+            ):
+                drop = float(before_value) - float(after_value)
+                drop_ratio = drop / max(abs(float(before_value)), 1.0)
+                if (
+                    drop >= INTEGRITY_VALUE_DROP_ABS_THRESHOLD
+                    and drop_ratio >= INTEGRITY_VALUE_DROP_RATIO_THRESHOLD
+                ):
+                    severity = "critical" if drop_ratio >= 0.65 else "warning"
+                    flag = _make_integrity_flag(
+                        code="abrupt_value_drop",
+                        severity=severity,
+                        label="Abrupt value drop",
+                        message=(
+                            f"{float(before_value):.2f} -> {float(after_value):.2f} "
+                            f"({drop_ratio * 100:.1f}% drop)"
+                        ),
+                        before=float(before_value),
+                        after=float(after_value),
+                        delta=drop,
+                        ratio=drop_ratio,
+                    )
+                    integrity_flags.append(flag)
+
+            item_id = _review_item_id(int(after.get("character_id") or 0), key)
             review_items.append(
                 {
-                    "id": _review_item_id(int(after.get("character_id") or 0), key),
+                    "id": item_id,
                     "character_id": int(after.get("character_id") or 0),
                     "character_name": str(after.get("name") or ""),
                     "key": key,
@@ -718,9 +983,34 @@ def compare_snapshots(
                         "state": after_entry["state"],
                         "value": after_entry["value"],
                     },
+                    "integrity_flags": integrity_flags,
                     "resolution": _blank_resolution(),
                 }
             )
+
+            for flag in integrity_flags:
+                integrity_alerts.append(
+                    _make_integrity_alert(
+                        kind=str(flag.get("code") or "integrity_flag"),
+                        severity=str(flag.get("severity") or "warning"),
+                        title=str(flag.get("label") or "Integrity flag"),
+                        message=str(flag.get("message") or ""),
+                        character_id=int(after.get("character_id") or 0),
+                        character_name=str(after.get("name") or ""),
+                        item_id=item_id,
+                        sheet_name=str(after_entry.get("sheet_name") or before_entry.get("sheet_name") or ""),
+                        row_index=int(after_entry.get("row_index") or before_entry.get("row_index") or 0),
+                        label=str(after_entry.get("label") or before_entry.get("label") or ""),
+                        metadata={
+                            "change_kind": kind,
+                            "key": key,
+                            "before_state": before_entry.get("state"),
+                            "after_state": after_entry.get("state"),
+                            "before_value": before_entry.get("value"),
+                            "after_value": after_entry.get("value"),
+                        },
+                    )
+                )
 
         delta = {
             "done": int(after_counts.get("done") or 0) - int(before_counts.get("done") or 0),
@@ -729,6 +1019,34 @@ def compare_snapshots(
             - int(before_counts.get("excluded") or 0),
             "total": int(after_counts.get("total") or 0) - int(before_counts.get("total") or 0),
         }
+
+        excluded_delta = int(delta.get("excluded") or 0)
+        baseline_total = int(before_counts.get("total") or 0)
+        excluded_threshold = max(
+            INTEGRITY_EXCLUDED_SPIKE_ABS_MIN,
+            int(math.ceil(max(0, baseline_total) * INTEGRITY_EXCLUDED_SPIKE_RATIO_THRESHOLD)),
+        )
+        if excluded_delta >= excluded_threshold:
+            severity = "critical" if excluded_delta >= (excluded_threshold * 2) else "warning"
+            integrity_alerts.append(
+                _make_integrity_alert(
+                    kind="excluded_spike",
+                    severity=severity,
+                    title="Excluded spike",
+                    message=(
+                        f"Excluded count increased by {excluded_delta} "
+                        f"(threshold {excluded_threshold})."
+                    ),
+                    character_id=int(after.get("character_id") or 0),
+                    character_name=str(after.get("name") or ""),
+                    metadata={
+                        "excluded_delta": excluded_delta,
+                        "threshold": excluded_threshold,
+                        "before_excluded": int(before_counts.get("excluded") or 0),
+                        "after_excluded": int(after_counts.get("excluded") or 0),
+                    },
+                )
+            )
 
         changed = bool(
             added_keys
@@ -768,7 +1086,7 @@ def compare_snapshots(
             }
         )
 
-    return summary, character_rows, review_items, advanced_items
+    return summary, character_rows, review_items, advanced_items, integrity_alerts
 
 
 def _next_report_path() -> Path:
@@ -826,6 +1144,7 @@ def create_between_run_report(
         source="current",
         run_token=run_token,
     )
+    generated_at = _now_iso()
 
     if baseline_snapshot is None:
         summary = {
@@ -849,21 +1168,28 @@ def create_between_run_report(
         character_rows: list[dict[str, Any]] = []
         review_items: list[dict[str, Any]] = []
         advanced_items: list[dict[str, Any]] = []
+        integrity_alerts = _timestamp_integrity_alerts(None, current_snapshot)
     else:
-        summary, character_rows, review_items, advanced_items = compare_snapshots(
+        summary, character_rows, review_items, advanced_items, integrity_alerts = compare_snapshots(
             baseline_snapshot,
             current_snapshot,
             sample_limit=sample_limit,
         )
+        integrity_alerts.extend(_timestamp_integrity_alerts(baseline_snapshot, current_snapshot))
         review_summary = _summarize_review_items(review_items)
         summary["review_unresolved"] = review_summary["unresolved"]
         summary["review_resolved_done"] = review_summary["accepted"]
         summary["review_resolved_excluded"] = review_summary["reverted"]
         summary["review_total"] = review_summary["total"]
 
+    integrity_summary = _summarize_integrity_alerts(integrity_alerts)
+    summary["integrity_alert_total"] = integrity_summary["total"]
+    summary["integrity_alert_warning"] = integrity_summary["warning"]
+    summary["integrity_alert_critical"] = integrity_summary["critical"]
+
     report_doc: dict[str, Any] = {
         "schema": SCHEMA_VERSION,
-        "generated_at": _now_iso(),
+        "generated_at": generated_at,
         "reason": reason,
         "baseline": {
             "available": baseline_snapshot is not None,
@@ -895,6 +1221,10 @@ def create_between_run_report(
         "characters": character_rows,
         "review_items": review_items,
         "advanced_items": advanced_items,
+        "integrity": {
+            "summary": integrity_summary,
+            "alerts": integrity_alerts,
+        },
         "advanced": {
             "orphaned_by_character": orphaned_by_character or {},
         },

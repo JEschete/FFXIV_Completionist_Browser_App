@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}2048 · Minigames{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>2048</h1>
+    <p class="page-sub">
+      Merge tiles to reach 2048. This game tracks score and moves, with no timer.
+    </p>
+  </div>
+  <a class="btn-mini" href="/minigames">Back to Minigames</a>
+</div>
+
+<section
+  class="g2048-shell"
+  data-2048-app
+  data-history-url="/api/minigames/2048/history"
+  data-record-url="/api/minigames/2048/history"
+  data-delete-url="/api/minigames/2048/history"
+  data-character-id="{{ character.id }}">
+
+  <div class="g2048-layout">
+    <div class="g2048-main-panel">
+      <div class="g2048-stat-grid" aria-label="Current run stats">
+        <div class="g2048-stat-card">
+          <span class="g2048-stat-label">Score</span>
+          <strong data-2048-score>0</strong>
+        </div>
+        <div class="g2048-stat-card">
+          <span class="g2048-stat-label">Moves</span>
+          <strong data-2048-moves>0</strong>
+        </div>
+        <div class="g2048-stat-card">
+          <span class="g2048-stat-label">Max tile</span>
+          <strong data-2048-max-tile>0</strong>
+        </div>
+        <div class="g2048-stat-card">
+          <span class="g2048-stat-label">Best score</span>
+          <strong data-2048-best-score>0</strong>
+        </div>
+      </div>
+
+      <div class="g2048-controls" role="group" aria-label="2048 controls">
+        <button type="button" class="btn-primary" data-2048-new>New Game</button>
+        <span class="g2048-status" data-2048-status>Ready (no timer)</span>
+      </div>
+
+      <div class="g2048-direction-pad" role="group" aria-label="Direction buttons">
+        <button type="button" class="btn-mini" data-2048-dir="up">Up</button>
+        <button type="button" class="btn-mini" data-2048-dir="left">Left</button>
+        <button type="button" class="btn-mini" data-2048-dir="down">Down</button>
+        <button type="button" class="btn-mini" data-2048-dir="right">Right</button>
+      </div>
+
+      <div class="g2048-board" data-2048-board role="grid" aria-label="2048 board"></div>
+
+      <p class="g2048-help">
+        Controls: Arrow keys, WASD, or the direction buttons.
+      </p>
+    </div>
+
+    <div class="g2048-history-panel table-wrap">
+      <table class="data-table g2048-history-table">
+        <thead>
+          <tr>
+            <th>Date &amp; time</th>
+            <th>State</th>
+            <th>Moves</th>
+            <th>Score</th>
+            <th>Max tile</th>
+            <th class="g2048-col-manage">Manage</th>
+          </tr>
+        </thead>
+        <tbody data-2048-history-body>
+          <tr>
+            <td colspan="6" class="cell-data">Loading history…</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<noscript>
+  <div class="error-banner">2048 requires JavaScript.</div>
+</noscript>
+
+<script src="/minigames-static/Game2048/game2048.js?v=1"></script>
+{% endblock %}

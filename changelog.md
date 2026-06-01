@@ -1,5 +1,70 @@
 # Changelog
 
+## v1.0.9 — 2026-06-01
+
+### Overview and Progress Insights
+- Added a recent activity feed on Overview grouped by `Today`, `This Week`, and `Older`, including a scroll container for larger histories.
+- Added an Overview contribution heatmap with active-day intensity, current streak, and longest streak metrics.
+- Added shareable progress cards at `/share-cards` with style/layout/size controls and PNG export.
+- Added weekly "top sheets improved" insights on share cards using net-done progression tracking.
+
+### What's New and Ingest Comparison
+- Added a dedicated What's New page at `/whats-new` listing rows newly introduced by the latest workbook ingest.
+- Added stable-identity ingest diff matching (`section+label`, `label`, `hash`, `position`) to reduce false-positive additions when rows move.
+- Added persisted pre-rebuild workbook snapshot fallback so latest-vs-previous ingest comparison still works when schema rebuild resets `ingest_runs`.
+- Added an Overview What's New toast that clears after review while preserving the underlying What's New page data.
+
+### Deconflict and Review Workflow
+- Added a Data Integrity Monitor to deconflict reports with critical/warning alerts (for example abrupt value-drop detection).
+- Clarified deconflict review semantics for `done` (accept After), `excluded` (revert Before), and `todo` (leave/reopen unresolved).
+- Added per-character review counters (unresolved, accepted, reverted, total) on the deconflict page.
+- Added explicit bulk-action scope (`unresolved only` vs `all review items`) and clear success/no-op feedback messaging.
+
+### Tracking and UX Enhancements
+- Added watchlist pin/unpin flows with dedicated watchlist UI.
+- Added row-note support with persistence and row-level integration.
+- Added persistent multi-state sheet filtering and improved completion behavior controls.
+- Added 100% completion marking/filtering improvements across navigation surfaces.
+- Improved global search behavior and desynthesis value precision handling.
+
+### Characters and Gameplay
+- Added character rename support and related character-management quality-of-life updates.
+- New characters now apply starting class defaults more consistently.
+- Added built-in minigames hub/routes (`/minigames`) with 2048, Snake, Slide 15, Breakout, and Bomb Flip.
+
+### Closed Issues Coverage
+- #52 Minigames: added a minigames hub and playable routes for 2048, Snake, Slide 15, Breakout, and Bomb Flip.
+- #50 Shareable progress cards: added `/share-cards` with style/layout/size controls and PNG export.
+- #48 Data integrity monitor: added integrity alerting on deconflict reports with critical and warning surfacing.
+- #46 Row notes and reminders: added row-level note persistence and UI integration.
+- #45 Personal watchlist: added pin/unpin flows and a dedicated watchlist page.
+- #44 Rename characters without losing progress: added rename flows with progress-sidecar continuity.
+- #43 Completed chains should not appear in overview chains in progress: overview chain lists now omit fully completed chains.
+- #42 Search is not global: global search coverage improved across sheets, sections, and menu paths.
+- #41 Desynthesis allow 2 decimal places: desynthesis value handling now supports two-decimal precision.
+- #40 Mobile page slightly zoomed in: mobile viewport handling and responsive behavior were adjusted for proper first-load scale.
+- #39 Sidebar independent scrollbar: sidebar scrolling behavior was separated from the main content flow.
+- #38 Gathering logs messed up on desktop import: gathering-log bucket/type mapping and filtering were hardened in desktop import.
+- #37 Filter/Mark 100% completion: completion-state filtering and 100% handling were added across navigation views.
+- #36 Persistent filter mode: sheet filter mode now persists between page transitions/sessions.
+
+### Included Commits Since v1.0.8
+- `e95bb3d` Added persistent filter
+- `0e16fbd` Added marking/filtering 100% completion
+- `05f5295` Added sidebar indpenedency, multi-filter selection
+- `70d5669` Desynthesis decimal places are in, global search fixed
+- `15ec2d8` Various fixes
+- `811ff8f` Force initial class on new character
+- `61ecd12` Added renaming
+- `6ce5fcf` Added some fun
+- `d025f2f` Data integrity monitor
+- `252589b` Pinning items in
+- `5a76d5c` Note system added
+- `43fe22f` Activity tracking and heatmap added
+- `c8aba37` Progress snapshots added
+- `01859d1` What's new page and toast added
+- `7714162` Deconflict page updated
+
 ## v1.0.8 — 2026-05-24
 
 ### Between-Run Progress Reports

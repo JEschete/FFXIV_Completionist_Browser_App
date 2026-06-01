@@ -14,6 +14,7 @@ import subprocess
 import sys
 import time
 import webbrowser
+from collections.abc import Callable
 from pathlib import Path
 from threading import Timer
 
@@ -481,7 +482,7 @@ def start_server_and_open_browser() -> None:
     time.sleep(1.4)
 
 
-MENU: list[tuple[str, callable]] = [
+MENU: list[tuple[str, Callable[[], None]]] = [
     ("Status / health check",                show_status),
     ("Ingest workbook (.xlsx -> SQLite)",    run_ingest),
     ("Open data folder in Explorer",         open_data_folder),

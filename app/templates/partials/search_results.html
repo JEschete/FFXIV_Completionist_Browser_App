@@ -6,8 +6,14 @@
         <a href="/browse/{{ r.sheet_name|urlencode }}">
           <span class="search-label">{{ r.label }}</span>
           <span class="search-meta">
-            <span class="status-dot status-{{ r.eff }}"></span>
-            {{ r.sheet_title }}
+            {% if r.result_kind == 'row' %}
+              <span class="status-dot status-{{ r.eff }}"></span>
+              {{ r.sheet_title }}
+            {% elif r.result_kind == 'section' %}
+              Section · {{ r.sheet_title }}
+            {% else %}
+              Page
+            {% endif %}
           </span>
         </a>
       </li>

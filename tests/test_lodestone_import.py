@@ -162,6 +162,7 @@ def test_decode_completion_value():
     assert li._decode_completion_value("Y") == ("done", None)
     assert li._decode_completion_value("X") == ("excluded", None)
     assert li._decode_completion_value("75") == ("value", 75.0)
+    assert li._decode_completion_value("324.52") == ("value", 324.52)
     assert li._decode_completion_value(50) == ("value", 50.0)
     assert li._decode_completion_value(True) is None
     assert li._decode_completion_value("nope") is None
@@ -1393,8 +1394,8 @@ def test_import_desktop_completion_classes_jobs_prefers_label_match(
             "character": {
                 "character": {
                     "classes--jobs": {
-                        "0": "10",
-                        "1": "20",
+                        "0": "10.25",
+                        "1": "20.75",
                     }
                 }
             }
@@ -1421,8 +1422,8 @@ def test_import_desktop_completion_classes_jobs_prefers_label_match(
         (character_id, run_id),
     ).fetchall()
     by_row = {int(row["row_index"]): float(row["progress_percent"]) for row in values}
-    assert by_row[3] == 20.0  # Paladin
-    assert by_row[4] == 10.0  # Warrior
+    assert by_row[3] == 20.75  # Paladin
+    assert by_row[4] == 10.25  # Warrior
 
 
 def test_reset_character_progress(conn, character_id):

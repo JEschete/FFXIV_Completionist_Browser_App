@@ -105,3 +105,55 @@ def test_save_sidecar_is_atomic_and_loadable(tmp_path):
     assert loaded is not None
     assert loaded["character"]["name"] == "Tester"
     assert loaded["progress"][0]["state"] == "done"
+
+
+def test_row_notes_survive_reconcile(conn, character_id):
+    connection, run_id = conn
+    saved = progress_io.record_row_note(
+        connection,
+        character_id,
+        run_id,
+        "Side Stuff",
+        5,
+        "Finish this before weekend reset",
+        "2026-06-20",
+    )
+    assert saved["has_note"] is True
+
+    char_name = db.get_character(connection, character_id)["name"]
+    sidecar = progress_io.sidecar_path(char_name)
+    before_doc = json.loads(sidecar.read_text(encoding="utf-8"))
+    before_notes = before_doc.get("notes")
+    assert isinstance(before_notes, list)
+    assert before_notes
+
+    report = progress_io.reconcile_all(connection, run_id)
+    assert report.total_orphaned() == 0
+
+    after_doc = json.loads(sidecar.read_text(encoding="utf-8"))
+    after_notes = after_doc.get("notes")
+    assert isinstance(after_notes, list)
+
+    node = connection.execute(
+        """
+        SELECT label, section_label, row_json, stable_hash
+        FROM nodes
+        WHERE run_id = ? AND sheet_name = ? AND row_index = ?
+        LIMIT 1
+        """,
+        (run_id, "Side Stuff", 5),
+    ).fetchone()
+    assert node is not None
+
+    ids = progress_io.compute_stable_ids(
+        "Side Stuff",
+        node["section_label"],
+        node["label"],
+        node["row_json"],
+        5,
+        precomputed_hash=node["stable_hash"] or None,
+    )
+    note = progress_io.match_note_entry(after_notes, ids)
+    assert isinstance(note, dict)
+    assert note.get("note") == "Finish this before weekend reset"
+    assert note.get("reminder_date") == "2026-06-20"

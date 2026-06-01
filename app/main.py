@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
+import hashlib
 import io
 import json
 import re
+import sqlite3
 import sys
 import threading
 import traceback
@@ -20,7 +22,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import quote, urlparse
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -30,7 +32,7 @@ if __package__ in {None, ""}:
 
 from contextlib import asynccontextmanager
 
-from app import db, lodestone_import, progress_io, progress_report, section_sort
+from app import db, game_engine, lodestone_import, progress_io, progress_report, section_sort
 
 RECONCILE_RUN_LOCK = threading.Lock()
 LAST_RECONCILED_RUN_TOKEN: tuple[Any, ...] | None = None
@@ -83,6 +85,130 @@ def _save_shutdown_progress_baseline() -> None:
 
 def _load_latest_progress_report() -> dict[str, Any] | None:
     return progress_report.load_latest_report()
+
+
+def _load_whats_new_previous_ingest_snapshot() -> dict[str, Any] | None:
+    path = db.WHATS_NEW_PREVIOUS_INGEST_PATH
+    if not path.exists() or not path.is_file():
+        return None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(raw, dict):
+        return None
+    return raw
+
+
+def _build_whats_new_payload(
+    conn,
+    run_id: int,
+    *,
+    limit: int,
+) -> dict[str, Any]:
+    previous_snapshot = _load_whats_new_previous_ingest_snapshot() or {}
+    previous_rows_fallback = previous_snapshot.get("rows")
+    previous_meta_fallback = previous_snapshot.get("run")
+    whats_new = db.latest_ingest_new_items(
+        conn,
+        run_id=run_id,
+        limit=limit,
+        previous_rows_fallback=(
+            previous_rows_fallback
+            if isinstance(previous_rows_fallback, list)
+            else None
+        ),
+        previous_meta_fallback=(
+            previous_meta_fallback
+            if isinstance(previous_meta_fallback, dict)
+            else None
+        ),
+    )
+
+    latest_run_raw = whats_new.get("latest_run")
+    latest_run = latest_run_raw if isinstance(latest_run_raw, dict) else None
+    previous_run_raw = whats_new.get("previous_run")
+    previous_run = previous_run_raw if isinstance(previous_run_raw, dict) else None
+
+    latest_source_file = ""
+    previous_source_file = ""
+    if latest_run is not None:
+        latest_source_file = Path(str(latest_run.get("source_file") or "")).name
+    if previous_run is not None:
+        previous_source_file = Path(str(previous_run.get("source_file") or "")).name
+
+    return {
+        "whats_new": whats_new,
+        "latest_run": latest_run,
+        "previous_run": previous_run,
+        "latest_source_file": latest_source_file,
+        "previous_source_file": previous_source_file,
+    }
+
+
+def _whats_new_token_meta(raw: object) -> dict[str, str | int]:
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        "id": str(raw.get("id") or ""),
+        "source_file": str(raw.get("source_file") or ""),
+        "started_at": str(raw.get("started_at") or ""),
+        "completed_at": str(raw.get("completed_at") or ""),
+        "sheet_count": int(raw.get("sheet_count") or 0),
+        "row_count": int(raw.get("row_count") or 0),
+    }
+
+
+def _whats_new_review_token(whats_new: dict[str, Any]) -> str:
+    token_doc = {
+        "latest": _whats_new_token_meta(whats_new.get("latest_run")),
+        "previous": _whats_new_token_meta(whats_new.get("previous_run")),
+        "total_new_items": int(whats_new.get("total_new_items") or 0),
+    }
+    token_raw = json.dumps(
+        token_doc,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+    return hashlib.sha256(token_raw.encode("utf-8")).hexdigest()[:24]
+
+
+def _to_int(raw: object) -> int:
+    if raw is None:
+        return 0
+    if isinstance(raw, bool):
+        return int(raw)
+    if isinstance(raw, (int, float, str)):
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return 0
+    return 0
+
+
+def _overview_whats_new_toast(
+    request: Request,
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    whats_new_raw = payload.get("whats_new")
+    if not isinstance(whats_new_raw, dict):
+        return None
+
+    total_new_items = _to_int(whats_new_raw.get("total_new_items"))
+    if total_new_items <= 0:
+        return None
+
+    review_token = _whats_new_review_token(whats_new_raw)
+    if cookie_whats_new_review_token(request) == review_token:
+        return None
+
+    latest_workbook = str(payload.get("latest_source_file") or "")
+    return {
+        "total_new_items": total_new_items,
+        "latest_workbook": latest_workbook,
+        "path": "/whats-new",
+    }
 
 
 def _progress_report_alert_for_character(character_id: int) -> dict[str, Any] | None:
@@ -320,6 +446,11 @@ app = FastAPI(title="FFXIV Completion Tracker", lifespan=lifespan)
 BASE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(BASE / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE / "static")), name="static")
+app.mount(
+    "/minigames-static",
+    StaticFiles(directory=str(BASE / "Minigames")),
+    name="minigames-static",
+)
 
 CHAR_COOKIE = "ffxiv_character"
 LODESTONE_COOKIE = "lodestone_profile_url"
@@ -340,6 +471,35 @@ THEME_COOKIE = "ffxiv_theme"
 THEME_SCHEME_COOKIE = "ffxiv_theme_scheme"
 THEME_ALLOWED_SCHEME_SETTINGS = {"default", "dark", "light"}
 SECTION_SORT_COOKIE = "ffxiv_sheet_section_sort"
+SHEET_FILTER_COOKIE = "ffxiv_sheet_filter_state"
+SHEET_FILTER_STATES = ("todo", "done", "excluded")
+SHEET_FILTER_ALL = "all"
+SHEET_FILTER_NONE = "none"
+SIDEBAR_COMPLETION_COOKIE = "ffxiv_sidebar_completion_behavior"
+PAGE_COMPLETION_COOKIE = "ffxiv_page_completion_behavior"
+WHATS_NEW_REVIEW_COOKIE = "ffxiv_whats_new_reviewed"
+COMPLETION_BEHAVIOR_SHOW = "show"
+COMPLETION_BEHAVIOR_STAR = "star"
+COMPLETION_BEHAVIOR_HIDE = "hide"
+COMPLETION_BEHAVIOR_OPTIONS = (
+    {
+        "value": COMPLETION_BEHAVIOR_SHOW,
+        "label": "Show (Default)",
+    },
+    {
+        "value": COMPLETION_BEHAVIOR_STAR,
+        "label": "Star",
+    },
+    {
+        "value": COMPLETION_BEHAVIOR_HIDE,
+        "label": "Hide",
+    },
+)
+COMPLETION_BEHAVIOR_VALUES = {
+    COMPLETION_BEHAVIOR_SHOW,
+    COMPLETION_BEHAVIOR_STAR,
+    COMPLETION_BEHAVIOR_HIDE,
+}
 SECTION_SORT_OPTIONS = (
     {
         "value": section_sort.SORT_MODE_WORKBOOK,
@@ -504,6 +664,129 @@ def set_section_sort_cookie(response, mode: str) -> None:
         max_age=60 * 60 * 24 * 365,
         samesite="lax",
     )
+
+
+def parse_sheet_filter_state(raw: str | None) -> str | None:
+    value = (raw or "").strip().lower()
+    if value in {SHEET_FILTER_ALL, SHEET_FILTER_NONE, *SHEET_FILTER_STATES}:
+        return value
+    return None
+
+
+def normalize_sheet_filter_states(raw_values: list[str] | None) -> list[str]:
+    wanted: set[str] = set()
+    for raw in raw_values or []:
+        decoded = str(raw or "").strip().strip('"').replace("\\054", ",")
+        for chunk in re.split(r"[,.]", decoded):
+            value = chunk.strip().lower()
+            if value == SHEET_FILTER_ALL:
+                return list(SHEET_FILTER_STATES)
+            if value == SHEET_FILTER_NONE:
+                return []
+            if value in SHEET_FILTER_STATES:
+                wanted.add(value)
+    return [state for state in SHEET_FILTER_STATES if state in wanted]
+
+
+def serialize_sheet_filter_states(states: list[str]) -> str:
+    normalized = normalize_sheet_filter_states(states)
+    if len(normalized) == len(SHEET_FILTER_STATES):
+        return SHEET_FILTER_ALL
+    if not normalized:
+        return SHEET_FILTER_NONE
+    # Dot delimiter avoids cookie-layer comma escaping (\054) so parsing stays stable.
+    return ".".join(normalized)
+
+
+def cookie_sheet_filter_states(request: Request) -> list[str]:
+    raw = request.cookies.get(SHEET_FILTER_COOKIE)
+    if raw is None:
+        return list(SHEET_FILTER_STATES)
+
+    # Backward compatibility with single-state cookies used before multi-select.
+    legacy = parse_sheet_filter_state(raw)
+    if legacy == SHEET_FILTER_ALL:
+        return list(SHEET_FILTER_STATES)
+    if legacy == SHEET_FILTER_NONE:
+        return []
+    if legacy in SHEET_FILTER_STATES:
+        return [legacy]
+    parsed = normalize_sheet_filter_states([raw])
+    if parsed:
+        return parsed
+    return list(SHEET_FILTER_STATES)
+
+
+def set_sheet_filter_cookie(response, states: list[str]) -> None:
+    value = serialize_sheet_filter_states(states)
+    response.set_cookie(
+        SHEET_FILTER_COOKIE,
+        value,
+        max_age=60 * 60 * 24 * 365,
+        samesite="lax",
+    )
+
+
+def normalize_completion_behavior(raw: str | None) -> str:
+    value = (raw or "").strip().lower()
+    if value in COMPLETION_BEHAVIOR_VALUES:
+        return value
+    return COMPLETION_BEHAVIOR_SHOW
+
+
+def cookie_sidebar_completion_behavior(request: Request) -> str:
+    return normalize_completion_behavior(request.cookies.get(SIDEBAR_COMPLETION_COOKIE))
+
+
+def set_sidebar_completion_cookie(response, behavior: str) -> None:
+    value = normalize_completion_behavior(behavior)
+    response.set_cookie(
+        SIDEBAR_COMPLETION_COOKIE,
+        value,
+        max_age=60 * 60 * 24 * 365,
+        samesite="lax",
+    )
+
+
+def cookie_page_completion_behavior(request: Request) -> str:
+    return normalize_completion_behavior(request.cookies.get(PAGE_COMPLETION_COOKIE))
+
+
+def set_page_completion_cookie(response, behavior: str) -> None:
+    value = normalize_completion_behavior(behavior)
+    response.set_cookie(
+        PAGE_COMPLETION_COOKIE,
+        value,
+        max_age=60 * 60 * 24 * 365,
+        samesite="lax",
+    )
+
+
+def cookie_whats_new_review_token(request: Request) -> str:
+    return (request.cookies.get(WHATS_NEW_REVIEW_COOKIE) or "").strip()
+
+
+def set_whats_new_review_cookie(response, token: str) -> None:
+    value = str(token or "").strip()
+    if not value:
+        return
+    response.set_cookie(
+        WHATS_NEW_REVIEW_COOKIE,
+        value,
+        max_age=60 * 60 * 24 * 365,
+        samesite="lax",
+    )
+
+
+def _is_roll_complete(roll: object) -> bool:
+    if not isinstance(roll, dict):
+        return False
+    try:
+        countable = int(roll.get("countable") or 0)
+        done = int(roll.get("done") or 0)
+    except (TypeError, ValueError):
+        return False
+    return countable > 0 and done >= countable
 
 
 def _extract_theme_color(raw: object) -> str | None:
@@ -1191,16 +1474,43 @@ def _active_character_import_run(character_id: int) -> dict[str, Any] | None:
     return None
 
 
+def _active_any_character_import_run() -> dict[str, Any] | None:
+    with CHAR_IMPORT_RUNS_LOCK:
+        for run in CHAR_IMPORT_RUNS.values():
+            status = str(run.get("status") or "").lower()
+            if status not in {"queued", "running"}:
+                continue
+            return {
+                "id": str(run.get("id") or ""),
+                "status": status,
+                "character_id": int(run.get("character_id") or 0),
+            }
+    return None
+
+
 def _ensure_character_import_idle(character_id: int) -> None:
     active = _active_character_import_run(character_id)
-    if active is None:
+    if active is not None:
+        run_id = str(active.get("id") or "").strip()
+        status = str(active.get("status") or "running")
+        suffix = f" (run_id={run_id})" if run_id else ""
+        raise HTTPException(
+            409,
+            f"This character currently has an import {status}{suffix}. Wait for it to finish before editing progress.",
+        )
+
+    any_active = _active_any_character_import_run()
+    if any_active is None:
         return
-    run_id = str(active.get("id") or "").strip()
-    status = str(active.get("status") or "running")
+    run_id = str(any_active.get("id") or "").strip()
+    status = str(any_active.get("status") or "running")
+    active_character_id = int(any_active.get("character_id") or 0)
     suffix = f" (run_id={run_id})" if run_id else ""
     raise HTTPException(
         409,
-        f"This character currently has an import {status}{suffix}. Wait for it to finish before editing progress.",
+        "An import is currently "
+        f"{status} for character #{active_character_id}{suffix}. "
+        "Wait for it to finish before editing progress.",
     )
 
 
@@ -1654,7 +1964,7 @@ def _run_character_import_job(
             )
             _append_character_import_run_log(
                 run_id,
-                "Desktop import: skipped progress report audit generation and "
+                "Desktop import: skipped deconflict audit generation and "
                 f"reset baseline to {baseline_path}",
             )
         else:
@@ -1792,6 +2102,9 @@ class Ctx:
         )
         self.character_id = int(self.character["id"])
         self.section_sort_mode = cookie_section_sort_mode(request)
+        self.sheet_filter_states = cookie_sheet_filter_states(request)
+        self.sidebar_completion_behavior = cookie_sidebar_completion_behavior(request)
+        self.page_completion_behavior = cookie_page_completion_behavior(request)
         self.starting_class: str | None = (
             self.character["starting_class"]
             if "starting_class" in self.character.keys() else None
@@ -1855,6 +2168,9 @@ class Ctx:
             "section_sort_mode_label": section_sort.sort_mode_label(
                 self.section_sort_mode
             ),
+            "sheet_filter_states": self.sheet_filter_states,
+            "sidebar_completion_behavior": self.sidebar_completion_behavior,
+            "page_completion_behavior": self.page_completion_behavior,
             "progress_report_alert": _progress_report_alert_for_character(self.character_id),
             "theme_first_paint_bg": theme["first_paint_bg"],
             "theme_first_paint_text": theme["first_paint_text"],
@@ -1886,18 +2202,271 @@ class Ctx:
         set_theme_cookie(resp, self.theme_state["theme_id"])
         set_theme_scheme_cookie(resp, self.theme_state["scheme_setting"])
         set_section_sort_cookie(resp, self.section_sort_mode)
+        set_sheet_filter_cookie(resp, self.sheet_filter_states)
+        set_sidebar_completion_cookie(resp, self.sidebar_completion_behavior)
+        set_page_completion_cookie(resp, self.page_completion_behavior)
         return resp
 
 
 # --- pages ------------------------------------------------------------------
+
+def _parse_dashboard_timestamp(value: str | None) -> dt.datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    normalized = text.replace("Z", "+00:00")
+    try:
+        parsed = dt.datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone().replace(tzinfo=None)
+    return parsed
+
+
+def _dashboard_recent_activity_groups(
+    rows: list[dict[str, Any]],
+    sheets_by_name: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    today = dt.date.today()
+    week_start = today - dt.timedelta(days=today.weekday())
+    groups: dict[str, list[dict[str, Any]]] = {
+        "today": [],
+        "this_week": [],
+        "older": [],
+    }
+
+    for raw in rows:
+        ts = _parse_dashboard_timestamp(raw.get("updated_at"))
+        if ts is None:
+            continue
+
+        touched_day = ts.date()
+        if touched_day == today:
+            group_key = "today"
+            display_time = ts.strftime("%H:%M")
+        elif touched_day >= week_start:
+            group_key = "this_week"
+            display_time = ts.strftime("%a %H:%M")
+        else:
+            group_key = "older"
+            display_time = ts.strftime("%b %d")
+
+        sheet_name = str(raw.get("sheet_name") or "")
+        sheet_meta = sheets_by_name.get(sheet_name)
+        sheet_title = (
+            str(sheet_meta.get("title") or sheet_name)
+            if isinstance(sheet_meta, dict)
+            else sheet_name
+        )
+        label = str(raw.get("label") or "").strip() or f"Row {int(raw.get('row_index') or 0)}"
+
+        groups[group_key].append(
+            {
+                "sheet_name": sheet_name,
+                "sheet_title": sheet_title,
+                "row_index": int(raw.get("row_index") or 0),
+                "label": label,
+                "section_label": str(raw.get("section_label") or "").strip(),
+                "state": str(raw.get("eff") or "todo"),
+                "progress_percent": raw.get("progress_percent"),
+                "updated_at": ts.isoformat(timespec="seconds"),
+                "updated_at_display": display_time,
+            }
+        )
+
+    ordered = [
+        {"key": "today", "title": "Today", "items": groups["today"]},
+        {"key": "this_week", "title": "This Week", "items": groups["this_week"]},
+        {"key": "older", "title": "Older", "items": groups["older"]},
+    ]
+    return ordered
+
+
+def _dashboard_heatmap_payload(day_counts: dict[str, int]) -> dict[str, Any]:
+    today = dt.date.today()
+    display_days = 26 * 7
+    start_date = today - dt.timedelta(days=display_days - 1)
+    start_monday = start_date - dt.timedelta(days=start_date.weekday())
+    end_sunday = today + dt.timedelta(days=(6 - today.weekday()))
+
+    counts_by_date: dict[dt.date, int] = {}
+    for key, raw_count in day_counts.items():
+        try:
+            d = dt.date.fromisoformat(str(key))
+        except ValueError:
+            continue
+        counts_by_date[d] = max(0, int(raw_count or 0))
+
+    active_days = sorted(d for d, count in counts_by_date.items() if count > 0)
+    active_set = set(active_days)
+
+    longest_streak = 0
+    current = 0
+    prev: dt.date | None = None
+    for day in active_days:
+        if prev is not None and day == (prev + dt.timedelta(days=1)):
+            current += 1
+        else:
+            current = 1
+        if current > longest_streak:
+            longest_streak = current
+        prev = day
+
+    current_streak = 0
+    probe = today
+    while probe in active_set:
+        current_streak += 1
+        probe -= dt.timedelta(days=1)
+
+    max_count = max([count for count in counts_by_date.values()] or [0])
+
+    def _level_for(count: int) -> int:
+        if count <= 0:
+            return 0
+        if max_count <= 1:
+            return 2
+        ratio = count / max_count
+        if ratio < 0.34:
+            return 1
+        if ratio < 0.67:
+            return 2
+        if ratio < 1.0:
+            return 3
+        return 4
+
+    weeks: list[dict[str, Any]] = []
+    cursor = start_monday
+    week_index = 0
+    while cursor <= end_sunday:
+        week_days: list[dict[str, Any]] = []
+        for offset in range(7):
+            day = cursor + dt.timedelta(days=offset)
+            in_range = start_date <= day <= today
+            count = counts_by_date.get(day, 0) if in_range else 0
+            week_days.append(
+                {
+                    "date": day.isoformat(),
+                    "count": count,
+                    "level": _level_for(count),
+                    "in_range": in_range,
+                    "is_today": day == today,
+                    "tooltip": (
+                        f"{day.isoformat()}: {count} update"
+                        f"{'' if count == 1 else 's'}"
+                        if in_range else "Outside current range"
+                    ),
+                }
+            )
+        weeks.append({"index": week_index, "days": week_days})
+        week_index += 1
+        cursor += dt.timedelta(days=7)
+
+    month_labels: list[dict[str, Any]] = []
+    seen_month: str | None = None
+    for idx, week in enumerate(weeks):
+        first_live = next((day for day in week["days"] if day["in_range"]), None)
+        if first_live is None:
+            continue
+        month_key = str(first_live["date"])[:7]
+        if month_key == seen_month:
+            continue
+        seen_month = month_key
+        date_obj = dt.date.fromisoformat(str(first_live["date"]))
+        month_labels.append({
+            "week_index": idx,
+            "label": date_obj.strftime("%b"),
+        })
+
+    return {
+        "weeks": weeks,
+        "month_labels": month_labels,
+        "weekday_labels": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+        "start_date": start_date.isoformat(),
+        "end_date": today.isoformat(),
+        "display_days": display_days,
+        "total_updates": sum(counts_by_date.values()),
+        "active_days": len(active_set),
+        "current_streak": current_streak,
+        "longest_streak": longest_streak,
+    }
+
+
+def _share_cards_payload(ctx: "Ctx") -> dict[str, Any]:
+    now_dt = dt.datetime.now()
+    week_start_date = now_dt.date() - dt.timedelta(days=now_dt.weekday())
+    week_start_dt = dt.datetime.combine(week_start_date, dt.time.min)
+
+    heatmap = _dashboard_heatmap_payload(
+        db.dashboard_contribution_day_counts(
+            ctx.conn,
+            ctx.run_id,
+            ctx.character_id,
+            starting_class=ctx.starting_class,
+        )
+    )
+
+    improvements_raw = db.dashboard_weekly_sheet_improvements(
+        ctx.conn,
+        ctx.run_id,
+        ctx.character_id,
+        week_start_iso=week_start_dt.isoformat(timespec="seconds"),
+        limit=5,
+    )
+    top_improvements: list[dict[str, Any]] = []
+    for row in improvements_raw:
+        sheet_name = str(row.get("sheet_name") or "")
+        if not sheet_name:
+            continue
+        meta = ctx.sheets_by_name.get(sheet_name)
+        title = (
+            str(meta.get("title") or sheet_name)
+            if isinstance(meta, dict)
+            else sheet_name
+        )
+        roll = ctx.rollups.get(sheet_name)
+        if not isinstance(roll, dict):
+            roll = {"done": 0, "excluded": 0, "total": 0}
+        top_improvements.append(
+            {
+                "sheet_name": sheet_name,
+                "title": title,
+                "net_done": int(row.get("net_done") or 0),
+                "roll": roll,
+                "pct": db.pct(roll),
+            }
+        )
+
+    countable = max(0, int(ctx.overall.get("total", 0)) - int(ctx.overall.get("excluded", 0)))
+    week_label = f"{week_start_dt.strftime('%b %d')} - {now_dt.strftime('%b %d')}"
+
+    return {
+        "overall": ctx.overall,
+        "overall_pct": db.pct(ctx.overall),
+        "countable": countable,
+        "week_label": week_label,
+        "current_streak": int(heatmap.get("current_streak") or 0),
+        "longest_streak": int(heatmap.get("longest_streak") or 0),
+        "top_improvements": top_improvements,
+    }
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard(request: Request):
     ctx = Ctx(request)
     try:
         # top-level menu cards + a few "needs attention" chains
+        whats_new_payload = _build_whats_new_payload(
+            ctx.conn,
+            ctx.run_id,
+            limit=120,
+        )
+        whats_new_toast = _overview_whats_new_toast(request, whats_new_payload)
+
+        hide_completed = ctx.page_completion_behavior == COMPLETION_BEHAVIOR_HIDE
         cards = []
         for node in ctx.tree:
+            if hide_completed and _is_roll_complete(node.get("roll")):
+                continue
             cards.append({
                 "sheet_name": node["sheet_name"],
                 "title": node["title"],
@@ -1907,20 +2476,151 @@ def dashboard(request: Request):
             })
         chains = db.chain_sheets_overview(
             ctx.conn, ctx.run_id, ctx.character_id, ctx.starting_class
-        )[:6]
+        )
+        chains = [c for c in chains if not _is_roll_complete(c.get("roll"))]
+        chains = chains[:6]
+        activity_rows = db.dashboard_recent_activity_rows(
+            ctx.conn,
+            ctx.run_id,
+            ctx.character_id,
+            starting_class=ctx.starting_class,
+            limit=42,
+        )
+        recent_activity_groups = _dashboard_recent_activity_groups(
+            activity_rows,
+            ctx.sheets_by_name,
+        )
+        activity_total = sum(
+            len(group.get("items", []))
+            for group in recent_activity_groups
+            if isinstance(group, dict)
+        )
+        heatmap = _dashboard_heatmap_payload(
+            db.dashboard_contribution_day_counts(
+                ctx.conn,
+                ctx.run_id,
+                ctx.character_id,
+                starting_class=ctx.starting_class,
+            )
+        )
         return ctx.render("dashboard.html", {
             "cards": cards,
             "chains": chains,
+            "recent_activity_groups": recent_activity_groups,
+            "activity_total": activity_total,
+            "heatmap": heatmap,
+            "whats_new_toast": whats_new_toast,
             "active_sheet": None,
         })
     finally:
         ctx.close()
 
 
-@app.get("/browse/{sheet_name}", response_class=HTMLResponse)
-def browse(request: Request, sheet_name: str, q: str = "", state: str = "all"):
+@app.get("/share-cards", response_class=HTMLResponse)
+def share_cards_page(request: Request):
     ctx = Ctx(request)
     try:
+        share = _share_cards_payload(ctx)
+        return ctx.render("share_cards.html", {
+            "share": share,
+            "active_sheet": None,
+        })
+    finally:
+        ctx.close()
+
+
+@app.get("/whats-new", response_class=HTMLResponse)
+def whats_new_page(request: Request):
+    ctx = Ctx(request)
+    try:
+        payload = _build_whats_new_payload(
+            ctx.conn,
+            run_id=ctx.run_id,
+            limit=700,
+        )
+        whats_new = payload["whats_new"]
+        response = ctx.render(
+            "whats_new.html",
+            {
+                "whats_new": payload["whats_new"],
+                "latest_run": payload["latest_run"],
+                "previous_run": payload["previous_run"],
+                "latest_source_file": payload["latest_source_file"],
+                "previous_source_file": payload["previous_source_file"],
+                "active_sheet": None,
+            },
+        )
+        if _to_int(whats_new.get("total_new_items")) > 0:
+            set_whats_new_review_cookie(response, _whats_new_review_token(whats_new))
+        return response
+    finally:
+        ctx.close()
+
+
+@app.get("/browse/{sheet_name}", response_class=HTMLResponse)
+def browse(
+    request: Request,
+    sheet_name: str,
+    q: str = "",
+    state: str | None = None,
+    states: list[str] | None = Query(default=None),
+    states_present: str | None = Query(default=None),
+):
+    ctx = Ctx(request)
+    try:
+        requested_states: list[str] | None = None
+        if states:
+            requested_states = normalize_sheet_filter_states(states)
+        elif states_present is not None:
+            # Explicit filter form submit with no checked states.
+            requested_states = []
+        elif state is not None:
+            legacy_state = parse_sheet_filter_state(state)
+            if legacy_state == SHEET_FILTER_ALL:
+                requested_states = list(SHEET_FILTER_STATES)
+            elif legacy_state == SHEET_FILTER_NONE:
+                requested_states = []
+            elif legacy_state in SHEET_FILTER_STATES:
+                requested_states = [legacy_state]
+
+        if requested_states is not None:
+            ctx.sheet_filter_states = requested_states
+
+        selected_states = list(ctx.sheet_filter_states)
+        state_filter_active = len(selected_states) < len(SHEET_FILTER_STATES)
+
+        def _menu_sections_for_children(children: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+            section_order: list[str | None] = []
+            section_cards: dict[str | None, list[dict[str, Any]]] = {}
+            hide_completed = ctx.page_completion_behavior == COMPLETION_BEHAVIOR_HIDE
+
+            for child in children:
+                child_roll = child.get("roll")
+                if hide_completed and _is_roll_complete(child_roll):
+                    continue
+                card = {
+                    "sheet_name": child["sheet_name"],
+                    "title": child["title"],
+                    "is_menu": child["is_menu"],
+                    "roll": child_roll,
+                    "pct": child["pct"],
+                    "children": len(child["children"]),
+                }
+                section = child.get("parent_menu_section")
+                if section not in section_cards:
+                    section_cards[section] = []
+                    section_order.append(section)
+                section_cards[section].append(card)
+
+            sections = [
+                {"label": s, "cards": section_cards[s]}
+                for s in section_order if s is not None
+            ]
+            if None in section_cards:
+                sections.append({"label": None, "cards": section_cards[None]})
+            children_flat = [c for s in sections for c in s["cards"]]
+            return sections, children_flat
+
         sheet = ctx.sheets_by_name.get(sheet_name)
         # Backward compatibility for earlier virtual-node URLs that used
         # "::" as the section separator before db.VIRTUAL_SEP was finalized.
@@ -1934,39 +2634,7 @@ def browse(request: Request, sheet_name: str, q: str = "", state: str = "all"):
         node = db.find_node(ctx.tree, sheet_name)
 
         if sheet["is_menu"]:
-            # category-grid view: child cards with aggregated progress,
-            # grouped by parent_menu_section (the workbook column header
-            # the child came from). Sections appear in workbook order;
-            # any child without a section goes to a final "Other" bucket.
-            # Group child cards by parent_menu_section (the workbook column
-            # they came from). Renamed from "items" to "cards" so Jinja's
-            # attribute lookup doesn't collide with the dict ``.items()``
-            # method when iterating ``group.cards`` in the template.
-            section_order: list[str | None] = []
-            section_cards: dict[str | None, list[dict]] = {}
-            for child in (node["children"] if node else []):
-                card = {
-                    "sheet_name": child["sheet_name"],
-                    "title": child["title"],
-                    "is_menu": child["is_menu"],
-                    "roll": child["roll"],
-                    "pct": child["pct"],
-                    "children": len(child["children"]),
-                }
-                section = child.get("parent_menu_section")
-                if section not in section_cards:
-                    section_cards[section] = []
-                    section_order.append(section)
-                section_cards[section].append(card)
-
-            sections = [
-                {"label": s, "cards": section_cards[s]}
-                for s in section_order if s is not None
-            ]
-            # children with no detected section render last under a soft heading
-            if None in section_cards:
-                sections.append({"label": None, "cards": section_cards[None]})
-            children_flat = [c for s in sections for c in s["cards"]]
+            sections, children_flat = _menu_sections_for_children(node["children"] if node else [])
             return ctx.render("menu.html", {
                 "sheet": sheet,
                 "crumbs": crumbs,
@@ -1980,30 +2648,7 @@ def browse(request: Request, sheet_name: str, q: str = "", state: str = "all"):
         # This keeps parent pages like Grand Company Ranks focused on routing
         # into their child tracks instead of mixing all rows in one long table.
         if node and node.get("children"):
-            section_order: list[str | None] = []
-            section_cards: dict[str | None, list[dict]] = {}
-            for child in node["children"]:
-                card = {
-                    "sheet_name": child["sheet_name"],
-                    "title": child["title"],
-                    "is_menu": child["is_menu"],
-                    "roll": child["roll"],
-                    "pct": child["pct"],
-                    "children": len(child["children"]),
-                }
-                section = child.get("parent_menu_section")
-                if section not in section_cards:
-                    section_cards[section] = []
-                    section_order.append(section)
-                section_cards[section].append(card)
-
-            sections = [
-                {"label": s, "cards": section_cards[s]}
-                for s in section_order if s is not None
-            ]
-            if None in section_cards:
-                sections.append({"label": None, "cards": section_cards[None]})
-            children_flat = [c for s in sections for c in s["cards"]]
+            sections, children_flat = _menu_sections_for_children(node["children"])
             return ctx.render("menu.html", {
                 "sheet": sheet,
                 "crumbs": crumbs,
@@ -2021,7 +2666,10 @@ def browse(request: Request, sheet_name: str, q: str = "", state: str = "all"):
 
         rows = db.fetch_rows(
             ctx.conn, ctx.run_id, ctx.character_id, source_sheet_name,
-            q=q, state=state, starting_class=ctx.starting_class,
+            q=q,
+            state=SHEET_FILTER_ALL,
+            states=selected_states,
+            starting_class=ctx.starting_class,
         )
         flags = db.sheet_chain_flags(
             ctx.conn, ctx.run_id, ctx.character_id, source_sheet_name,
@@ -2029,6 +2677,18 @@ def browse(request: Request, sheet_name: str, q: str = "", state: str = "all"):
         )
         for row in rows:
             row["chain_info"] = flags.get(row["row_index"])
+        db.annotate_watchlist_state(
+            ctx.conn,
+            ctx.character_id,
+            source_sheet_name,
+            rows,
+        )
+        db.annotate_row_notes(
+            ctx.conn,
+            ctx.character_id,
+            rows,
+            sheet_name=source_sheet_name,
+        )
         groups = db.group_rows_by_section(
             rows,
             sheet_name=source_sheet_name,
@@ -2110,7 +2770,8 @@ def browse(request: Request, sheet_name: str, q: str = "", state: str = "all"):
             "roll": roll,
             "pct": db.pct(roll),
             "q": q,
-            "state": state,
+            "selected_states": selected_states,
+            "state_filter_active": state_filter_active,
             "shown": shown,
             "sheet_total_rows": int(view_sheet.get("total_rows") or shown),
             "browse_sheet_name": sheet_name,
@@ -2132,7 +2793,1138 @@ def chains_overview(request: Request):
         chains = db.chain_sheets_overview(
             ctx.conn, ctx.run_id, ctx.character_id, ctx.starting_class
         )
+        if ctx.page_completion_behavior == COMPLETION_BEHAVIOR_HIDE:
+            chains = [c for c in chains if not _is_roll_complete(c.get("roll"))]
         return ctx.render("chains.html", {"chains": chains, "active_sheet": None})
+    finally:
+        ctx.close()
+
+
+@app.get("/watchlist", response_class=HTMLResponse)
+def watchlist_page(
+    request: Request,
+    show_missing: int = 1,
+    saved: str = "",
+    error: str = "",
+):
+    ctx = Ctx(request)
+    try:
+        rows = db.watchlist_rows_for_character(
+            ctx.conn,
+            ctx.run_id,
+            ctx.character_id,
+            ctx.starting_class,
+        )
+        db.annotate_row_notes(
+            ctx.conn,
+            ctx.character_id,
+            rows,
+        )
+
+        show_missing_bool = bool(show_missing)
+        if not show_missing_bool:
+            rows = [row for row in rows if bool(row.get("resolved"))]
+
+        rows.sort(
+            key=lambda item: (
+                0 if bool(item.get("resolved")) else 1,
+                str(item.get("sheet_name") or ""),
+                int(item.get("row_index") or 0),
+                str(item.get("label") or ""),
+            )
+        )
+
+        sheet_titles = {
+            str(name): str(meta.get("title") or name)
+            for (name, meta) in ctx.sheets_by_name.items()
+            if isinstance(meta, dict)
+        }
+        resolved_count = sum(1 for row in rows if bool(row.get("resolved")))
+        missing_count = sum(1 for row in rows if not bool(row.get("resolved")))
+
+        return ctx.render(
+            "watchlist.html",
+            {
+                "active_sheet": None,
+                "watchlist_rows": rows,
+                "watchlist_total": len(rows),
+                "watchlist_resolved": resolved_count,
+                "watchlist_missing": missing_count,
+                "watchlist_sheet_titles": sheet_titles,
+                "watchlist_show_missing": show_missing_bool,
+                "saved": saved,
+                "error": error,
+            },
+        )
+    finally:
+        ctx.close()
+
+
+def _watchlist_redirect_url(destination: str, *, key: str, message: str) -> str:
+    sep = "&" if "?" in destination else "?"
+    return f"{destination}{sep}{key}={quote(message)}"
+
+
+def _watchlist_row_for_render(
+    conn,
+    *,
+    run_id: int,
+    character_id: int,
+    starting_class: str | None,
+    stable_key: str,
+    sheet_name: str,
+    row_index: int,
+) -> dict[str, Any] | None:
+    rows = db.watchlist_rows_for_character(
+        conn,
+        run_id,
+        character_id,
+        starting_class,
+    )
+    key = str(stable_key or "").strip()
+    if key:
+        for row in rows:
+            if str(row.get("stable_key") or "") == key:
+                return row
+
+    source_sheet = str(sheet_name or "")
+    target_row_index = int(row_index)
+    for row in rows:
+        if str(row.get("sheet_name") or "") == source_sheet and int(row.get("row_index") or 0) == target_row_index:
+            return row
+    return None
+
+
+@app.post("/watchlist/unpin")
+def watchlist_unpin(
+    request: Request,
+    stable_key: str = Form(""),
+    next_url: str = Form("/watchlist"),
+):
+    destination = str(next_url or "").strip()
+    if not destination.startswith("/"):
+        destination = "/watchlist"
+
+    ctx = Ctx(request, full=False)
+    try:
+        removed = db.unpin_watchlist_key(
+            ctx.conn,
+            ctx.character_id,
+            stable_key,
+            commit=True,
+        )
+        if not removed:
+            return RedirectResponse(
+                _watchlist_redirect_url(
+                    destination,
+                    key="error",
+                    message="Could not find that watchlist entry.",
+                ),
+                status_code=303,
+            )
+        return RedirectResponse(
+            _watchlist_redirect_url(
+                destination,
+                key="saved",
+                message="Watchlist item removed.",
+            ),
+            status_code=303,
+        )
+    finally:
+        ctx.close()
+
+
+@app.post("/api/watchlist/toggle-state", response_class=HTMLResponse)
+def api_watchlist_toggle_state(
+    request: Request,
+    sheet_name: str = Form(...),
+    row_index: int = Form(...),
+    stable_key: str = Form(""),
+    show_missing: int = Form(1),
+):
+    ctx = Ctx(request, full=False)
+    try:
+        _ensure_character_import_idle(ctx.character_id)
+        sheet = ctx.require_content_sheet(sheet_name)
+        source_sheet_name = str(sheet.get("sheet_name") or sheet_name)
+
+        live_row = db.fetch_row(
+            ctx.conn,
+            ctx.run_id,
+            ctx.character_id,
+            source_sheet_name,
+            row_index,
+            ctx.starting_class,
+        )
+        if live_row is None:
+            raise HTTPException(404, "Could not find that row in the current workbook.")
+
+        live_row_type = str(live_row.get("row_type") or "checkbox")
+        try:
+            if live_row_type == "value":
+                db.toggle_excluded(
+                    ctx.conn,
+                    ctx.character_id,
+                    ctx.run_id,
+                    source_sheet_name,
+                    row_index,
+                    ctx.starting_class,
+                )
+            else:
+                db.toggle_row(
+                    ctx.conn,
+                    ctx.character_id,
+                    ctx.run_id,
+                    source_sheet_name,
+                    row_index,
+                    ctx.starting_class,
+                )
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower():
+                try:
+                    ctx.conn.rollback()
+                except sqlite3.Error:
+                    pass
+                raise HTTPException(
+                    409,
+                    "Database is busy with another write. Please retry in a few seconds.",
+                ) from exc
+            raise
+
+        row_for_render = _watchlist_row_for_render(
+            ctx.conn,
+            run_id=ctx.run_id,
+            character_id=ctx.character_id,
+            starting_class=ctx.starting_class,
+            stable_key=stable_key,
+            sheet_name=source_sheet_name,
+            row_index=row_index,
+        )
+        if row_for_render is None:
+            raise HTTPException(404, "Could not resolve that watchlist row.")
+        db.annotate_row_notes(
+            ctx.conn,
+            ctx.character_id,
+            [row_for_render],
+        )
+
+        live_sheet_name = str(row_for_render.get("sheet_name") or source_sheet_name)
+        live_sheet = db.fetch_sheet(ctx.conn, ctx.run_id, live_sheet_name)
+        sheet_title = str(live_sheet["title"] or live_sheet_name) if live_sheet is not None else live_sheet_name
+
+        body = templates.get_template("partials/watchlist_row.html").render(
+            request=ctx.request,
+            row=row_for_render,
+            sheet_title=sheet_title,
+            watchlist_show_missing=bool(show_missing),
+            next_watchlist_url=(
+                "/watchlist?show_missing=1"
+                if bool(show_missing)
+                else "/watchlist"
+            ),
+        )
+        response = HTMLResponse(body)
+        _set_hx_triggers(response, {"kind": "watchlist", "action": "state-toggle"})
+        return response
+    finally:
+        ctx.close()
+
+
+@app.post("/watchlist/toggle-state")
+def watchlist_toggle_state(
+    request: Request,
+    sheet_name: str = Form(...),
+    row_index: int = Form(...),
+    next_url: str = Form("/watchlist"),
+):
+    destination = str(next_url or "").strip()
+    if not destination.startswith("/"):
+        destination = "/watchlist"
+
+    ctx = Ctx(request, full=False)
+    try:
+        _ensure_character_import_idle(ctx.character_id)
+        sheet = ctx.require_content_sheet(sheet_name)
+        source_sheet_name = str(sheet.get("sheet_name") or sheet_name)
+
+        live_row = db.fetch_row(
+            ctx.conn,
+            ctx.run_id,
+            ctx.character_id,
+            source_sheet_name,
+            row_index,
+            ctx.starting_class,
+        )
+        if live_row is None:
+            return RedirectResponse(
+                _watchlist_redirect_url(
+                    destination,
+                    key="error",
+                    message="Could not find that row in the current workbook.",
+                ),
+                status_code=303,
+            )
+
+        live_row_type = str(live_row.get("row_type") or "checkbox")
+        try:
+            if live_row_type == "value":
+                new_state = db.toggle_excluded(
+                    ctx.conn,
+                    ctx.character_id,
+                    ctx.run_id,
+                    source_sheet_name,
+                    row_index,
+                    ctx.starting_class,
+                )
+            else:
+                new_state, _changed = db.toggle_row(
+                    ctx.conn,
+                    ctx.character_id,
+                    ctx.run_id,
+                    source_sheet_name,
+                    row_index,
+                    ctx.starting_class,
+                )
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower():
+                try:
+                    ctx.conn.rollback()
+                except sqlite3.Error:
+                    pass
+                return RedirectResponse(
+                    _watchlist_redirect_url(
+                        destination,
+                        key="error",
+                        message="Database is busy with another write. Please retry in a few seconds.",
+                    ),
+                    status_code=303,
+                )
+            raise
+
+        return RedirectResponse(
+            _watchlist_redirect_url(
+                destination,
+                key="saved",
+                message=f"Row state updated to {new_state}.",
+            ),
+            status_code=303,
+        )
+    finally:
+        ctx.close()
+
+
+@app.post("/api/watchlist/toggle", response_class=HTMLResponse)
+def api_watchlist_toggle(
+    request: Request,
+    sheet_name: str = Form(...),
+    row_index: int = Form(...),
+):
+    ctx = Ctx(request, full=False)
+    try:
+        _ensure_character_import_idle(ctx.character_id)
+        sheet = ctx.require_content_sheet(sheet_name)
+
+        try:
+            db.toggle_watchlist_row(
+                ctx.conn,
+                ctx.character_id,
+                ctx.run_id,
+                sheet_name,
+                row_index,
+                commit=True,
+            )
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower():
+                try:
+                    ctx.conn.rollback()
+                except sqlite3.Error:
+                    pass
+                raise HTTPException(
+                    409,
+                    "Database is busy with another write. Please retry in a few seconds.",
+                ) from exc
+            raise
+
+        flags = db.sheet_chain_flags(
+            ctx.conn,
+            ctx.run_id,
+            ctx.character_id,
+            sheet_name,
+            ctx.starting_class,
+        )
+        body = _render_row(
+            ctx,
+            sheet,
+            row_index,
+            json.loads(sheet["data_columns_json"]),
+            flags.get(row_index),
+        )
+        response = HTMLResponse(body)
+        _set_hx_triggers(response, {"kind": "watchlist", "action": "toggle"})
+        return response
+    finally:
+        ctx.close()
+
+
+@app.post("/api/row-note/upsert")
+def api_row_note_upsert(
+    request: Request,
+    sheet_name: str = Form(...),
+    row_index: int = Form(...),
+    note_text: str = Form(""),
+    reminder_date: str = Form(""),
+):
+    ctx = Ctx(request, full=False)
+    try:
+        _ensure_character_import_idle(ctx.character_id)
+        sheet = ctx.require_content_sheet(sheet_name)
+        source_sheet_name = str(sheet.get("sheet_name") or sheet_name)
+
+        row = db.fetch_row(
+            ctx.conn,
+            ctx.run_id,
+            ctx.character_id,
+            source_sheet_name,
+            row_index,
+            ctx.starting_class,
+        )
+        if row is None:
+            raise HTTPException(404, "Row not found")
+
+        reminder_clean = str(reminder_date or "").strip()
+        if reminder_clean and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", reminder_clean):
+            raise HTTPException(400, "Reminder date must use YYYY-MM-DD")
+
+        saved = progress_io.record_row_note(
+            ctx.conn,
+            ctx.character_id,
+            ctx.run_id,
+            source_sheet_name,
+            row_index,
+            note_text,
+            reminder_clean,
+        )
+        payload = {
+            "ok": True,
+            "has_note": bool(saved.get("has_note")),
+            "note": str(saved.get("note") or ""),
+            "reminder_date": str(saved.get("reminder_date") or ""),
+            "updated_at": str(saved.get("updated_at") or ""),
+        }
+        return JSONResponse(payload)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc) or "Could not save note") from exc
+    finally:
+        ctx.close()
+
+
+@app.post("/api/row-note/delete")
+def api_row_note_delete(
+    request: Request,
+    sheet_name: str = Form(...),
+    row_index: int = Form(...),
+):
+    ctx = Ctx(request, full=False)
+    try:
+        _ensure_character_import_idle(ctx.character_id)
+        sheet = ctx.require_content_sheet(sheet_name)
+        source_sheet_name = str(sheet.get("sheet_name") or sheet_name)
+
+        row = db.fetch_row(
+            ctx.conn,
+            ctx.run_id,
+            ctx.character_id,
+            source_sheet_name,
+            row_index,
+            ctx.starting_class,
+        )
+        if row is None:
+            raise HTTPException(404, "Row not found")
+
+        deleted = progress_io.delete_row_note(
+            ctx.conn,
+            ctx.character_id,
+            ctx.run_id,
+            source_sheet_name,
+            row_index,
+        )
+        payload = {
+            "ok": True,
+            "has_note": bool(deleted.get("has_note")),
+            "note": str(deleted.get("note") or ""),
+            "reminder_date": str(deleted.get("reminder_date") or ""),
+            "updated_at": str(deleted.get("updated_at") or ""),
+        }
+        return JSONResponse(payload)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc) or "Could not delete note") from exc
+    finally:
+        ctx.close()
+
+
+@app.get("/minigames", response_class=HTMLResponse)
+def minigames_page(request: Request):
+    ctx = Ctx(request)
+    try:
+        games = [
+            {
+                "name": "Slide 15",
+                "path": "/minigames/slide15",
+                "description": "Classic 4x4 sliding puzzle with timer, actions-per-second, and scored history.",
+                "controls": "Click tiles, Arrow keys, or WASD",
+            },
+            {
+                "name": "2048",
+                "path": "/minigames/2048",
+                "description": "Classic merge puzzle with score and move history (no timer).",
+                "controls": "Arrow keys, WASD, or on-screen direction buttons",
+            },
+            {
+                "name": "Bomb Flip",
+                "path": "/minigames/bomb-flip",
+                "description": "5x5 bomb puzzle with row and column hints, multipliers, and bombs.",
+                "controls": "Left click reveal, right click mark",
+            },
+            {
+                "name": "Snake",
+                "path": "/minigames/snake",
+                "description": "Fixed-tick canvas snake with deterministic food spawns and speed ramping.",
+                "controls": "Arrow keys or WASD (on-screen controls supported)",
+            },
+            {
+                "name": "Breakout",
+                "path": "/minigames/breakout",
+                "description": "Continuous canvas arcade breaker with durability bricks and powerups.",
+                "controls": "Arrow keys or A/D (on-screen controls supported)",
+            },
+        ]
+        return ctx.render(
+            "minigames.html",
+            {
+                "games": games,
+                "active_sheet": None,
+            },
+        )
+    finally:
+        ctx.close()
+
+
+@app.get("/minigames/slide15", response_class=HTMLResponse)
+def minigames_slide15_page(request: Request):
+    ctx = Ctx(request)
+    try:
+        return ctx.render(
+            "minigames_slide15.html",
+            {
+                "active_sheet": None,
+            },
+        )
+    finally:
+        ctx.close()
+
+
+@app.get("/minigames/2048", response_class=HTMLResponse)
+def minigames_2048_page(request: Request):
+    ctx = Ctx(request)
+    try:
+        return ctx.render(
+            "minigames_2048.html",
+            {
+                "active_sheet": None,
+            },
+        )
+    finally:
+        ctx.close()
+
+
+@app.get("/minigames/bomb-flip", response_class=HTMLResponse)
+def minigames_bomb_flip_page(request: Request):
+    ctx = Ctx(request)
+    try:
+        return ctx.render(
+            "minigames_bomb_flip.html",
+            {
+                "active_sheet": None,
+            },
+        )
+    finally:
+        ctx.close()
+
+
+@app.get("/minigames/snake", response_class=HTMLResponse)
+def minigames_snake_page(request: Request):
+    ctx = Ctx(request)
+    try:
+        return ctx.render(
+            "minigames_snake.html",
+            {
+                "active_sheet": None,
+            },
+        )
+    finally:
+        ctx.close()
+
+
+@app.get("/minigames/breakout", response_class=HTMLResponse)
+def minigames_breakout_page(request: Request):
+    ctx = Ctx(request)
+    try:
+        return ctx.render(
+            "minigames_breakout.html",
+            {
+                "active_sheet": None,
+            },
+        )
+    finally:
+        ctx.close()
+
+
+@app.get("/api/minigames/slide15/history")
+def slide15_history(request: Request):
+    ctx = Ctx(request, full=False)
+    try:
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, _path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            games: dict[str, Any] = games_any if isinstance(games_any, dict) else {}
+            game_doc_any = games.get(game_engine.MINIGAME_SLIDE15_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+            payload = game_engine.slide15_game_payload(game_doc)
+        return JSONResponse(
+            {
+                "character_id": int(ctx.character["id"]),
+                "character_name": str(ctx.character["name"] or ""),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.post("/api/minigames/slide15/history")
+async def slide15_record_history(request: Request):
+    ctx = Ctx(request, full=False)
+    try:
+        try:
+            raw = await request.json()
+        except Exception as exc:
+            raise HTTPException(400, "Invalid JSON body") from exc
+
+        run = game_engine.normalize_slide15_run(raw)
+        if run is None:
+            raise HTTPException(400, "Invalid Slide 15 run payload")
+
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            if isinstance(games_any, dict):
+                games: dict[str, Any] = games_any
+            else:
+                games = {}
+                doc["games"] = games
+            game_doc_any = games.get(game_engine.MINIGAME_SLIDE15_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+
+            runs_any = game_doc.get("runs")
+            runs = [entry for entry in runs_any if isinstance(entry, dict)] if isinstance(runs_any, list) else []
+            runs.append(run)
+            runs.sort(
+                key=lambda entry: str(entry.get("finished_at") or entry.get("started_at") or ""),
+                reverse=True,
+            )
+            if len(runs) > game_engine.MINIGAME_MAX_RUNS_PER_GAME:
+                runs = runs[:game_engine.MINIGAME_MAX_RUNS_PER_GAME]
+
+            game_doc["runs"] = runs
+            game_doc["updated_at"] = dt.datetime.now().isoformat()
+            games[game_engine.MINIGAME_SLIDE15_KEY] = game_doc
+            doc["games"] = games
+            game_engine.save_minigame_doc(path, doc)
+            payload = game_engine.slide15_game_payload(game_doc)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "character_id": int(ctx.character["id"]),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.delete("/api/minigames/slide15/history/{run_id}")
+def slide15_delete_history_run(request: Request, run_id: str):
+    ctx = Ctx(request, full=False)
+    try:
+        run_id_value = str(run_id or "").strip()
+        if not run_id_value:
+            raise HTTPException(400, "Run id is required")
+
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            games: dict[str, Any] = games_any if isinstance(games_any, dict) else {}
+
+            game_doc_any = games.get(game_engine.MINIGAME_SLIDE15_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+
+            removed = game_engine.delete_game_run(game_doc, run_id_value)
+            if not removed:
+                raise HTTPException(404, "Run not found")
+
+            games[game_engine.MINIGAME_SLIDE15_KEY] = game_doc
+            doc["games"] = games
+            game_engine.save_minigame_doc(path, doc)
+            payload = game_engine.slide15_game_payload(game_doc)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "character_id": int(ctx.character["id"]),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.get("/api/minigames/2048/history")
+def game2048_history(request: Request):
+    ctx = Ctx(request, full=False)
+    try:
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, _path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            games: dict[str, Any] = games_any if isinstance(games_any, dict) else {}
+            game_doc_any = games.get(game_engine.MINIGAME_2048_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+            payload = game_engine.game2048_payload(game_doc)
+        return JSONResponse(
+            {
+                "character_id": int(ctx.character["id"]),
+                "character_name": str(ctx.character["name"] or ""),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.post("/api/minigames/2048/history")
+async def game2048_record_history(request: Request):
+    ctx = Ctx(request, full=False)
+    try:
+        try:
+            raw = await request.json()
+        except Exception as exc:
+            raise HTTPException(400, "Invalid JSON body") from exc
+
+        run = game_engine.normalize_2048_run(raw)
+        if run is None:
+            raise HTTPException(400, "Invalid 2048 run payload")
+
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            if isinstance(games_any, dict):
+                games: dict[str, Any] = games_any
+            else:
+                games = {}
+                doc["games"] = games
+            game_doc_any = games.get(game_engine.MINIGAME_2048_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+
+            runs_any = game_doc.get("runs")
+            runs = [entry for entry in runs_any if isinstance(entry, dict)] if isinstance(runs_any, list) else []
+            runs.append(run)
+            runs.sort(
+                key=lambda entry: str(entry.get("finished_at") or entry.get("started_at") or ""),
+                reverse=True,
+            )
+            if len(runs) > game_engine.MINIGAME_MAX_RUNS_PER_GAME:
+                runs = runs[:game_engine.MINIGAME_MAX_RUNS_PER_GAME]
+
+            game_doc["runs"] = runs
+            game_doc["updated_at"] = dt.datetime.now().isoformat()
+            games[game_engine.MINIGAME_2048_KEY] = game_doc
+            doc["games"] = games
+            game_engine.save_minigame_doc(path, doc)
+            payload = game_engine.game2048_payload(game_doc)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "character_id": int(ctx.character["id"]),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.delete("/api/minigames/2048/history/{run_id}")
+def game2048_delete_history_run(request: Request, run_id: str):
+    ctx = Ctx(request, full=False)
+    try:
+        run_id_value = str(run_id or "").strip()
+        if not run_id_value:
+            raise HTTPException(400, "Run id is required")
+
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            games: dict[str, Any] = games_any if isinstance(games_any, dict) else {}
+
+            game_doc_any = games.get(game_engine.MINIGAME_2048_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+
+            removed = game_engine.delete_game_run(game_doc, run_id_value)
+            if not removed:
+                raise HTTPException(404, "Run not found")
+
+            games[game_engine.MINIGAME_2048_KEY] = game_doc
+            doc["games"] = games
+            game_engine.save_minigame_doc(path, doc)
+            payload = game_engine.game2048_payload(game_doc)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "character_id": int(ctx.character["id"]),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.get("/api/minigames/bomb-flip/history")
+def bomb_flip_history(request: Request):
+    ctx = Ctx(request, full=False)
+    try:
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, _path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            games: dict[str, Any] = games_any if isinstance(games_any, dict) else {}
+            game_doc_any = games.get(game_engine.MINIGAME_BOMB_FLIP_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+            payload = game_engine.bomb_flip_payload(game_doc)
+        return JSONResponse(
+            {
+                "character_id": int(ctx.character["id"]),
+                "character_name": str(ctx.character["name"] or ""),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.post("/api/minigames/bomb-flip/history")
+async def bomb_flip_record_history(request: Request):
+    ctx = Ctx(request, full=False)
+    try:
+        try:
+            raw = await request.json()
+        except Exception as exc:
+            raise HTTPException(400, "Invalid JSON body") from exc
+
+        run = game_engine.normalize_bomb_flip_run(raw)
+        if run is None:
+            raise HTTPException(400, "Invalid Bomb Flip run payload")
+
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            if isinstance(games_any, dict):
+                games: dict[str, Any] = games_any
+            else:
+                games = {}
+                doc["games"] = games
+            game_doc_any = games.get(game_engine.MINIGAME_BOMB_FLIP_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+
+            runs_any = game_doc.get("runs")
+            runs = [entry for entry in runs_any if isinstance(entry, dict)] if isinstance(runs_any, list) else []
+            runs.append(run)
+            runs.sort(
+                key=lambda entry: str(entry.get("finished_at") or entry.get("started_at") or ""),
+                reverse=True,
+            )
+            if len(runs) > game_engine.MINIGAME_MAX_RUNS_PER_GAME:
+                runs = runs[:game_engine.MINIGAME_MAX_RUNS_PER_GAME]
+
+            game_doc["runs"] = runs
+            game_doc["updated_at"] = dt.datetime.now().isoformat()
+            games[game_engine.MINIGAME_BOMB_FLIP_KEY] = game_doc
+            doc["games"] = games
+            game_engine.save_minigame_doc(path, doc)
+            payload = game_engine.bomb_flip_payload(game_doc)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "character_id": int(ctx.character["id"]),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.delete("/api/minigames/bomb-flip/history/{run_id}")
+def bomb_flip_delete_history_run(request: Request, run_id: str):
+    ctx = Ctx(request, full=False)
+    try:
+        run_id_value = str(run_id or "").strip()
+        if not run_id_value:
+            raise HTTPException(400, "Run id is required")
+
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            games: dict[str, Any] = games_any if isinstance(games_any, dict) else {}
+
+            game_doc_any = games.get(game_engine.MINIGAME_BOMB_FLIP_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+
+            removed = game_engine.delete_game_run(game_doc, run_id_value)
+            if not removed:
+                raise HTTPException(404, "Run not found")
+
+            games[game_engine.MINIGAME_BOMB_FLIP_KEY] = game_doc
+            doc["games"] = games
+            game_engine.save_minigame_doc(path, doc)
+            payload = game_engine.bomb_flip_payload(game_doc)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "character_id": int(ctx.character["id"]),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.get("/api/minigames/snake/history")
+def snake_history(request: Request):
+    ctx = Ctx(request, full=False)
+    try:
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, _path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            games: dict[str, Any] = games_any if isinstance(games_any, dict) else {}
+            game_doc_any = games.get(game_engine.MINIGAME_SNAKE_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+            payload = game_engine.snake_payload(game_doc)
+        return JSONResponse(
+            {
+                "character_id": int(ctx.character["id"]),
+                "character_name": str(ctx.character["name"] or ""),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.post("/api/minigames/snake/history")
+async def snake_record_history(request: Request):
+    ctx = Ctx(request, full=False)
+    try:
+        try:
+            raw = await request.json()
+        except Exception as exc:
+            raise HTTPException(400, "Invalid JSON body") from exc
+
+        run = game_engine.normalize_snake_run(raw)
+        if run is None:
+            raise HTTPException(400, "Invalid Snake run payload")
+
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            if isinstance(games_any, dict):
+                games: dict[str, Any] = games_any
+            else:
+                games = {}
+                doc["games"] = games
+            game_doc_any = games.get(game_engine.MINIGAME_SNAKE_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+
+            runs_any = game_doc.get("runs")
+            runs = [entry for entry in runs_any if isinstance(entry, dict)] if isinstance(runs_any, list) else []
+            runs.append(run)
+            runs.sort(
+                key=lambda entry: str(entry.get("finished_at") or entry.get("started_at") or ""),
+                reverse=True,
+            )
+            if len(runs) > game_engine.MINIGAME_MAX_RUNS_PER_GAME:
+                runs = runs[:game_engine.MINIGAME_MAX_RUNS_PER_GAME]
+
+            game_doc["runs"] = runs
+            game_doc["updated_at"] = dt.datetime.now().isoformat()
+            games[game_engine.MINIGAME_SNAKE_KEY] = game_doc
+            doc["games"] = games
+            game_engine.save_minigame_doc(path, doc)
+            payload = game_engine.snake_payload(game_doc)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "character_id": int(ctx.character["id"]),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.delete("/api/minigames/snake/history/{run_id}")
+def snake_delete_history_run(request: Request, run_id: str):
+    ctx = Ctx(request, full=False)
+    try:
+        run_id_value = str(run_id or "").strip()
+        if not run_id_value:
+            raise HTTPException(400, "Run id is required")
+
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            games: dict[str, Any] = games_any if isinstance(games_any, dict) else {}
+
+            game_doc_any = games.get(game_engine.MINIGAME_SNAKE_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+
+            removed = game_engine.delete_game_run(game_doc, run_id_value)
+            if not removed:
+                raise HTTPException(404, "Run not found")
+
+            games[game_engine.MINIGAME_SNAKE_KEY] = game_doc
+            doc["games"] = games
+            game_engine.save_minigame_doc(path, doc)
+            payload = game_engine.snake_payload(game_doc)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "character_id": int(ctx.character["id"]),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.get("/api/minigames/breakout/history")
+def breakout_history(request: Request):
+    ctx = Ctx(request, full=False)
+    try:
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, _path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            games: dict[str, Any] = games_any if isinstance(games_any, dict) else {}
+            game_doc_any = games.get(game_engine.MINIGAME_BREAKOUT_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+            payload = game_engine.breakout_payload(game_doc)
+        return JSONResponse(
+            {
+                "character_id": int(ctx.character["id"]),
+                "character_name": str(ctx.character["name"] or ""),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.post("/api/minigames/breakout/history")
+async def breakout_record_history(request: Request):
+    ctx = Ctx(request, full=False)
+    try:
+        try:
+            raw = await request.json()
+        except Exception as exc:
+            raise HTTPException(400, "Invalid JSON body") from exc
+
+        run = game_engine.normalize_breakout_run(raw)
+        if run is None:
+            raise HTTPException(400, "Invalid Breakout run payload")
+
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            if isinstance(games_any, dict):
+                games: dict[str, Any] = games_any
+            else:
+                games = {}
+                doc["games"] = games
+            game_doc_any = games.get(game_engine.MINIGAME_BREAKOUT_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+
+            runs_any = game_doc.get("runs")
+            runs = [entry for entry in runs_any if isinstance(entry, dict)] if isinstance(runs_any, list) else []
+            runs.append(run)
+            runs.sort(
+                key=lambda entry: str(entry.get("finished_at") or entry.get("started_at") or ""),
+                reverse=True,
+            )
+            if len(runs) > game_engine.MINIGAME_MAX_RUNS_PER_GAME:
+                runs = runs[:game_engine.MINIGAME_MAX_RUNS_PER_GAME]
+
+            game_doc["runs"] = runs
+            game_doc["updated_at"] = dt.datetime.now().isoformat()
+            games[game_engine.MINIGAME_BREAKOUT_KEY] = game_doc
+            doc["games"] = games
+            game_engine.save_minigame_doc(path, doc)
+            payload = game_engine.breakout_payload(game_doc)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "character_id": int(ctx.character["id"]),
+                **payload,
+            }
+        )
+    finally:
+        ctx.close()
+
+
+@app.delete("/api/minigames/breakout/history/{run_id}")
+def breakout_delete_history_run(request: Request, run_id: str):
+    ctx = Ctx(request, full=False)
+    try:
+        run_id_value = str(run_id or "").strip()
+        if not run_id_value:
+            raise HTTPException(400, "Run id is required")
+
+        with game_engine.MINIGAME_DATA_LOCK:
+            doc, path = game_engine.load_minigame_doc(ctx.character)
+            games_any = doc.get("games")
+            games: dict[str, Any] = games_any if isinstance(games_any, dict) else {}
+
+            game_doc_any = games.get(game_engine.MINIGAME_BREAKOUT_KEY)
+            game_doc: dict[str, Any] = game_doc_any if isinstance(game_doc_any, dict) else {"runs": []}
+
+            removed = game_engine.delete_game_run(game_doc, run_id_value)
+            if not removed:
+                raise HTTPException(404, "Run not found")
+
+            games[game_engine.MINIGAME_BREAKOUT_KEY] = game_doc
+            doc["games"] = games
+            game_engine.save_minigame_doc(path, doc)
+            payload = game_engine.breakout_payload(game_doc)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "character_id": int(ctx.character["id"]),
+                **payload,
+            }
+        )
     finally:
         ctx.close()
 
@@ -2141,6 +3933,7 @@ def chains_overview(request: Request):
 def characters_page(
     request: Request,
     error: str = "",
+    saved: str = "",
     run_id: str = "",
     payload_path: str = "",
     desktop_path: str = "",
@@ -2207,6 +4000,7 @@ def characters_page(
 
         return ctx.render("characters.html", {
             "error": error,
+            "saved": saved,
             "starting_classes": db.STARTING_CLASSES,
             "import_run_id": run_id,
             "import_run": run,
@@ -2638,6 +4432,9 @@ def settings_page(request: Request, saved: str = "", error: str = ""):
             "selected_theme_id": theme_state["theme_id"],
             "selected_scheme_setting": theme_state["scheme_setting"],
             "selected_section_sort_mode": ctx.section_sort_mode,
+            "selected_sidebar_completion_behavior": ctx.sidebar_completion_behavior,
+            "selected_page_completion_behavior": ctx.page_completion_behavior,
+            "completion_behavior_options": COMPLETION_BEHAVIOR_OPTIONS,
             "section_sort_options": SECTION_SORT_OPTIONS,
             "effective_scheme": theme_state["effective_scheme"],
             "value_cap_rows": value_cap_rows,
@@ -2651,6 +4448,8 @@ def settings_theme_save(
     theme_id: str = Form(""),
     theme_scheme: str = Form("default"),
     section_sort_mode: str = Form(section_sort.DEFAULT_SORT_MODE),
+    sidebar_completion_behavior: str = Form(COMPLETION_BEHAVIOR_SHOW),
+    page_completion_behavior: str = Form(COMPLETION_BEHAVIOR_SHOW),
 ):
     catalog = get_theme_catalog()
     themes_raw = catalog.get("themes")
@@ -2667,6 +4466,8 @@ def settings_theme_save(
 
     normalized_scheme = normalize_theme_scheme_setting(theme_scheme)
     normalized_section_sort_mode = section_sort.normalize_sort_mode(section_sort_mode)
+    normalized_sidebar_completion_behavior = normalize_completion_behavior(sidebar_completion_behavior)
+    normalized_page_completion_behavior = normalize_completion_behavior(page_completion_behavior)
     selected_schemes_raw = selected_theme.get("schemes")
     selected_schemes: dict[str, Any] = (
         selected_schemes_raw if isinstance(selected_schemes_raw, dict) else {}
@@ -2678,6 +4479,8 @@ def settings_theme_save(
     set_theme_cookie(response, normalized_theme_id)
     set_theme_scheme_cookie(response, normalized_scheme)
     set_section_sort_cookie(response, normalized_section_sort_mode)
+    set_sidebar_completion_cookie(response, normalized_sidebar_completion_behavior)
+    set_page_completion_cookie(response, normalized_page_completion_behavior)
     return response
 
 
@@ -2855,6 +4658,18 @@ def _render_row(
     )
     if row is None:
         raise HTTPException(404, "Row not found")
+    db.annotate_watchlist_state_for_row(
+        ctx.conn,
+        ctx.character_id,
+        sheet["sheet_name"],
+        row,
+    )
+    db.annotate_row_note_for_row(
+        ctx.conn,
+        ctx.character_id,
+        sheet["sheet_name"],
+        row,
+    )
     return templates.get_template("partials/row.html").render(
         request=ctx.request,
         sheet=sheet,
@@ -3261,44 +5076,56 @@ def api_bulk_set_section(
         )
 
         changed: set[int] = set()
-        if apply_chain_done:
-            for idx in checkbox_rows:
-                changed.update(
-                    db.complete_with_prerequisites(
-                        ctx.conn,
-                        ctx.character_id,
-                        ctx.run_id,
-                        sheet_name,
-                        idx,
-                        ctx.starting_class,
-                    )
-                )
-        else:
-            with progress_io.batch(ctx.conn, ctx.character_id):
+        try:
+            if apply_chain_done:
                 for idx in checkbox_rows:
-                    current_state = db.effective_state(
-                        ctx.conn,
-                        ctx.character_id,
-                        ctx.run_id,
-                        sheet_name,
-                        idx,
-                        ctx.starting_class,
+                    changed.update(
+                        db.complete_with_prerequisites(
+                            ctx.conn,
+                            ctx.character_id,
+                            ctx.run_id,
+                            sheet_name,
+                            idx,
+                            ctx.starting_class,
+                        )
                     )
-                    if current_state == target_state:
-                        continue
-                    db.set_row_state(
-                        ctx.conn,
-                        ctx.character_id,
-                        ctx.run_id,
-                        sheet_name,
-                        idx,
-                        target_state,
-                        commit=False,
-                        starting_class=ctx.starting_class,
-                    )
-                    changed.add(idx)
-            if changed:
-                ctx.conn.commit()
+            else:
+                with progress_io.batch(ctx.conn, ctx.character_id):
+                    for idx in checkbox_rows:
+                        current_state = db.effective_state(
+                            ctx.conn,
+                            ctx.character_id,
+                            ctx.run_id,
+                            sheet_name,
+                            idx,
+                            ctx.starting_class,
+                        )
+                        if current_state == target_state:
+                            continue
+                        db.set_row_state(
+                            ctx.conn,
+                            ctx.character_id,
+                            ctx.run_id,
+                            sheet_name,
+                            idx,
+                            target_state,
+                            commit=False,
+                            starting_class=ctx.starting_class,
+                        )
+                        changed.add(idx)
+                if changed:
+                    ctx.conn.commit()
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower():
+                try:
+                    ctx.conn.rollback()
+                except sqlite3.Error:
+                    pass
+                raise HTTPException(
+                    409,
+                    "Database is busy with another write. Please retry in a few seconds.",
+                ) from exc
+            raise
 
         changed_rows = sorted(set(int(i) for i in changed))
         after_snapshots = _row_snapshots(
@@ -3634,11 +5461,22 @@ def api_search(request: Request, q: str = ""):
 # --- character actions ------------------------------------------------------
 
 @app.post("/characters/create")
-def character_create(request: Request, name: str = Form(...)):
+def character_create(
+    request: Request,
+    name: str = Form(...),
+    starting_class: str = Form(""),
+):
+    cls = starting_class.strip().upper()
+    if not cls:
+        return RedirectResponse(
+            f"/characters?error={quote('Pick an initial class from the dropdown before adding a character.')}",
+            status_code=303,
+        )
+
     conn = db.get_connection()
     try:
         try:
-            cid = db.create_character(conn, name)
+            cid = db.create_character(conn, name, cls)
         except ValueError as exc:
             return RedirectResponse(f"/characters?error={quote(str(exc))}", status_code=303)
         except Exception:
@@ -3657,6 +5495,40 @@ def character_select(character_id: int = Form(...), next_url: str = Form("/")):
     target = next_url if next_url.startswith("/") else "/"
     resp = RedirectResponse(target, status_code=303)
     set_char_cookie(resp, character_id)
+    return resp
+
+
+@app.post("/characters/rename")
+def character_rename(
+    request: Request,
+    character_id: int = Form(...),
+    name: str = Form(...),
+    next_url: str = Form("/characters"),
+):
+    def with_query(url: str, key: str, value: str) -> str:
+        separator = "&" if "?" in url else "?"
+        return f"{url}{separator}{key}={quote(value)}"
+
+    target = next_url if next_url.startswith("/") else "/characters"
+    conn = db.get_connection()
+    try:
+        try:
+            renamed_to = db.rename_character(conn, character_id, name)
+        except ValueError as exc:
+            return RedirectResponse(
+                with_query(target, "error", str(exc)),
+                status_code=303,
+            )
+    finally:
+        conn.close()
+
+    active = cookie_character_id(request)
+    resp = RedirectResponse(
+        with_query(target, "saved", f"Character renamed to {renamed_to}."),
+        status_code=303,
+    )
+    if active == character_id:
+        set_char_cookie(resp, character_id)
     return resp
 
 
@@ -3702,6 +5574,11 @@ def _progress_report_destination(next_url: str) -> str:
     return candidate if candidate.startswith("/") else "/progress-reports"
 
 
+def _with_progress_report_message(destination: str, key: str, message: str) -> str:
+    sep = "&" if "?" in destination else "?"
+    return f"{destination}{sep}{key}={quote(message)}"
+
+
 def _is_truthy_form_flag(raw: str | None) -> bool:
     return str(raw or "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -3718,6 +5595,30 @@ def _find_report_review_item(
         if isinstance(item, dict) and str(item.get("id") or "") == item_id:
             return item
     return None
+
+
+def _character_review_counts(report_doc: dict[str, Any], character_id: int) -> dict[str, int]:
+    counts = {
+        "unresolved": 0,
+        "resolved_done": 0,
+        "resolved_excluded": 0,
+        "total": 0,
+    }
+    all_items = progress_report.review_items_for_character(
+        report_doc,
+        character_id,
+        include_resolved=True,
+    )
+    for item in all_items:
+        status = str((item.get("resolution") or {}).get("status") or "todo").strip().lower()
+        if status == "done":
+            counts["resolved_done"] += 1
+        elif status == "excluded":
+            counts["resolved_excluded"] += 1
+        else:
+            counts["unresolved"] += 1
+    counts["total"] = len(all_items)
+    return counts
 
 
 def _apply_report_item_resolution_to_progress(
@@ -3815,6 +5716,7 @@ def progress_reports_page(
     character_id: int | None = None,
     show_advanced: int = 0,
     error: str = "",
+    ok: str = "",
 ):
     ctx = Ctx(request)
     try:
@@ -3834,8 +5736,16 @@ def progress_reports_page(
         report_path = ""
         summary: dict[str, Any] = {}
         review_items: list[dict[str, Any]] = []
+        review_counts: dict[str, int] = {
+            "unresolved": 0,
+            "resolved_done": 0,
+            "resolved_excluded": 0,
+            "total": 0,
+        }
         advanced_items: list[dict[str, Any]] = []
         orphaned_map: dict[str, int] = {}
+        integrity_alerts: list[dict[str, Any]] = []
+        integrity_summary: dict[str, int] = {"total": 0, "warning": 0, "critical": 0}
 
         if isinstance(report_doc, dict):
             report_reason = str(report_doc.get("reason") or "")
@@ -3844,16 +5754,40 @@ def progress_reports_page(
             summary_raw = report_doc.get("summary")
             summary = summary_raw if isinstance(summary_raw, dict) else {}
 
+            review_counts = _character_review_counts(
+                report_doc,
+                selected_character_id,
+            )
+
             review_items = progress_report.review_items_for_character(
                 report_doc,
                 selected_character_id,
             )
+            for item in review_items:
+                raw_flags = item.get("integrity_flags")
+                if not isinstance(raw_flags, list):
+                    item["integrity_flags"] = []
+                    continue
+                item["integrity_flags"] = [
+                    flag
+                    for flag in raw_flags
+                    if isinstance(flag, dict)
+                ]
             review_items.sort(
                 key=lambda item: (
+                    0 if item.get("integrity_flags") else 1,
                     str(item.get("sheet_name") or ""),
                     int(item.get("row_index") or 0),
                     str(item.get("label") or ""),
                 )
+            )
+
+            integrity_alerts = progress_report.integrity_alerts_for_character(
+                report_doc,
+                selected_character_id,
+            )
+            integrity_summary = progress_report.summarize_integrity_alerts(
+                integrity_alerts,
             )
 
             advanced_raw = report_doc.get("advanced_items")
@@ -3888,16 +5822,74 @@ def progress_reports_page(
                 "report_path": report_path,
                 "report_summary": summary,
                 "report_review_items": review_items,
+                "report_review_counts": review_counts,
                 "report_advanced_items": advanced_items,
                 "report_orphaned_map": orphaned_map,
+                "report_integrity_alerts": integrity_alerts,
+                "report_integrity_summary": integrity_summary,
                 "report_show_advanced": bool(show_advanced),
                 "report_selected_character": selected_character,
                 "report_selected_character_id": selected_character_id,
                 "error": error,
+                "ok": ok,
             },
         )
     finally:
         ctx.close()
+
+
+@app.post("/progress-reports/reset-baseline")
+def progress_report_reset_baseline(
+    next_url: str = Form("/progress-reports"),
+):
+    destination = _progress_report_destination(next_url)
+    conn = db.get_connection()
+    try:
+        run_id, run_token = _latest_run_identity(conn)
+        if run_id is None or run_token is None:
+            return RedirectResponse(
+                _with_progress_report_message(destination, "error", "No ingest run found."),
+                status_code=303,
+            )
+
+        _save_session_baseline_snapshot(
+            conn,
+            run_id,
+            source="manual-baseline-reset",
+            run_token=run_token,
+        )
+
+        baseline = progress_report.load_baseline_snapshot()
+        reset_doc, reset_path = progress_report.create_between_run_report(
+            conn,
+            run_id,
+            reason="baseline-reset",
+            run_token=run_token,
+            baseline=baseline,
+            persist=True,
+        )
+
+        global LAST_BETWEEN_RUN_REPORT_PATH
+        if reset_path is not None:
+            LAST_BETWEEN_RUN_REPORT_PATH = reset_path
+
+        summary = reset_doc.get("summary") if isinstance(reset_doc, dict) else {}
+        unresolved = int((summary or {}).get("review_unresolved") or 0)
+        return RedirectResponse(
+            _with_progress_report_message(
+                destination,
+                "ok",
+                f"Baseline reset to current progress. Unresolved now: {unresolved}.",
+            ),
+            status_code=303,
+        )
+    except Exception as exc:
+        return RedirectResponse(
+            _with_progress_report_message(destination, "error", str(exc)),
+            status_code=303,
+        )
+    finally:
+        conn.close()
 
 
 @app.post("/progress-reports/resolve")
@@ -3917,7 +5909,7 @@ def progress_report_resolve_item(
     report_doc = _load_latest_progress_report()
     if not isinstance(report_doc, dict):
         return RedirectResponse(
-            f"{destination}?error={quote('No progress report found to resolve.')}",
+            f"{destination}?error={quote('No deconflict snapshot found to resolve.')}",
             status_code=303,
         )
 
@@ -3991,23 +5983,30 @@ def progress_report_resolve_bulk(
     normalized_resolution = str(resolution or "todo").strip().lower()
     if normalized_resolution not in progress_report.RESOLUTION_VALUES:
         return RedirectResponse(
-            f"{destination}?error={quote('Invalid resolution state.')}",
+            _with_progress_report_message(destination, "error", "Invalid resolution state."),
             status_code=303,
         )
 
     report_doc = _load_latest_progress_report()
     if not isinstance(report_doc, dict):
         return RedirectResponse(
-            f"{destination}?error={quote('No progress report found to resolve.')}",
+            _with_progress_report_message(
+                destination,
+                "error",
+                "No deconflict snapshot found to resolve.",
+            ),
             status_code=303,
         )
+
+    unresolved_only_scope = _is_truthy_form_flag(only_unresolved)
+    scope_label = "unresolved items" if unresolved_only_scope else "all review items"
 
     target_items = progress_report.review_items_for_character(
         report_doc,
         character_id,
         include_resolved=True,
     )
-    if _is_truthy_form_flag(only_unresolved):
+    if unresolved_only_scope:
         target_items = [
             item
             for item in target_items
@@ -4015,10 +6014,40 @@ def progress_report_resolve_bulk(
         ]
 
     if not target_items:
-        return RedirectResponse(destination, status_code=303)
+        return RedirectResponse(
+            _with_progress_report_message(
+                destination,
+                "ok",
+                f"No {scope_label} matched the selected bulk action scope.",
+            ),
+            status_code=303,
+        )
+
+    items_to_update: list[dict[str, Any]] = []
+    skipped_same_status = 0
+    for item in target_items:
+        current_status = str((item.get("resolution") or {}).get("status") or "todo").strip().lower()
+        if current_status == normalized_resolution:
+            skipped_same_status += 1
+            continue
+        items_to_update.append(item)
+
+    if not items_to_update:
+        return RedirectResponse(
+            _with_progress_report_message(
+                destination,
+                "ok",
+                (
+                    "No review items changed. "
+                    f"{skipped_same_status} item(s) were already marked '{normalized_resolution}'."
+                ),
+            ),
+            status_code=303,
+        )
 
     applied_states: dict[str, str | None] = {}
     any_progress_updates = False
+    progress_update_count = 0
 
     if normalized_resolution != "todo":
         conn = db.get_connection()
@@ -4028,11 +6057,8 @@ def progress_report_resolve_bulk(
                 raise ValueError("No ingest run found.")
 
             starting_class_cache: dict[int, str | None] = {}
-            for item in target_items:
+            for item in items_to_update:
                 item_id = str(item.get("id") or "")
-                current_status = str((item.get("resolution") or {}).get("status") or "todo").strip().lower()
-                if item_id and current_status == normalized_resolution:
-                    continue
                 applied_states[item_id] = _apply_report_item_resolution_to_progress(
                     conn,
                     run_id=run_id,
@@ -4041,6 +6067,7 @@ def progress_report_resolve_bulk(
                     starting_class_cache=starting_class_cache,
                 )
                 any_progress_updates = True
+                progress_update_count += 1
 
             if any_progress_updates:
                 _, current_run_token = _latest_run_identity(conn)
@@ -4063,7 +6090,7 @@ def progress_report_resolve_bulk(
                 pass
 
     updated_count = 0
-    for item in target_items:
+    for item in items_to_update:
         item_id = str(item.get("id") or "")
         updated = progress_report.set_review_item_resolution(
             report_doc,
@@ -4076,14 +6103,27 @@ def progress_report_resolve_bulk(
 
     if updated_count <= 0:
         return RedirectResponse(
-            f"{destination}?error={quote('Could not update report resolution state.')}",
+            _with_progress_report_message(
+                destination,
+                "error",
+                "Could not update report resolution state.",
+            ),
             status_code=303,
         )
 
     report_path_raw = report_doc.get("report_path")
     report_path = Path(str(report_path_raw)) if isinstance(report_path_raw, str) and report_path_raw else None
     progress_report.save_report_document(report_doc, report_path=report_path)
-    return RedirectResponse(destination, status_code=303)
+
+    message = f"Bulk action applied: {updated_count} {scope_label} set to '{normalized_resolution}'."
+    if normalized_resolution != "todo":
+        message += f" Progress updated for {progress_update_count} row(s)."
+    if skipped_same_status > 0:
+        message += f" {skipped_same_status} item(s) already matched that state."
+    return RedirectResponse(
+        _with_progress_report_message(destination, "ok", message),
+        status_code=303,
+    )
 
 
 # --- export -----------------------------------------------------------------

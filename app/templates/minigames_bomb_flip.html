@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Bomb Flip · Minigames{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Bomb Flip</h1>
+    <p class="page-sub">
+      5x5 bomb puzzle. Reveal multipliers, avoid bombs, and use row/column hints.
+    </p>
+  </div>
+  <a class="btn-mini" href="/minigames">Back to Minigames</a>
+</div>
+
+<section
+  class="bflip-shell"
+  data-bflip-app
+  data-history-url="/api/minigames/bomb-flip/history"
+  data-record-url="/api/minigames/bomb-flip/history"
+  data-delete-url="/api/minigames/bomb-flip/history"
+  data-character-id="{{ character.id }}">
+
+  <div class="bflip-layout">
+    <div class="bflip-main-panel">
+      <div class="bflip-stat-grid" aria-label="Bomb Flip stats">
+        <div class="bflip-stat-card">
+          <span class="bflip-stat-label">Level</span>
+          <strong data-bflip-level>1</strong>
+        </div>
+        <div class="bflip-stat-card">
+          <span class="bflip-stat-label">Round score</span>
+          <strong data-bflip-round-score>1</strong>
+        </div>
+        <div class="bflip-stat-card">
+          <span class="bflip-stat-label">Total score</span>
+          <strong data-bflip-total-score>0</strong>
+        </div>
+        <div class="bflip-stat-card">
+          <span class="bflip-stat-label">High score</span>
+          <strong data-bflip-high-score>0</strong>
+        </div>
+      </div>
+
+      <div class="bflip-controls" role="group" aria-label="Bomb Flip controls">
+        <button type="button" class="btn-primary" data-bflip-new>New Round</button>
+        <button type="button" class="btn-mini" data-bflip-continue>Continue</button>
+        <button type="button" class="btn-mini" data-bflip-spend>Spend 100 (+1 Level)</button>
+        <button type="button" class="btn-mini btn-danger" data-bflip-reset>Total Score Reset</button>
+        <span class="bflip-status" data-bflip-status>Ready</span>
+      </div>
+
+      <div class="bflip-board-area">
+        <div class="bflip-board-wrap">
+          <div class="bflip-grid" data-bflip-grid role="grid" aria-label="Bomb Flip board"></div>
+          <ul class="bflip-row-hints" data-bflip-row-hints aria-label="Row hints"></ul>
+          <div class="bflip-col-hints" data-bflip-col-hints aria-label="Column hints"></div>
+        </div>
+      </div>
+
+      <p class="bflip-help">
+        Left click to reveal a tile. Right click to mark/unmark suspected bombs.
+        Clear all x2 and x3 tiles to win the round.
+      </p>
+    </div>
+
+    <div class="bflip-history-panel table-wrap">
+      <table class="data-table bflip-history-table">
+        <thead>
+          <tr>
+            <th>Date &amp; time</th>
+            <th>State</th>
+            <th>Level</th>
+            <th>Round score</th>
+            <th>Total score</th>
+            <th class="bflip-col-manage">Manage</th>
+          </tr>
+        </thead>
+        <tbody data-bflip-history-body>
+          <tr>
+            <td colspan="6" class="cell-data">Loading history…</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<noscript>
+  <div class="error-banner">Bomb Flip requires JavaScript.</div>
+</noscript>
+
+<script src="/minigames-static/Bomb-Flip/bomb_flip.js?v=2"></script>
+{% endblock %}

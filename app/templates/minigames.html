@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Minigames · FFXIV Completion Tracker{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Minigames</h1>
+    <p class="page-sub">
+      Tracker-adjacent games that save run history per character.
+    </p>
+  </div>
+</div>
+
+<section class="mg-grid" aria-label="Minigame list">
+  {% for game in games %}
+  <article class="mg-card">
+    <h2><a href="{{ game.path }}">{{ game.name }}</a></h2>
+    <p class="page-sub">{{ game.description }}</p>
+    <p class="mg-meta">Controls: {{ game.controls }}</p>
+    <a class="btn-primary" href="{{ game.path }}">Play</a>
+  </article>
+  {% endfor %}
+</section>
+{% endblock %}

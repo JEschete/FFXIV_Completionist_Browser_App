@@ -29,6 +29,7 @@ from openpyxl.utils import get_column_letter
 if __package__ in {None, ""}:
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
+from app import db as app_db
 from app import section_sort
 
 
@@ -1064,9 +1065,88 @@ def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
     return bool(row)
 
 
+def _capture_pre_ingest_whats_new_snapshot(conn: sqlite3.Connection) -> None:
+    required_tables = ("ingest_runs", "nodes", "sheets")
+    if not all(_table_exists(conn, name) for name in required_tables):
+        return
+
+    run_row = conn.execute(
+        """
+        SELECT id, source_file, started_at, completed_at, sheet_count, row_count
+        FROM ingest_runs
+        ORDER BY id DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    if run_row is None:
+        return
+
+    run_id = int(run_row[0] or 0)
+    if run_id <= 0:
+        return
+
+    rows = conn.execute(
+        """
+        SELECT n.sheet_name, n.row_index, n.row_type, n.section_label,
+               n.label, n.row_json, n.stable_hash, s.title
+        FROM nodes n
+        JOIN sheets s
+          ON s.run_id = n.run_id AND s.sheet_name = n.sheet_name
+        WHERE n.run_id = ?
+          AND n.row_type IN ('checkbox', 'value')
+        ORDER BY n.sheet_name, n.row_index
+        """,
+        (run_id,),
+    ).fetchall()
+
+    payload_rows = []
+    for row in rows:
+        sheet_name = str(row[0] or "")
+        payload_rows.append(
+            {
+                "sheet_name": sheet_name,
+                "sheet_title": str(row[7] or sheet_name),
+                "row_index": int(row[1] or 0),
+                "row_type": str(row[2] or "checkbox"),
+                "section_label": str(row[3] or ""),
+                "label": str(row[4] or "").strip(),
+                "row_json": str(row[5] or ""),
+                "stable_hash": str(row[6] or ""),
+            }
+        )
+
+    payload = {
+        "schema_version": "ffxiv-tracker/whats-new-baseline/v1",
+        "captured_at": dt.datetime.now().isoformat(timespec="seconds"),
+        "run": {
+            "id": run_id,
+            "source_file": str(run_row[1] or ""),
+            "started_at": str(run_row[2] or ""),
+            "completed_at": str(run_row[3] or ""),
+            "sheet_count": int(run_row[4] or 0),
+            "row_count": int(run_row[5] or 0),
+        },
+        "rows": payload_rows,
+    }
+
+    path = app_db.WHATS_NEW_PREVIOUS_INGEST_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 def _maybe_capture_pre_ingest_baseline(conn: sqlite3.Connection) -> None:
     required_tables = ("characters", "nodes", "character_progress")
-    if not all(_table_exists(conn, name) for name in required_tables):
+    has_progress_tables = all(_table_exists(conn, name) for name in required_tables)
+
+    try:
+        _capture_pre_ingest_whats_new_snapshot(conn)
+    except Exception as exc:
+        print(f"[warn] Skipped pre-ingest workbook snapshot: {exc}")
+
+    if not has_progress_tables:
         return
     try:
         from app import progress_report

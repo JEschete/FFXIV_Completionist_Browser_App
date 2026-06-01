@@ -1,36 +1,46 @@
 {% extends "base.html" %}
-{% block title %}Progress Reports · FFXIV Tracker{% endblock %}
+{% block title %}Deconflict · FFXIV Tracker{% endblock %}
 
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Progress Reports</h1>
+    <h1>Deconflict</h1>
     <p class="page-sub">
-      Review detected progression changes around ingest/import/session boundaries.
+      Review detected between-run progression changes and choose how to deconflict each item.
       Resolve each item as done, excluded, or todo. Accepted items are removed from this audit list.
     </p>
   </div>
 </div>
 
 {% if error %}<div class="error-banner">{{ error }}</div>{% endif %}
+{% if ok %}<div class="ok-banner">{{ ok }}</div>{% endif %}
 
 {% if not report_doc %}
 <section class="probe-card report-card">
-  <h2>No report found yet</h2>
+  <h2>No deconflict snapshot found yet</h2>
   <p class="page-sub">Run an ingest/import or request a report first. A baseline is saved on close.</p>
 </section>
 {% else %}
 <section class="probe-card report-card">
-  <h2>Latest Report</h2>
+  <h2>Latest Deconflict Snapshot</h2>
   <div class="report-meta-grid">
     <div><span>Reason</span><strong>{{ report_reason or 'unknown' }}</strong></div>
     <div><span>Generated</span><strong>{{ report_generated_at or 'unknown' }}</strong></div>
     <div><span>Changed Characters</span><strong>{{ report_summary.characters_changed or 0 }}</strong></div>
     <div><span>Review Unresolved</span><strong>{{ report_summary.review_unresolved or 0 }}</strong></div>
+    <div><span>Integrity Alerts</span><strong>{{ report_integrity_summary.total or 0 }}</strong></div>
+    <div><span>Critical / Warning</span><strong>{{ report_integrity_summary.critical or 0 }} / {{ report_integrity_summary.warning or 0 }}</strong></div>
   </div>
   {% if report_path %}
-  <p class="page-sub">Report file: {{ report_path }}</p>
+  <p class="page-sub">Snapshot file: {{ report_path }}</p>
   {% endif %}
+  <form method="post" action="/progress-reports/reset-baseline" class="report-baseline-form">
+    <input type="hidden" name="next_url" value="/progress-reports?character_id={{ report_selected_character_id }}{% if report_show_advanced %}&show_advanced=1{% endif %}" />
+    <p class="page-sub report-baseline-help">
+      If this report is stale or unexpectedly huge, reset baseline to current progress and start fresh.
+    </p>
+    <button type="submit" class="btn-mini">Reset Baseline to Current</button>
+  </form>
 </section>
 
 <section class="probe-card report-card">
@@ -50,20 +60,79 @@
 </section>
 
 <section class="probe-card report-card">
+  <h2>Data Integrity Monitor</h2>
+  {% if report_integrity_alerts %}
+  <div class="table-wrap report-table-wrap">
+    <table class="data-table report-table report-integrity-table">
+      <thead>
+        <tr>
+          <th>Severity</th>
+          <th>Type</th>
+          <th>Context</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for alert in report_integrity_alerts %}
+        <tr class="data-row report-integrity-row report-integrity-row-{{ alert.severity }}">
+          <td>
+            <span class="badge {{ 'badge-excluded' if alert.severity == 'critical' else 'badge-todo' }}">{{ alert.severity }}</span>
+          </td>
+          <td>{{ alert.title or alert.kind }}</td>
+          <td>
+            {% if alert.sheet_name %}
+            <div class="report-row-title">{{ alert.sheet_name }} #{{ alert.row_index or 0 }}</div>
+            {% if alert.label %}<div class="report-row-label">{{ alert.label }}</div>{% endif %}
+            {% elif alert.character_name %}
+            <div class="report-row-title">{{ alert.character_name }}</div>
+            {% else %}
+            <span class="report-integrity-muted">Global</span>
+            {% endif %}
+          </td>
+          <td>{{ alert.message }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="page-sub">No suspicious spikes, value drops, or timestamp anomalies detected for this character.</p>
+  {% endif %}
+</section>
+
+<section class="probe-card report-card">
   <h2>Review Items for {{ report_selected_character.name }}</h2>
-  {% if report_review_items %}
+  <p class="page-sub report-review-guide">
+    <strong>done</strong> accepts the <strong>After</strong> snapshot,
+    <strong>excluded</strong> reverts to <strong>Before</strong>, and
+    <strong>todo</strong> keeps or reopens an item as unresolved.
+  </p>
+
+  <div class="report-review-counts" aria-label="Review resolution counts">
+    <span class="report-review-count report-review-count-unresolved">Unresolved: {{ report_review_counts.unresolved or 0 }}</span>
+    <span class="report-review-count report-review-count-done">Accepted: {{ report_review_counts.resolved_done or 0 }}</span>
+    <span class="report-review-count report-review-count-excluded">Reverted: {{ report_review_counts.resolved_excluded or 0 }}</span>
+    <span class="report-review-count">Total: {{ report_review_counts.total or 0 }}</span>
+  </div>
+
   <form method="post" action="/progress-reports/resolve-bulk" class="report-bulk-form">
     <input type="hidden" name="character_id" value="{{ report_selected_character_id }}" />
-    <input type="hidden" name="only_unresolved" value="1" />
     <input type="hidden" name="next_url" value="/progress-reports?character_id={{ report_selected_character_id }}{% if report_show_advanced %}&show_advanced=1{% endif %}" />
-    <label for="bulk-resolution">Bulk action</label>
-    <select id="bulk-resolution" name="resolution">
-      <option value="done">done (accept all visible)</option>
-      <option value="excluded">excluded (revert all visible)</option>
-      <option value="todo">todo (reopen all visible)</option>
+    <label for="bulk-scope">Scope</label>
+    <select id="bulk-scope" name="only_unresolved">
+      <option value="1" selected>Unresolved only (table rows)</option>
+      <option value="0">All review items (including resolved)</option>
     </select>
-    <button type="submit" class="btn-mini">Apply Bulk Resolution</button>
+    <label for="bulk-resolution">Action</label>
+    <select id="bulk-resolution" name="resolution">
+      <option value="done">done (accept using After)</option>
+      <option value="excluded">excluded (revert using Before)</option>
+      <option value="todo">todo (mark unresolved / reopen)</option>
+    </select>
+    <button type="submit" class="btn-mini">Apply Bulk Action</button>
   </form>
+
+  {% if report_review_items %}
   <div class="table-wrap report-table-wrap">
     <table class="data-table report-table">
       <thead>
@@ -72,6 +141,7 @@
           <th>Change</th>
           <th>Before</th>
           <th>After</th>
+          <th>Integrity</th>
           <th>Resolution</th>
         </tr>
       </thead>
@@ -95,15 +165,27 @@
             <div>value: {{ item.after.value if item.after.value is not none else '—' }}</div>
           </td>
           <td>
+            {% if item.integrity_flags %}
+              {% for flag in item.integrity_flags %}
+              <div class="report-integrity-flag report-integrity-flag-{{ flag.severity }}">
+                <span class="badge {{ 'badge-excluded' if flag.severity == 'critical' else 'badge-todo' }}">{{ flag.label }}</span>
+                <span>{{ flag.message }}</span>
+              </div>
+              {% endfor %}
+            {% else %}
+            <span class="report-integrity-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
             <form method="post" action="/progress-reports/resolve" class="report-resolution-form">
               <input type="hidden" name="item_id" value="{{ item.id }}" />
               <input type="hidden" name="next_url" value="/progress-reports?character_id={{ report_selected_character_id }}{% if report_show_advanced %}&show_advanced=1{% endif %}" />
               <select name="resolution">
-                <option value="todo" {{ 'selected' if res.status == 'todo' else '' }}>todo</option>
-                <option value="done" {{ 'selected' if res.status == 'done' else '' }}>done (accept change)</option>
-                <option value="excluded" {{ 'selected' if res.status == 'excluded' else '' }}>excluded (revert change)</option>
+                <option value="todo" {{ 'selected' if res.status == 'todo' else '' }}>todo (unresolved)</option>
+                <option value="done" {{ 'selected' if res.status == 'done' else '' }}>done (accept After)</option>
+                <option value="excluded" {{ 'selected' if res.status == 'excluded' else '' }}>excluded (revert Before)</option>
               </select>
-              <button type="submit" class="btn-mini">Accept Resolution</button>
+              <button type="submit" class="btn-mini">Save</button>
             </form>
             {% if res.updated_at %}
             <div class="report-resolution-meta">updated: {{ res.updated_at }}</div>
@@ -115,7 +197,14 @@
     </table>
   </div>
   {% else %}
+  {% if (report_review_counts.total or 0) > 0 %}
+  <p class="page-sub">
+    No unresolved review items for this character. All review items are currently resolved.
+    To reopen resolved items, use bulk scope <strong>All review items</strong> with action <strong>todo</strong>.
+  </p>
+  {% else %}
   <p class="page-sub">No unresolved review items for this character in the latest report.</p>
+  {% endif %}
   {% endif %}
 </section>
 

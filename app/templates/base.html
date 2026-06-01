@@ -4,7 +4,7 @@
       data-theme-scheme="{{ theme_effective_scheme|default('dark') }}">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, viewport-fit=cover, shrink-to-fit=no" />
   <meta name="color-scheme" content="{{ theme_color_scheme_meta|default('dark') }}" />
   <title>{% block title %}FFXIV Completion Tracker{% endblock %}</title>
   <style>
@@ -26,7 +26,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/static/styles.css?v=17" />
+  <link rel="stylesheet" href="/static/styles.css?v=29" />
   <style id="theme-vars">{{ theme_css|safe }}</style>
   <script src="/static/vendor/htmx.min.js" defer></script>
   <script src="/static/vendor/alpine-collapse.min.js" defer></script>
@@ -72,10 +72,23 @@
            @click.outside="open = false"></div>
     </div>
 
+    <div class="sidebar-tree-actions" role="group" aria-label="Sidebar expand and collapse controls">
+      <button type="button"
+              class="btn-mini sidebar-tree-action"
+              @click="window.dispatchEvent(new CustomEvent('tree-expand-all'))">
+        Expand all
+      </button>
+      <button type="button"
+              class="btn-mini sidebar-tree-action"
+              @click="window.dispatchEvent(new CustomEvent('tree-collapse-all'))">
+        Collapse all
+      </button>
+    </div>
+
     <nav class="tree">
       <ul class="tree-root">
         {% for node in tree %}
-          {{ tree_node(node, active_sheet, 0) }}
+          {{ tree_node(node, active_sheet, 0, sidebar_completion_behavior) }}
         {% endfor %}
       </ul>
     </nav>
@@ -133,11 +146,15 @@
             <a href="/" class="quick-link {{ 'active' if request.url.path == '/' }}">Overview</a>
             <a href="/characters" class="quick-link {{ 'active' if request.url.path == '/characters' }}">Characters</a>
             <a href="/chains" class="quick-link {{ 'active' if request.url.path == '/chains' }}">Chains</a>
-            <a href="/progress-reports" class="quick-link {{ 'active' if request.url.path == '/progress-reports' }}">Progress Reports</a>
-            <a href="/lodestone-probe" class="quick-link {{ 'active' if request.url.path == '/lodestone-probe' }}">Lodestone Probe</a>
+            <a href="/watchlist" class="quick-link {{ 'active' if request.url.path == '/watchlist' }}">Watchlist</a>
+            <a href="/share-cards" class="quick-link {{ 'active' if request.url.path == '/share-cards' }}">Share Cards</a>
+            <a href="/whats-new" class="quick-link {{ 'active' if request.url.path == '/whats-new' }}">What's New</a>
+            <a href="/minigames" class="quick-link {{ 'active' if request.url.path.startswith('/minigames') }}">Minigames</a>
+            <a href="/progress-reports" class="quick-link {{ 'active' if request.url.path == '/progress-reports' }}">Deconflict</a>
+            <a href="/lodestone-probe" class="quick-link {{ 'active' if request.url.path == '/lodestone-probe' }}">Probe</a>
             <a href="/settings" class="quick-link {{ 'active' if request.url.path == '/settings' }}">Settings</a>
             <a href="/credits" class="quick-link {{ 'active' if request.url.path == '/credits' }}">Credits</a>
-            <a href="/export/current.csv" class="quick-link quick-link-export">Export CSV</a>
+            <a href="/export/current.csv" class="quick-link quick-link-export">Export</a>
           </nav>
         </div>
       </header>
@@ -523,6 +540,293 @@
     applyOobHtml,
     dispatchHxTriggers,
   };
+})();
+</script>
+
+<script>
+(() => {
+  const body = document.body;
+  if (!body) {
+    return;
+  }
+
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+  const traySnapshot = (tray) => {
+    const noteInput = tray.querySelector('[data-note-text]');
+    const reminderInput = tray.querySelector('[data-note-reminder]');
+    const note = noteInput ? String(noteInput.value || '') : '';
+    const reminder = reminderInput ? String(reminderInput.value || '') : '';
+    return JSON.stringify({ note, reminder });
+  };
+
+  const findToggleForTray = (tray) => {
+    const trayId = String(tray.id || '').trim();
+    if (!trayId) {
+      return null;
+    }
+    return document.querySelector(`[data-note-toggle][aria-controls="${trayId}"]`);
+  };
+
+  const setTrayStatus = (tray, message, isError = false) => {
+    const status = tray.querySelector('[data-note-status]');
+    if (!status) {
+      return;
+    }
+    status.textContent = String(message || '');
+    status.classList.toggle('is-error', Boolean(isError));
+  };
+
+  const setToggleState = (tray, hasNote) => {
+    const toggle = findToggleForTray(tray);
+    if (!toggle) {
+      return;
+    }
+    const anchor = toggle.closest('.note-anchor');
+    const indicator = anchor ? anchor.querySelector('[data-note-indicator]') : null;
+    const row = toggle.closest('tr.data-row');
+    if (row) {
+      row.classList.toggle('has-note-row', Boolean(hasNote));
+    }
+    if (indicator) {
+      indicator.classList.toggle('is-active', Boolean(hasNote));
+      indicator.setAttribute('aria-hidden', hasNote ? 'false' : 'true');
+    }
+    toggle.classList.toggle('has-note', Boolean(hasNote));
+    toggle.title = hasNote ? 'Edit note' : 'Add note';
+  };
+
+  const refreshDeleteButton = (tray, hasNote) => {
+    const del = tray.querySelector('[data-note-delete]');
+    if (!del) {
+      return;
+    }
+    del.disabled = !Boolean(hasNote);
+  };
+
+  const closeTray = (tray) => {
+    tray.classList.remove('is-open');
+    tray.hidden = true;
+    const toggle = findToggleForTray(tray);
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', 'false');
+    }
+  };
+
+  const closeOtherTrays = (keepTray) => {
+    const trays = Array.from(document.querySelectorAll('[data-note-tray]'));
+    for (const tray of trays) {
+      if (keepTray && tray === keepTray) {
+        continue;
+      }
+      closeTray(tray);
+    }
+  };
+
+  const postForm = async (url, values) => {
+    const form = new URLSearchParams();
+    for (const [key, value] of Object.entries(values)) {
+      form.set(key, String(value ?? ''));
+    }
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        'Accept': 'application/json',
+        'X-Requested-With': 'htmx',
+      },
+      body: form.toString(),
+      credentials: 'same-origin',
+      cache: 'no-store',
+    });
+
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch (_err) {
+      payload = {};
+    }
+
+    if (!response.ok) {
+      const detail = typeof payload?.detail === 'string' ? payload.detail : '';
+      throw new Error(detail || `Note request failed (${response.status})`);
+    }
+    return payload;
+  };
+
+  const saveTray = async (tray) => {
+    if (tray.dataset.busy === '1') {
+      return;
+    }
+
+    const noteInput = tray.querySelector('[data-note-text]');
+    const reminderInput = tray.querySelector('[data-note-reminder]');
+    if (!noteInput || !reminderInput) {
+      return;
+    }
+
+    const reminder = String(reminderInput.value || '').trim();
+    if (reminder && !DATE_RE.test(reminder)) {
+      setTrayStatus(tray, 'Reminder date must use YYYY-MM-DD.', true);
+      return;
+    }
+
+    const currentKey = traySnapshot(tray);
+    const lastSaved = String(tray.dataset.lastSaved || '');
+    if (lastSaved && currentKey === lastSaved) {
+      return;
+    }
+
+    tray.dataset.busy = '1';
+    setTrayStatus(tray, 'Saving...');
+
+    try {
+      const payload = await postForm('/api/row-note/upsert', {
+        sheet_name: tray.dataset.sheetName || '',
+        row_index: tray.dataset.rowIndex || '',
+        note_text: String(noteInput.value || ''),
+        reminder_date: reminder,
+      });
+
+      const savedNote = typeof payload?.note === 'string' ? payload.note : String(noteInput.value || '');
+      const savedReminder = typeof payload?.reminder_date === 'string' ? payload.reminder_date : reminder;
+      noteInput.value = savedNote;
+      reminderInput.value = savedReminder;
+
+      const hasNote = Boolean(payload?.has_note);
+      tray.dataset.lastSaved = traySnapshot(tray);
+      refreshDeleteButton(tray, hasNote);
+      setToggleState(tray, hasNote);
+      setTrayStatus(tray, 'Saved');
+      window.setTimeout(() => {
+        const status = tray.querySelector('[data-note-status]');
+        if (status && status.textContent === 'Saved') {
+          status.textContent = '';
+        }
+      }, 1300);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err || 'Could not save note');
+      setTrayStatus(tray, message, true);
+    } finally {
+      tray.dataset.busy = '0';
+    }
+  };
+
+  const deleteTray = async (tray) => {
+    if (tray.dataset.busy === '1') {
+      return;
+    }
+
+    const noteInput = tray.querySelector('[data-note-text]');
+    const reminderInput = tray.querySelector('[data-note-reminder]');
+    if (!noteInput || !reminderInput) {
+      return;
+    }
+
+    tray.dataset.busy = '1';
+    setTrayStatus(tray, 'Deleting...');
+
+    try {
+      await postForm('/api/row-note/delete', {
+        sheet_name: tray.dataset.sheetName || '',
+        row_index: tray.dataset.rowIndex || '',
+      });
+
+      noteInput.value = '';
+      reminderInput.value = '';
+      tray.dataset.lastSaved = traySnapshot(tray);
+      refreshDeleteButton(tray, false);
+      setToggleState(tray, false);
+      setTrayStatus(tray, 'Deleted');
+      window.setTimeout(() => {
+        closeTray(tray);
+      }, 200);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err || 'Could not delete note');
+      setTrayStatus(tray, message, true);
+    } finally {
+      tray.dataset.busy = '0';
+    }
+  };
+
+  body.addEventListener('click', (event) => {
+    const toggle = event.target.closest('[data-note-toggle]');
+    if (toggle) {
+      if (toggle.disabled) {
+        return;
+      }
+      event.preventDefault();
+      const trayId = String(toggle.getAttribute('aria-controls') || '').trim();
+      if (!trayId) {
+        return;
+      }
+      const tray = document.getElementById(trayId);
+      if (!tray) {
+        return;
+      }
+
+      const shouldOpen = tray.hidden;
+      closeOtherTrays(shouldOpen ? tray : null);
+      tray.hidden = !shouldOpen;
+      toggle.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+
+      if (shouldOpen) {
+        tray.classList.remove('is-open');
+        window.requestAnimationFrame(() => {
+          tray.classList.add('is-open');
+        });
+        if (!tray.dataset.lastSaved) {
+          tray.dataset.lastSaved = traySnapshot(tray);
+        }
+        const noteInput = tray.querySelector('[data-note-text]');
+        if (noteInput) {
+          noteInput.focus();
+        }
+      } else {
+        tray.classList.remove('is-open');
+      }
+      return;
+    }
+
+    const deleteBtn = event.target.closest('[data-note-delete]');
+    if (deleteBtn) {
+      event.preventDefault();
+      const tray = deleteBtn.closest('[data-note-tray]');
+      if (!tray) {
+        return;
+      }
+      const ok = window.confirm('Delete this note and reminder?');
+      if (!ok) {
+        return;
+      }
+      void deleteTray(tray);
+      return;
+    }
+
+    if (!event.target.closest('[data-note-tray]')) {
+      closeOtherTrays(null);
+    }
+  });
+
+  body.addEventListener('focusout', (event) => {
+    const tray = event.target.closest('[data-note-tray]');
+    if (!tray || tray.hidden) {
+      return;
+    }
+
+    const related = event.relatedTarget;
+    if (related && tray.contains(related)) {
+      return;
+    }
+
+    window.setTimeout(() => {
+      const active = document.activeElement;
+      if (active && tray.contains(active)) {
+        return;
+      }
+      void saveTray(tray);
+    }, 0);
+  });
 })();
 </script>
 </body>

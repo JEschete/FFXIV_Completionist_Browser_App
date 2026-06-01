@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Breakout · Minigames{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Breakout</h1>
+    <p class="page-sub">
+      Continuous 2D arcade breaker with durability bricks, powerups, and robust anti-tunneling ball collisions.
+    </p>
+  </div>
+  <a class="btn-mini" href="/minigames">Back to Minigames</a>
+</div>
+
+<section
+  class="breakout-shell"
+  data-breakout-app
+  data-history-url="/api/minigames/breakout/history"
+  data-record-url="/api/minigames/breakout/history"
+  data-delete-url="/api/minigames/breakout/history"
+  data-character-id="{{ character.id }}">
+
+  <div class="breakout-layout">
+    <div class="breakout-main-panel">
+      <div class="breakout-stat-grid" aria-label="Breakout run stats">
+        <div class="breakout-stat-card">
+          <span class="breakout-stat-label">Score</span>
+          <strong data-breakout-score>0</strong>
+        </div>
+        <div class="breakout-stat-card">
+          <span class="breakout-stat-label">Lives</span>
+          <strong data-breakout-lives>3</strong>
+        </div>
+        <div class="breakout-stat-card">
+          <span class="breakout-stat-label">Level</span>
+          <strong data-breakout-level>1</strong>
+        </div>
+        <div class="breakout-stat-card">
+          <span class="breakout-stat-label">Combo</span>
+          <strong data-breakout-combo>0</strong>
+        </div>
+        <div class="breakout-stat-card">
+          <span class="breakout-stat-label">Best score</span>
+          <strong data-breakout-best-score>0</strong>
+        </div>
+      </div>
+
+      <div class="breakout-controls" role="group" aria-label="Breakout controls">
+        <button type="button" class="btn-primary" data-breakout-new>New Game</button>
+        <button type="button" class="btn-mini" data-breakout-pause>Pause</button>
+        <button type="button" class="btn-mini" data-breakout-resume>Resume</button>
+        <span class="breakout-status" data-breakout-status>Ready</span>
+      </div>
+
+      <div class="breakout-board-wrap">
+        <canvas
+          class="breakout-canvas"
+          data-breakout-canvas
+          width="900"
+          height="520"
+          role="img"
+          aria-label="Breakout board"></canvas>
+      </div>
+
+      <div class="breakout-direction-pad" role="group" aria-label="Paddle controls">
+        <button type="button" class="btn-mini" data-breakout-move="left">Move Left</button>
+        <button type="button" class="btn-mini" data-breakout-launch>Launch (Up)</button>
+        <button type="button" class="btn-mini" data-breakout-move="right">Move Right</button>
+      </div>
+
+      <p class="breakout-help">
+        Controls: Arrow keys or A/D to move paddle. Press Up to launch. You can reposition before launch.
+        Keep the ball alive, clear all bricks, and catch powerups.
+      </p>
+    </div>
+
+    <div class="breakout-history-panel table-wrap">
+      <table class="data-table breakout-history-table">
+        <thead>
+          <tr>
+            <th>Date &amp; time</th>
+            <th>State</th>
+            <th>Level</th>
+            <th>Score</th>
+            <th>Bricks</th>
+            <th>Powerups</th>
+            <th>Duration</th>
+            <th class="breakout-col-manage">Manage</th>
+          </tr>
+        </thead>
+        <tbody data-breakout-history-body>
+          <tr>
+            <td colspan="8" class="cell-data">Loading history…</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<noscript>
+  <div class="error-banner">Breakout requires JavaScript.</div>
+</noscript>
+
+<script src="/minigames-static/Breakout/breakout.js?v=1"></script>
+{% endblock %}

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Watchlist · FFXIV Tracker{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Watchlist</h1>
+    <p class="page-sub">
+      Pinned rows tracked by stable ids. This list is independent from normal sheet navigation.
+    </p>
+  </div>
+</div>
+
+{% if error %}<div class="error-banner">{{ error }}</div>{% endif %}
+{% if saved %}<div class="ok-banner">{{ saved }}</div>{% endif %}
+{% set next_watchlist_url = '/watchlist?show_missing=1' if watchlist_show_missing else '/watchlist' %}
+
+<section class="probe-card report-card">
+  <div class="report-meta-grid">
+    <div><span>Total pinned</span><strong>{{ watchlist_total or 0 }}</strong></div>
+    <div><span>Resolved</span><strong>{{ watchlist_resolved or 0 }}</strong></div>
+    <div><span>Missing</span><strong>{{ watchlist_missing or 0 }}</strong></div>
+  </div>
+
+  <form method="get" action="/watchlist" class="watchlist-filter-form">
+    <label class="probe-check">
+      <input type="checkbox" name="show_missing" value="1" {{ 'checked' if watchlist_show_missing else '' }} onchange="this.form.submit()" />
+      Show missing/unresolved pinned rows
+    </label>
+  </form>
+</section>
+
+<section class="probe-card report-card">
+  {% if watchlist_rows %}
+  <div class="table-wrap report-table-wrap">
+    <table class="data-table watchlist-table">
+      <thead>
+        <tr>
+          <th>State</th>
+          <th>Notes</th>
+          <th>Sheet</th>
+          <th>Row</th>
+          <th>Label</th>
+          <th>Value</th>
+          <th>Updated</th>
+          <th>Open</th>
+          <th>Unpin</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in watchlist_rows %}
+        {% set sheet_title = watchlist_sheet_titles.get(row.sheet_name, row.sheet_name) %}
+        {% include "partials/watchlist_row.html" %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="page-sub">No pinned rows yet. Use the Pin button on any sheet row to add it here.</p>
+  {% endif %}
+</section>
+{% endblock %}

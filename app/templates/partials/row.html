@@ -1,14 +1,26 @@
 {% set is_value = row.row_type == 'value' and sheet.value_key %}
 {% set lvl_raw = (row.progress_percent if row.progress_percent is not none
                   else (row.data.get(sheet.value_key) or 0)) %}
-{% set lvl = (lvl_raw|float)|round(0, 'floor')|int %}
+{% set is_desynthesis = (
+  is_value
+  and sheet.sheet_name == 'Classes-Jobs'
+  and 'desynthesis' in ((row.section_label or '')|lower)
+) %}
+{% if is_desynthesis %}
+  {% set lvl = (lvl_raw|float)|round(2) %}
+  {% set lvl_display = '%.2f'|format(lvl) %}
+{% else %}
+  {% set lvl = (lvl_raw|float)|round(0, 'floor')|int %}
+  {% set lvl_display = lvl %}
+{% endif %}
 {% set row_cap = (row.get('value_cap') if row is mapping else none) %}
 {% set lvl_cap = ((row_cap if row_cap is not none else 100)|float) %}
 {% if lvl_cap <= 0 %}{% set lvl_cap = 100 %}{% endif %}
 {% set lvl_pct = ((lvl * 100.0) / lvl_cap) %}
 {% if lvl_pct < 0 %}{% set lvl_pct = 0 %}{% endif %}
 {% if lvl_pct > 100 %}{% set lvl_pct = 100 %}{% endif %}
-<tr id="row-{{ row.row_index }}" class="data-row state-{{ row.eff }} {{ 'is-value' if is_value }}"
+{% set note_dom_id = 'row-note-' ~ row.row_index %}
+<tr id="row-{{ row.row_index }}" class="data-row state-{{ row.eff }} {{ 'is-value' if is_value }} {{ 'has-note-row' if row.has_note else '' }}"
     data-row-index="{{ row.row_index }}"
   data-row-type="{{ row.row_type }}"
     {% if oob|default(false) %}hx-swap-oob="outerHTML"{% endif %}>
@@ -35,7 +47,7 @@
     {% if is_value and col.key == sheet.value_key %}
       <td class="cell-level state-{{ row.eff }}" style="--level: {{ lvl_pct }}; --hue: {{ (lvl_pct * 1.2)|int }}">
         <input type="number" class="level-input" name="percent"
-               min="0" max="{{ lvl_cap|round(0, 'floor')|int }}" step="1" value="{{ lvl }}"
+               min="0" max="{{ lvl_cap|round(0, 'floor')|int }}" step="{{ '0.01' if is_desynthesis else '1' }}" value="{{ lvl_display }}"
                hx-post="/api/set-value" hx-target="#row-{{ row.row_index }}"
                hx-swap="outerHTML" hx-trigger="change"
                hx-vals='{"sheet_name": {{ sheet.sheet_name|tojson }}, "row_index": {{ row.row_index }} }'
@@ -52,11 +64,62 @@
       <td class="cell-data">{{ val or '' }}</td>
     {% endif %}
   {% endfor %}
+  <td class="cell-note">
+    <div class="note-anchor">
+      <button class="note-toggle {{ 'has-note' if row.has_note else '' }}"
+              type="button"
+              title="{{ 'Edit note' if row.has_note else 'Add note' }}"
+              aria-expanded="false"
+              aria-controls="{{ note_dom_id }}"
+              data-note-toggle>
+        📝
+      </button>
+      <span class="note-indicator {{ 'is-active' if row.has_note else '' }}"
+            data-note-indicator
+            title="Has note"
+            aria-hidden="{{ 'false' if row.has_note else 'true' }}"></span>
+    </div>
+    <div id="{{ note_dom_id }}" class="row-note-tray" hidden
+         data-note-tray
+         data-sheet-name="{{ sheet.sheet_name }}"
+         data-row-index="{{ row.row_index }}">
+      <label class="row-note-label">Note</label>
+      <textarea class="row-note-text"
+                data-note-text
+                rows="4"
+                placeholder="Personal note, check-in reminder context, rationale...">{{ row.note_text or '' }}</textarea>
+      <label class="row-note-label">Reminder date</label>
+      <input class="row-note-date"
+             data-note-reminder
+             type="date"
+             value="{{ row.note_reminder_date or '' }}" />
+      <div class="row-note-actions">
+        <button type="button"
+                class="btn-mini row-note-delete"
+                data-note-delete
+                {{ 'disabled' if not row.has_note else '' }}>
+          Delete note
+        </button>
+        <span class="row-note-status" data-note-status aria-live="polite"></span>
+      </div>
+    </div>
+  </td>
   <td class="cell-chain">
     {% if chain and (chain.prereqs or chain.unlocks) %}
       <button class="chain-btn" type="button" title="Show prerequisite chain"
               hx-get="/api/chain/{{ sheet.sheet_name|urlencode }}/{{ row.row_index }}"
               hx-target="#chain-drawer" hx-swap="innerHTML">⛓</button>
     {% endif %}
+  </td>
+  <td class="cell-watch">
+    <button class="pin-toggle {{ 'is-on' if row.watch_pinned else '' }}"
+            type="button"
+            title="{{ 'Remove from watchlist' if row.watch_pinned else 'Pin to watchlist' }}"
+            hx-post="/api/watchlist/toggle"
+            hx-target="#row-{{ row.row_index }}"
+            hx-swap="outerHTML"
+            hx-vals='{"sheet_name": {{ sheet.sheet_name|tojson }}, "row_index": {{ row.row_index }} }'>
+      {% if row.watch_pinned %}Unpin{% else %}Pin{% endif %}
+    </button>
   </td>
 </tr>

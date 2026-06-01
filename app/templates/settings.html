@@ -43,9 +43,29 @@
       {% endfor %}
     </select>
 
+    <label for="sidebar-completion-behavior">100% Completion Behavior (Sidebar Categories)</label>
+    <select id="sidebar-completion-behavior" name="sidebar_completion_behavior" required>
+      {% for opt in completion_behavior_options %}
+      <option value="{{ opt.value }}" {{ 'selected' if opt.value == selected_sidebar_completion_behavior else '' }}>
+        {{ opt.label }}
+      </option>
+      {% endfor %}
+    </select>
+
+    <label for="page-completion-behavior">100% Completion Behavior (Page Category Progress Bars)</label>
+    <select id="page-completion-behavior" name="page_completion_behavior" required>
+      {% for opt in completion_behavior_options %}
+      <option value="{{ opt.value }}" {{ 'selected' if opt.value == selected_page_completion_behavior else '' }}>
+        {{ opt.label }}
+      </option>
+      {% endfor %}
+    </select>
+
     <p class="probe-hint">
       Active now: <strong>{{ theme_name }}</strong> · effective scheme <strong>{{ effective_scheme }}</strong> ·
-      section sort <strong>{{ section_sort_mode_label }}</strong>
+      section sort <strong>{{ section_sort_mode_label }}</strong> ·
+      sidebar completion <strong>{{ selected_sidebar_completion_behavior|title }}</strong> ·
+      page category completion <strong>{{ selected_page_completion_behavior|title }}</strong>
     </p>
 
     <button type="submit" class="btn-primary">Save settings</button>

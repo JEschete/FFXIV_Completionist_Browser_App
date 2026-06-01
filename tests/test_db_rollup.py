@@ -167,3 +167,24 @@ def test_character_progress_overrides_class_overlay(conn, character_id):
     assert db.effective_state(
         connection, character_id, run_id, "Side Stuff", 5, "GLADIATOR"
     ) == "excluded"
+
+
+def test_class_excluded_overlay_takes_priority_over_explicit_state(conn, character_id):
+    connection, run_id = conn
+    connection.execute(
+        "INSERT INTO class_overrides (run_id, starting_class, sheet_name, row_index, state) "
+        "VALUES (?, 'GLADIATOR', 'Side Stuff', 5, 'excluded')",
+        (run_id,),
+    )
+    connection.commit()
+
+    db.set_row_state(
+        connection, character_id, run_id, "Side Stuff", 5, "done",
+        starting_class="GLADIATOR",
+    )
+
+    assert db.effective_state(
+        connection, character_id, run_id, "Side Stuff", 5, "GLADIATOR"
+    ) == "excluded"
+    roll = db.sheet_rollups(connection, run_id, character_id, "GLADIATOR")["Side Stuff"]
+    assert roll == {"done": 1, "excluded": 2, "total": 3, "countable": 1}

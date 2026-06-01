@@ -14,10 +14,116 @@
   </div>
 </div>
 
+{% if whats_new_toast %}
+<section class="whats-new-toast" role="status" aria-live="polite">
+  <div class="whats-new-toast-title">What's New update available</div>
+  <p class="whats-new-toast-copy">
+    {{ whats_new_toast.total_new_items }} new trackable item{{ '' if whats_new_toast.total_new_items == 1 else 's' }}
+    from the latest ingest{% if whats_new_toast.latest_workbook %} ({{ whats_new_toast.latest_workbook }}){% endif %}.
+  </p>
+  <a class="whats-new-toast-link" href="{{ whats_new_toast.path }}">Review What's New</a>
+</section>
+{% endif %}
+
 <section class="cat-grid">
   {% for card in cards %}
-    {{ category_card(card) }}
+    {{ category_card(card, page_completion_behavior) }}
   {% endfor %}
+</section>
+
+<section class="dash-insights">
+  <article class="dash-panel">
+    <div class="dash-panel-head">
+      <h2 class="dash-panel-title">Recent activity</h2>
+      <span class="dash-panel-meta">
+        {{ activity_total }} done actions
+      </span>
+    </div>
+    <div class="activity-scroll">
+      <div class="activity-groups">
+        {% for grp in recent_activity_groups %}
+        <section class="activity-group">
+          <h3 class="activity-group-title">{{ grp['title'] }}</h3>
+          {% if grp['items'] %}
+          <ul class="activity-list">
+            {% for item in grp['items'] %}
+            <li class="activity-item">
+              <a class="activity-main" href="/browse/{{ item.sheet_name|urlencode }}?state=all#row-{{ item.row_index }}">
+                <span class="activity-row-label">{{ item.label }}</span>
+                <span class="activity-row-meta">
+                  <span>{{ item.sheet_title }}</span>
+                  {% if item.section_label %}<span>· {{ item.section_label }}</span>{% endif %}
+                </span>
+              </a>
+              <div class="activity-right">
+                <span class="badge badge-{{ item.state }}">{{ item.state }}</span>
+                {% if item.row_type == 'value' and item.progress_percent is not none %}
+                <span class="activity-value">{{ '%.2f'|format(item.progress_percent|float) }}</span>
+                {% endif %}
+                <time class="activity-time" datetime="{{ item.updated_at }}">{{ item.updated_at_display }}</time>
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
+          {% else %}
+          <p class="activity-empty">No updates recorded in this window.</p>
+          {% endif %}
+        </section>
+        {% endfor %}
+      </div>
+    </div>
+  </article>
+
+  <article class="dash-panel">
+    <div class="dash-panel-head">
+      <h2 class="dash-panel-title">Contribution heatmap</h2>
+      <span class="dash-panel-meta">Last {{ heatmap.display_days }} days</span>
+    </div>
+
+    <div class="heatmap-stats">
+      <div class="heatmap-stat">
+        <span>Current streak</span>
+        <strong>{{ heatmap.current_streak }} day{{ '' if heatmap.current_streak == 1 else 's' }}</strong>
+      </div>
+      <div class="heatmap-stat">
+        <span>Longest streak</span>
+        <strong>{{ heatmap.longest_streak }} day{{ '' if heatmap.longest_streak == 1 else 's' }}</strong>
+      </div>
+      <div class="heatmap-stat">
+        <span>Active days</span>
+        <strong>{{ heatmap.active_days }}</strong>
+      </div>
+    </div>
+
+    <div class="heatmap-wrap" style="--heatmap-weeks: {{ heatmap.weeks|length }};">
+      <div class="heatmap-months">
+        {% for m in heatmap.month_labels %}
+        <span style="grid-column: {{ m.week_index + 1 }};">{{ m.label }}</span>
+        {% endfor %}
+      </div>
+      <div class="heatmap-body">
+        <div class="heatmap-weekdays" aria-hidden="true">
+          <span>Mon</span>
+          <span></span>
+          <span>Wed</span>
+          <span></span>
+          <span>Fri</span>
+          <span></span>
+          <span></span>
+        </div>
+        <div class="heatmap-grid" role="img" aria-label="Calendar heatmap of recent progress updates">
+          {% for week in heatmap.weeks %}
+          <div class="heatmap-week">
+            {% for day in week.days %}
+            <span class="heatmap-day level-{{ day.level }} {{ 'is-outside' if not day.in_range else '' }} {{ 'is-today' if day.is_today else '' }}"
+                  title="{{ day.tooltip }}"></span>
+            {% endfor %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </article>
 </section>
 
 {% if chains %}
@@ -25,8 +131,9 @@
   <h2 class="block-title">Chains in progress</h2>
   <div class="chain-list">
     {% for ch in chains %}
+    {% set is_complete = (ch.roll.countable|default(0)|int > 0) and (ch.roll.done|default(0)|int >= ch.roll.countable|default(0)|int) %}
     <a class="chain-row" href="/browse/{{ ch.sheet_name|urlencode }}">
-      <span class="chain-name">{{ ch.title }}</span>
+      <span class="chain-name">{{ ch.title }}{% if page_completion_behavior == 'star' and is_complete %}<span class="completion-mark" aria-label="complete" title="100% complete">★</span>{% endif %}</span>
       <span class="chain-links">{{ ch.links }} steps</span>
       {{ progress_bar(ch.roll, ch.pct, "bar-thin") }}
     </a>

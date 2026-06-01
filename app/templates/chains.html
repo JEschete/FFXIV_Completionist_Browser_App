@@ -16,8 +16,9 @@
 
 <div class="chain-list">
   {% for ch in chains %}
+  {% set is_complete = (ch.roll.countable|default(0)|int > 0) and (ch.roll.done|default(0)|int >= ch.roll.countable|default(0)|int) %}
   <a class="chain-row" href="/browse/{{ ch.sheet_name|urlencode }}">
-    <span class="chain-name">{{ ch.title }}</span>
+    <span class="chain-name">{{ ch.title }}{% if page_completion_behavior == 'star' and is_complete %}<span class="completion-mark" aria-label="complete" title="100% complete">★</span>{% endif %}</span>
     <span class="chain-links">{{ ch.links }} steps</span>
     {{ progress_bar(ch.roll, ch.pct, "bar-thin") }}
   </a>
