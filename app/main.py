@@ -1175,8 +1175,8 @@ def set_lodestone_cookie(response, lodestone_url: str) -> None:
 
 
 def cookie_lodestone_browser(request: Request) -> str:
-    value = (request.cookies.get(LODESTONE_BROWSER_COOKIE) or "edge").strip().lower()
-    return value if value in {"edge", "chrome", "firefox"} else "edge"
+    value = (request.cookies.get(LODESTONE_BROWSER_COOKIE) or "firefox").strip().lower()
+    return value if value in {"firefox"} else "firefox"
 
 
 def set_lodestone_browser_cookie(response, browser: str) -> None:
@@ -1212,7 +1212,7 @@ def normalize_lodestone_url(raw_url: str) -> str | None:
 
 def normalize_cookie_source(raw: str) -> str | None:
     value = raw.strip().lower()
-    return value if value in {"edge", "chrome", "firefox"} else None
+    return value if value in {"firefox"} else None
 
 
 def normalize_import_source(raw: str) -> str | None:
@@ -4572,7 +4572,7 @@ def lodestone_probe_save(lodestone_url: str = Form("")):
 @app.post("/lodestone-probe/run")
 def lodestone_probe_run(
     lodestone_url: str = Form(""),
-    cookie_source: str = Form("edge"),
+    cookie_source: str = Form("firefox"),
     include_standard: str = Form("0"),
     extra_paths: str = Form(""),
 ):
@@ -4586,7 +4586,7 @@ def lodestone_probe_run(
     normalized_source = normalize_cookie_source(cookie_source)
     if normalized_source is None:
         return RedirectResponse(
-            f"/lodestone-probe?error={quote('Choose Edge, Chrome, or Firefox as the cookie source.')}",
+            f"/lodestone-probe?error={quote('Only Firefox is currently supported as the cookie source.')}",
             status_code=303,
         )
 

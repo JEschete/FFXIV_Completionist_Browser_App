@@ -26,8 +26,8 @@ rebuilds and row movement.
 
 - Python 3.10+
 - A workbook (`.xlsx`) in the `Spreadsheet/` folder
-- For Lodestone import: a signed-in Lodestone session in Edge, Chrome, or
-  Firefox on the same machine (cookies are read locally)
+- For Lodestone import: a signed-in Lodestone session in Firefox on the same
+  machine (cookies are read locally)
 
 Dependencies are listed in `requirements.txt`:
 
@@ -67,6 +67,27 @@ uvicorn app.main:app --reload
 ```
 
 Open http://127.0.0.1:8000
+
+## Code Quality
+
+Install dev tools:
+
+```powershell
+pip install -r requirements.txt -r requirements-dev.txt
+```
+
+Run Ruff for general code quality checks:
+
+```powershell
+ruff check .
+ruff format --check .
+```
+
+Run Pylint separately for duplicate-code detection only (`R0801`):
+
+```powershell
+pylint app scripts CharacterScraping
+```
 
 ## Core Workflow
 
@@ -176,6 +197,8 @@ results into the workbook as completed rows. Two pages drive the workflow:
   an import. Matched rows are flipped to `done` (or `100%` for value-style
   rows); unmatched items are written to an HTML / JSON report.
 
+Only Firefox is currently supported for Lodestone cookie import.
+
 For a plain-language mismatch summary, see `Missing Items Report.txt` at the
 repo root. Items listed there were not mapped to workbook rows during import
 and are not currently tracked or confirmed as matched in this database.
@@ -183,11 +206,11 @@ and are not currently tracked or confirmed as matched in this database.
 ### Workflow
 
 1. Open `/lodestone-probe` and save your Lodestone character URL.
-2. Click **Open in new tab** and sign in to Lodestone in your chosen browser
-   (Edge / Chrome / Firefox). The cookie source must match.
+2. Click **Open in new tab** and sign in to Lodestone in **Firefox**. The
+  cookie source must match.
 3. Ensure Lodestone is set to **English** before scraping/importing. Workbook
   labels and matching aliases are English-based.
-4. Back on the probe page, pick the cookie source browser, leave **Include
+4. Back on the probe page, confirm **Firefox** as the cookie source, leave **Include
    standard authenticated pages** checked, and click **Run authenticated
    scrape**. A status panel polls `/lodestone-probe/status` until the run
    reports `completed` and a payload path.
@@ -497,8 +520,8 @@ python scripts/prep_xlsx_to_sqlite.py
 
 ### Lodestone scrape fails to authenticate
 
-- Confirm you are signed into Lodestone in the same browser you selected as
-  the cookie source (Edge / Chrome / Firefox).
+- Confirm you are signed into Lodestone in Firefox (the current cookie source
+  for importer authentication).
 - Cookies are read from your installed browser profile via `browser-cookie3`;
   closing the browser is not required, but a recent sign-in is.
 - The probe rejects URLs that do not live under `finalfantasyxiv.com/lodestone/`.

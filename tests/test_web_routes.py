@@ -209,6 +209,40 @@ def test_dashboard_activity_feed_lists_touched_rows(client):
     assert "Thing Three" in resp.text
 
 
+def test_dashboard_activity_feed_uses_descriptive_name_for_numeric_label(client):
+    connection = db.get_connection()
+    try:
+        run_id = db.latest_run_id(connection)
+        assert run_id is not None
+        connection.execute(
+            """
+            UPDATE nodes
+            SET label = ?, row_json = ?
+            WHERE run_id = ? AND sheet_name = ? AND row_index = ?
+            """,
+            (
+                "50",
+                json.dumps({"fate": "Mint Condition"}),
+                run_id,
+                "Side Stuff",
+                5,
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    toggle = client.post(
+        "/api/toggle",
+        data={"sheet_name": "Side Stuff", "row_index": "5"},
+    )
+    assert toggle.status_code == 200
+
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "Mint Condition" in resp.text
+
+
 def test_dashboard_activity_ignores_non_done_actions(client):
     first = client.post(
         "/api/toggle",
@@ -992,6 +1026,34 @@ def test_search(client):
     resp = client.get("/api/search", params={"q": "Quest"})
     assert resp.status_code == 200
     assert "Quest Alpha" in resp.text
+
+
+def test_search_uses_descriptive_name_when_row_label_is_numeric(client):
+    connection = db.get_connection()
+    try:
+        run_id = db.latest_run_id(connection)
+        assert run_id is not None
+        connection.execute(
+            """
+            UPDATE nodes
+            SET label = ?, row_json = ?
+            WHERE run_id = ? AND sheet_name = ? AND row_index = ?
+            """,
+            (
+                "50",
+                json.dumps({"fate": "Mint Condition"}),
+                run_id,
+                "Side Stuff",
+                5,
+            ),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    resp = client.get("/api/search", params={"q": "Mint Condition"})
+    assert resp.status_code == 200
+    assert "Mint Condition" in resp.text
 
 
 def test_search_includes_global_sheet_and_section_hits(client):

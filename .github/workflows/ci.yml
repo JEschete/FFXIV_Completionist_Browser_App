@@ -36,6 +36,23 @@ jobs:
         continue-on-error: true
         run: ruff format --check .
 
+  duplication:
+    name: Duplication (pylint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements-dev.txt
+            pyproject.toml
+      - name: Install pylint
+        run: python -m pip install --upgrade pip pylint
+      - name: Detect duplicate code
+        run: pylint app scripts CharacterScraping
+
   test:
     name: Test (${{ matrix.os }}, py${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}

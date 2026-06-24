@@ -45,6 +45,71 @@ def _norm_text(value: str | None) -> str:
     return re.sub(r"\s+", " ", text)
 
 
+_NUMERIC_LABEL_RE = re.compile(r"^\d+(?:\.\d+)?$")
+_ROW_JSON_LABEL_KEYS = (
+    "fate",
+    "quest",
+    "achievement",
+    "dungeon",
+    "trial",
+    "raid",
+    "item",
+    "spell",
+    "enemy",
+    "notorious_monster",
+    "content_unlocked",
+    "name",
+    "title",
+)
+
+
+def _row_json_obj(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    if not isinstance(raw, str):
+        return {}
+    text = raw.strip()
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _fallback_label_from_row_json(raw: Any) -> str | None:
+    payload = _row_json_obj(raw)
+    if not payload:
+        return None
+    for key in _ROW_JSON_LABEL_KEYS:
+        value = payload.get(key)
+        if not isinstance(value, str):
+            continue
+        text = value.strip()
+        if not text:
+            continue
+        if _NUMERIC_LABEL_RE.fullmatch(text):
+            continue
+        return text
+    return None
+
+
+def display_row_label(label: Any, row_json: Any) -> str:
+    """Return a user-facing row label.
+
+    Most rows use column-A text directly. For numeric labels (for example many
+    FATE rows where column A stores level), prefer a descriptive row_json name
+    field when available.
+    """
+    base = str(label or "").strip()
+    if not base:
+        return _fallback_label_from_row_json(row_json) or ""
+    if not _NUMERIC_LABEL_RE.fullmatch(base):
+        return base
+    return _fallback_label_from_row_json(row_json) or base
+
+
 def _value_cap_key(sheet_name: str, section_label: str | None, label: str | None) -> str:
     return "|".join((
         _norm_text(sheet_name),
@@ -908,7 +973,7 @@ def dashboard_recent_activity_rows(
     rows = conn.execute(
         f"""
         SELECT p.sheet_name, p.row_index, p.updated_at, p.progress_percent,
-               n.label, n.section_label, n.row_type,
+             n.label, n.section_label, n.row_type, n.row_json,
                {eff} AS eff
         FROM character_progress p
         JOIN nodes n
@@ -924,7 +989,12 @@ def dashboard_recent_activity_rows(
         """,
         (*jparams, character_id, run_id, max(1, int(limit))),
     ).fetchall()
-    return [dict(r) for r in rows]
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["label"] = display_row_label(item.get("label"), item.get("row_json"))
+        out.append(item)
+    return out
 
 
 def _day_count_map(rows: list[sqlite3.Row]) -> dict[str, int]:
@@ -3474,7 +3544,7 @@ def search_nodes(
     eff, join, jparams = _state_clauses(starting_class)
     rows = conn.execute(
         f"""
-                SELECT x.sheet_name, x.row_index, x.label, x.eff, x.sheet_title, x.result_kind
+            SELECT x.sheet_name, x.row_index, x.label, x.eff, x.sheet_title, x.result_kind, x.row_json
                 FROM (
                         -- Direct sheet/page title hits (menu and content pages).
                         SELECT
@@ -3484,6 +3554,7 @@ def search_nodes(
                                 NULL AS eff,
                                 s.title AS sheet_title,
                                 'sheet' AS result_kind,
+                    NULL AS row_json,
                                 0 AS rank_kind
                         FROM sheets s
                         WHERE s.run_id = ?
@@ -3499,6 +3570,7 @@ def search_nodes(
                                 NULL AS eff,
                                 s.title AS sheet_title,
                                 'section' AS result_kind,
+                                n.row_json AS row_json,
                                 1 AS rank_kind
                         FROM nodes n
                         JOIN sheets s ON s.run_id = n.run_id AND s.sheet_name = n.sheet_name
@@ -3516,6 +3588,7 @@ def search_nodes(
                                 {eff} AS eff,
                                 s.title AS sheet_title,
                                 'row' AS result_kind,
+                                n.row_json AS row_json,
                                 2 AS rank_kind
                         FROM nodes n
                         JOIN sheets s ON s.run_id = n.run_id AND s.sheet_name = n.sheet_name
@@ -3525,7 +3598,7 @@ def search_nodes(
                         {join}
                         WHERE n.run_id = ?
                             AND n.row_type != 'section'
-                            AND n.label LIKE ?
+                            AND (n.label LIKE ? OR n.row_json LIKE ?)
                 ) x
                 ORDER BY x.rank_kind, x.label, x.sheet_title
         LIMIT ?
@@ -3533,11 +3606,18 @@ def search_nodes(
                 (
                         run_id, f"%{q}%", f"%{q}%",
                         run_id, f"%{q}%",
-                        character_id, *jparams, run_id, f"%{q}%",
+                        character_id, *jparams, run_id, f"%{q}%", f"%{q}%",
                         limit,
                 ),
     ).fetchall()
-    return [dict(r) for r in rows]
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        if str(item.get("result_kind") or "") == "row":
+            item["label"] = display_row_label(item.get("label"), item.get("row_json"))
+        item.pop("row_json", None)
+        out.append(item)
+    return out
 
 
 # --- export -----------------------------------------------------------------

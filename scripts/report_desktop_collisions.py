@@ -56,75 +56,12 @@ def _collect_desktop_candidates(
     source_index: dict[str, dict[str, tuple[str, ...]]],
 ) -> list[dict[str, Any]]:
     """Build candidates from completion payload using importer rules."""
-    aggregated: dict[tuple[str, str], dict[str, Any]] = {}
-
-    for path_parts, raw_value in li._walk_leaves(payload.get("overall", {}), ("overall",)):
-        if not path_parts:
-            continue
-
-        leaf_id = li._normalize_numeric_id(path_parts[-1])
-        if leaf_id is None:
-            continue
-
-        bucket = li._completion_bucket_from_path(path_parts)
-        if bucket is None:
-            continue
-
-        state_info = li._decode_completion_value(raw_value)
-        if state_info is None:
-            continue
-
-        state, pct = state_info
-        labels, source_bucket = li._lookup_source_labels(
-            source_index,
-            bucket=bucket,
-            source_id=leaf_id,
-        )
-
-        if not labels and li._bucket_tail(bucket) not in li._POSITIONAL_VALUE_BUCKETS:
-            continue
-
-        key = (bucket, leaf_id)
-        existing = aggregated.get(key)
-        if existing is None:
-            aggregated[key] = {
-                "bucket": bucket,
-                "source_bucket": source_bucket,
-                "source_id": leaf_id,
-                "source_state": state,
-                "value": pct,
-                "labels": list(labels) if labels else [],
-                "source_path_parts": [str(part) for part in path_parts],
-            }
-            continue
-
-        merged_state, merged_value = li._merge_source_state(
-            str(existing.get("source_state") or "excluded"),
-            existing.get("value") if isinstance(existing.get("value"), (int, float)) else None,
-            state,
-            pct,
-        )
-        existing["source_state"] = merged_state
-        existing["value"] = merged_value
-
-        label_pool = {
-            str(label).strip()
-            for label in existing.get("labels", [])
-            if isinstance(label, str)
-        }
-        label_pool.update(
-            str(label).strip()
-            for label in (labels or ())
-            if isinstance(label, str)
-        )
-        existing["labels"] = sorted(label for label in label_pool if label)
-
-        if not existing.get("source_bucket") and source_bucket:
-            existing["source_bucket"] = source_bucket
-        if not existing.get("source_path_parts"):
-            existing["source_path_parts"] = [str(part) for part in path_parts]
-
-    return list(aggregated.values())
+    candidates, _missing, _supported = li._collect_desktop_candidates(
+        payload,
+        source_index,
+        include_missing_source_ids=False,
+    )
+    return candidates
 
 
 def _build_match_context(
