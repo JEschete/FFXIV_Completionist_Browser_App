@@ -48,8 +48,9 @@
   <form method="post" action="/lodestone-probe/run" class="probe-run-form">
     <h2>Authenticated scrape</h2>
     <p class="page-sub">
-      Uses cookies from your selected browser. Log into Lodestone there first, then run.
+      Uses cookies from Firefox. Log into Lodestone there first, then run.
     </p>
+    <p class="probe-hint">Only Firefox is currently supported for cookie import.</p>
 
     <label for="run-lodestone-url">Lodestone page URL</label>
     <input
@@ -63,8 +64,6 @@
 
     <label for="cookie-source">Cookie source browser</label>
     <select id="cookie-source" name="cookie_source">
-      <option value="edge" {{ 'selected' if cookie_source == 'edge' }}>Edge</option>
-      <option value="chrome" {{ 'selected' if cookie_source == 'chrome' }}>Chrome</option>
       <option value="firefox" {{ 'selected' if cookie_source == 'firefox' }}>Firefox</option>
     </select>
 
@@ -95,7 +94,7 @@
       <li>Paste and save your Lodestone character URL.</li>
       <li>Click <strong>Open in new tab</strong>.</li>
       <li>If your Lodestone is normally in another language, switch it to <strong>English</strong> before scraping/importing. Workbook matching keys are English.</li>
-      <li>Sign in to Lodestone in the browser you chose as the cookie source.</li>
+      <li>Sign in to Lodestone in Firefox before running the authenticated scrape.</li>
       <li>Return here and click <strong>Run authenticated scrape</strong>.</li>
     </ol>
   </div>

@@ -57,6 +57,15 @@ def test_quest_label_aliases():
     renamed2 = li._quest_label_aliases("Crossing Paths")
     assert "Crossroads" in renamed2
 
+    wrapped = li._quest_label_aliases("Endwalker (Hither and Yarns)")
+    assert "Hither and Yams" in wrapped
+
+    wrapped2 = li._quest_label_aliases("Shadowbringers (Crossing Paths)")
+    assert "Crossroads" in wrapped2
+
+    wrapped3 = li._quest_label_aliases("Dravanian Forelands Sidequests (First Impressions Last)")
+    assert "First Impressions" in wrapped3
+
 
 def test_add_candidate_filters():
     pool: dict[str, set] = {}
@@ -91,6 +100,7 @@ def test_sheet_buckets():
     assert "quest" in li._sheet_buckets("Story Quests")
     assert li._sheet_buckets("Fishing Leves") == {"quest"}
     assert li._sheet_buckets("Carpentry Leves") == {"quest"}
+    assert li._sheet_buckets("Intersocietal") == {"quest"}
     assert "minion" in li._sheet_buckets("Minion Guide")
     assert li._sheet_buckets("Triple Triad Cards") == {"tripletriad"}
     assert li._sheet_buckets("Quests Achievements") == {"achievement"}
@@ -126,6 +136,11 @@ def test_alias_generators():
 def test_candidate_aliases_dispatch():
     assert any("Card" in a for a in li._candidate_aliases("tripletriad", "Dodo"))
     assert li._candidate_aliases("minion", "Wind-up Cursor") == ["Wind-up Cursor"]
+    assert "Aetherial Mimicry" in li._candidate_aliases("bluemagic", "Aetheric Mimicry")
+    ap_micro = li._candidate_aliases("character/adventure-plate/minion", "Micro Gigatender")
+    assert "Micro Gigantender" in ap_micro
+    ap_gimme = li._candidate_aliases("character/adventure-plate/minion", "Gimme Cat")
+    assert "Gimme Kitten" in ap_gimme
     lucis = li._candidate_aliases("character/relic-gear/lucis-tools", "Halcyon")
     assert "Halcyon Rod" in lucis
     porters = li._candidate_aliases("travel/porters/the-black-shroud", "The Hawthorne Hut")

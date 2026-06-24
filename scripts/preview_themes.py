@@ -34,23 +34,16 @@ POKEMON_NAME_RE = re.compile(
     r"pokemon[-_\s]*(red|blue|yellow|gold|silver|crystal|ruby|sapphire|emerald|diamond|pearl|platinum)",
     re.IGNORECASE,
 )
+POKEMON_ORDER_GROUPS: tuple[tuple[str, ...], ...] = (
+    ("red", "blue", "yellow"),
+    ("gold", "silver", "crystal"),
+    ("ruby", "sapphire", "emerald"),
+    ("diamond", "pearl", "platinum"),
+)
 POKEMON_THEME_ORDER: dict[str, tuple[int, int]] = {
-    # Gen 1: RBY
-    "red": (1, 1),
-    "blue": (1, 2),
-    "yellow": (1, 3),
-    # Gen 2: GSC
-    "gold": (2, 1),
-    "silver": (2, 2),
-    "crystal": (2, 3),
-    # Gen 3: RSE
-    "ruby": (3, 1),
-    "sapphire": (3, 2),
-    "emerald": (3, 3),
-    # Gen 4: DPPL
-    "diamond": (4, 1),
-    "pearl": (4, 2),
-    "platinum": (4, 3),
+    token: (generation, position)
+    for generation, group in enumerate(POKEMON_ORDER_GROUPS, start=1)
+    for position, token in enumerate(group, start=1)
 }
 
 

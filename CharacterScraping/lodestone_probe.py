@@ -14,8 +14,7 @@ from bs4 import BeautifulSoup, Tag
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/136.0.0.0 Safari/537.36"
+    "Gecko/20100101 Firefox/139.0"
 )
 
 FIELD_LABELS = {
@@ -1078,13 +1077,14 @@ def session_from_installed_browser_cookies(
     import browser_cookie3
 
     loaders: dict[str, Any] = {
-        "edge": browser_cookie3.edge,
-        "chrome": browser_cookie3.chrome,
         "firefox": browser_cookie3.firefox,
     }
     loader = loaders.get(browser_name)
     if loader is None:
-        raise ValueError(f"Unsupported browser cookie source: {browser_name}")
+        raise ValueError(
+            f"Unsupported browser cookie source: {browser_name}. "
+            "Only Firefox is currently supported."
+        )
 
     cookie_jar = loader(domain_name="finalfantasyxiv.com")
     session = build_session()
@@ -1201,12 +1201,8 @@ def run_authenticated_scrape() -> None:
     if not ensure_browser_cookie3_available():
         return
 
-    source_key = prompt_choice(
-        "Cookie source browser [e/c/f]: ",
-        {"e": "edge", "c": "chrome", "f": "firefox"},
-    )
-    source_map = {"e": "edge", "c": "chrome", "f": "firefox"}
-    source_browser = source_map[source_key]
+    print("Only Firefox is currently supported for cookie import.")
+    source_browser = "firefox"
 
     try:
         session = session_from_installed_browser_cookies(source_browser)

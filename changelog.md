@@ -177,7 +177,7 @@ Initial public release.
 - CSV export of the active character's effective completion state
 
 ### Lodestone Import
-- Authenticated Lodestone scraper reads quests, achievements, minions, mounts, Triple Triad cards, Blue Magic, emotes, and orchestrion rolls from a signed-in browser session (Edge, Chrome, or Firefox)
+- Authenticated Lodestone scraper reads quests, achievements, minions, mounts, Triple Triad cards, Blue Magic, emotes, and orchestrion rolls from a signed-in Firefox session (only Firefox is currently supported)
 - Tiered identity matching (name → alias → position fallback) for resilient row matching across workbook rebuilds
 - Unmatched item reports generated per import run for manual review
 

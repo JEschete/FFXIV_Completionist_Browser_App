@@ -62,3 +62,32 @@ ignore = [
 # conftest bootstraps sys.path before importing the prep script, so the import
 # block is deliberately ordered and split.
 "tests/*" = ["E402", "I001"]
+
+[tool.pylint.main]
+py-version = "3.10"
+jobs = 0
+recursive = true
+ignore-paths = [
+    "^\\.venv/.*",
+    "^build/.*",
+    "^dist/.*",
+    "^data/.*",
+    "^Spreadsheet/.*",
+    "^Assets/.*",
+    "^GameDataReferences/.*",
+]
+
+[tool.pylint."messages control"]
+# Keep Pylint focused on structural duplication; Ruff handles day-to-day
+# quality checks (unused code, imports, style-related errors).
+disable = ["all"]
+enable = ["duplicate-code"]
+
+[tool.pylint.similarities]
+# Ignore import/signature/docstring noise so reports focus on meaningful logic
+# duplication that is worth refactoring.
+min-similarity-lines = 12
+ignore-comments = true
+ignore-docstrings = true
+ignore-imports = true
+ignore-signatures = true

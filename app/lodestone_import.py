@@ -96,8 +96,18 @@ def _strip_marker_prefixes(value: str) -> str:
 
 
 _QUEST_LABEL_RENAMES_BY_NORM = {
+    _norm_label("First Impressions Last"): "First Impressions",
     _norm_label("Crossing Paths"): "Crossroads",
     _norm_label("Hither and Yarns"): "Hither and Yams",
+}
+
+_BLUEMAGIC_LABEL_RENAMES_BY_NORM = {
+    _norm_label("Aetheric Mimicry"): "Aetherial Mimicry",
+}
+
+_ADVENTURE_PLATE_LABEL_RENAMES_BY_NORM = {
+    _norm_label("Micro Gigatender"): "Micro Gigantender",
+    _norm_label("Gimme Cat"): "Gimme Kitten",
 }
 
 _CRAFTING_LABEL_RENAMES_BY_BUCKET_NORM: dict[str, dict[str, str]] = {
@@ -169,11 +179,38 @@ def _quest_label_aliases(raw: str) -> set[str]:
     if cleaned:
         aliases.add(cleaned)
 
-    renamed = _QUEST_LABEL_RENAMES_BY_NORM.get(_norm_label(cleaned or value))
-    if renamed:
-        aliases.add(renamed)
+    # Apply known workbook/Lodestone rename drift aliases to every generated
+    # candidate (including inner wrapper names).
+    for alias in list(aliases):
+        renamed = _QUEST_LABEL_RENAMES_BY_NORM.get(_norm_label(alias))
+        if renamed:
+            aliases.add(renamed)
 
     return {a for a in aliases if a}
+
+
+def _bluemagic_label_aliases(raw: str) -> set[str]:
+    value = raw.strip()
+    if not value:
+        return set()
+
+    aliases = {value}
+    renamed = _BLUEMAGIC_LABEL_RENAMES_BY_NORM.get(_norm_label(value))
+    if renamed:
+        aliases.add(renamed)
+    return aliases
+
+
+def _adventure_plate_label_aliases(raw: str) -> set[str]:
+    value = raw.strip()
+    if not value:
+        return set()
+
+    aliases = {value}
+    renamed = _ADVENTURE_PLATE_LABEL_RENAMES_BY_NORM.get(_norm_label(value))
+    if renamed:
+        aliases.add(renamed)
+    return aliases
 
 
 def _add_candidate(pool: dict[str, set[str]], bucket: str, raw: Any) -> None:
@@ -320,6 +357,7 @@ _QUEST_LIKE_SHEET_TOKENS_NORM = tuple(
 
 _SHEET_BUCKET_OVERRIDES: dict[str, frozenset[str]] = {
     _norm_label("Adventurer Plate"): frozenset({"character/adventure-plate"}),
+    _norm_label("Intersocietal"): frozenset({"quest"}),
     # Desktop adventure-plate @PORTRAIT.* decorations live in the workbook's
     # separate "Portraits" sheet; index it under the same bucket so portrait
     # backgrounds/frames/accents resolve (section filtering keeps them apart).
@@ -920,6 +958,10 @@ def _candidate_aliases(bucket: str, raw_label: str) -> list[str]:
     aliases: set[str]
     if bucket == "quest":
         aliases = _quest_label_aliases(raw_label)
+    elif bucket == "bluemagic":
+        aliases = _bluemagic_label_aliases(raw_label)
+    elif bucket.startswith("character/adventure-plate"):
+        aliases = _adventure_plate_label_aliases(raw_label)
     elif bucket == "tripletriad":
         aliases = _tripletriad_label_aliases(raw_label)
     elif bucket == "achievement":
@@ -3337,6 +3379,115 @@ def _merge_row_action(
     existing["row_type"] = row_type
 
 
+def _collect_desktop_candidates(
+    payload: dict[str, Any],
+    source_index: dict[str, dict[str, tuple[str, ...]]],
+    *,
+    include_missing_source_ids: bool = False,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+    """Collect normalized desktop completion candidates.
+
+    Returns:
+      - aggregated candidates keyed by completion bucket + source id
+      - missing source-id entries (optional; empty unless requested)
+      - number of supported payload entries encountered
+    """
+    aggregated: dict[tuple[str, str], dict[str, Any]] = {}
+    missing_source_ids: dict[tuple[str, str], dict[str, Any]] = {}
+    supported_entries = 0
+
+    for path_parts, raw_value in _walk_leaves(payload.get("overall", {}), ("overall",)):
+        if not path_parts:
+            continue
+        leaf_id = _normalize_numeric_id(path_parts[-1])
+        if leaf_id is None:
+            continue
+
+        bucket = _completion_bucket_from_path(path_parts)
+        if bucket is None:
+            continue
+
+        state_info = _decode_completion_value(raw_value)
+        if state_info is None:
+            continue
+
+        supported_entries += 1
+        state, pct = state_info
+        labels, source_bucket = _lookup_source_labels(
+            source_index,
+            bucket=bucket,
+            source_id=leaf_id,
+        )
+
+        if not labels and _bucket_tail(bucket) not in _POSITIONAL_VALUE_BUCKETS:
+            missing_key = (bucket, leaf_id)
+            existing_missing = missing_source_ids.get(missing_key)
+            if existing_missing is None:
+                missing_source_ids[missing_key] = {
+                    "bucket": bucket,
+                    "label": f"id:{leaf_id}",
+                    "source_id": leaf_id,
+                    "source_state": state,
+                    "reason": "id_not_in_source_index",
+                    "value": pct,
+                }
+            else:
+                merged_state, merged_value = _merge_source_state(
+                    str(existing_missing.get("source_state") or "excluded"),
+                    (
+                        float(existing_missing["value"])
+                        if isinstance(existing_missing.get("value"), (int, float))
+                        else None
+                    ),
+                    state,
+                    pct,
+                )
+                existing_missing["source_state"] = merged_state
+                existing_missing["value"] = merged_value
+            continue
+
+        key = (bucket, leaf_id)
+        existing = aggregated.get(key)
+        if existing is None:
+            aggregated[key] = {
+                "bucket": bucket,
+                "source_bucket": source_bucket,
+                "source_id": leaf_id,
+                "source_state": state,
+                "value": pct,
+                "labels": list(labels) if labels else [],
+                "source_path_parts": [str(part) for part in path_parts],
+            }
+            continue
+
+        merged_state, merged_value = _merge_source_state(
+            str(existing.get("source_state") or "excluded"),
+            existing.get("value") if isinstance(existing.get("value"), (int, float)) else None,
+            state,
+            pct,
+        )
+        existing["source_state"] = merged_state
+        existing["value"] = merged_value
+        label_pool = {
+            str(label).strip()
+            for label in existing.get("labels", [])
+            if isinstance(label, str)
+        }
+        label_pool.update(
+            str(label).strip()
+            for label in (labels or ())
+            if isinstance(label, str)
+        )
+        existing["labels"] = sorted(label for label in label_pool if label)
+        if not existing.get("source_bucket") and source_bucket:
+            existing["source_bucket"] = source_bucket
+        if not existing.get("source_path_parts"):
+            existing["source_path_parts"] = [str(part) for part in path_parts]
+
+    missing_items = list(missing_source_ids.values()) if include_missing_source_ids else []
+    return list(aggregated.values()), missing_items, supported_entries
+
+
 def load_completion_payload(path: Path) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8")
     data = json.loads(text)
@@ -3452,91 +3603,11 @@ def import_desktop_completion(
         log("Clearing existing character progress before import")
         reset_character_progress(conn, character, run_id)
 
-    # Aggregate by source id so duplicate leaves in alternate branches collapse deterministically.
-    aggregated: dict[tuple[str, str], dict[str, Any]] = {}
-    missing_source_ids: dict[tuple[str, str], dict[str, Any]] = {}
-    supported_entries = 0
-
-    for path_parts, raw_value in _walk_leaves(payload.get("overall", {}), ("overall",)):
-        if not path_parts:
-            continue
-        leaf_id = _normalize_numeric_id(path_parts[-1])
-        if leaf_id is None:
-            continue
-
-        bucket = _completion_bucket_from_path(path_parts)
-        if bucket is None:
-            continue
-
-        state_info = _decode_completion_value(raw_value)
-        if state_info is None:
-            continue
-
-        supported_entries += 1
-        state, pct = state_info
-        labels, source_bucket = _lookup_source_labels(
-            source_index,
-            bucket=bucket,
-            source_id=leaf_id,
-        )
-        if not labels and _bucket_tail(bucket) not in _POSITIONAL_VALUE_BUCKETS:
-            missing_key = (bucket, leaf_id)
-            existing_missing = missing_source_ids.get(missing_key)
-            if existing_missing is None:
-                missing_source_ids[missing_key] = {
-                    "bucket": bucket,
-                    "label": f"id:{leaf_id}",
-                    "source_id": leaf_id,
-                    "source_state": state,
-                    "reason": "id_not_in_source_index",
-                    "value": pct,
-                }
-            else:
-                merged_state, merged_value = _merge_source_state(
-                    str(existing_missing.get("source_state") or "excluded"),
-                    (
-                        float(existing_missing["value"])
-                        if isinstance(existing_missing.get("value"), (int, float))
-                        else None
-                    ),
-                    state,
-                    pct,
-                )
-                existing_missing["source_state"] = merged_state
-                existing_missing["value"] = merged_value
-            continue
-
-        key = (bucket, leaf_id)
-        existing = aggregated.get(key)
-        if existing is None:
-            aggregated[key] = {
-                "bucket": bucket,
-                "source_bucket": source_bucket,
-                "source_id": leaf_id,
-                "source_state": state,
-                "value": pct,
-                "labels": list(labels) if labels else [],
-                "source_path_parts": [str(part) for part in path_parts],
-            }
-            continue
-
-        merged_state, merged_value = _merge_source_state(
-            str(existing.get("source_state") or "excluded"),
-            existing.get("value") if isinstance(existing.get("value"), (int, float)) else None,
-            state,
-            pct,
-        )
-        existing["source_state"] = merged_state
-        existing["value"] = merged_value
-        label_pool = {str(label).strip() for label in existing.get("labels", []) if isinstance(label, str)}
-        label_pool.update(str(label).strip() for label in (labels or ()) if isinstance(label, str))
-        existing["labels"] = sorted(label for label in label_pool if label)
-        if not existing.get("source_bucket") and source_bucket:
-            existing["source_bucket"] = source_bucket
-        if not existing.get("source_path_parts"):
-            existing["source_path_parts"] = [str(part) for part in path_parts]
-
-    candidates = list(aggregated.values())
+    candidates, missing_source_items, supported_entries = _collect_desktop_candidates(
+        payload,
+        source_index,
+        include_missing_source_ids=True,
+    )
     unmatched_items: list[dict[str, Any]] = [
         {
             "bucket": item["bucket"],
@@ -3545,7 +3616,7 @@ def import_desktop_completion(
             "source_state": item["source_state"],
             "reason": item["reason"],
         }
-        for item in missing_source_ids.values()
+        for item in missing_source_items
     ]
     total_candidates = len(candidates) + len(unmatched_items)
     log(

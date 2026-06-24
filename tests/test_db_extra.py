@@ -132,6 +132,33 @@ def test_search_nodes(conn, character_id):
     )
 
 
+def test_search_nodes_uses_row_json_name_for_numeric_labels(conn, character_id):
+    connection, run_id = conn
+    connection.execute(
+        """
+        UPDATE nodes
+        SET label = ?, row_json = ?
+        WHERE run_id = ? AND sheet_name = ? AND row_index = ?
+        """,
+        (
+            "50",
+            json.dumps({"fate": "Mint Condition"}),
+            run_id,
+            "Side Stuff",
+            5,
+        ),
+    )
+    connection.commit()
+
+    hits = db.search_nodes(connection, run_id, character_id, "Mint Condition")
+    assert any(
+        h.get("result_kind") == "row"
+        and h.get("sheet_name") == "Side Stuff"
+        and h.get("label") == "Mint Condition"
+        for h in hits
+    )
+
+
 def test_fetch_export_rows(conn, character_id):
     connection, run_id = conn
     rows = db.fetch_export_rows(connection, run_id, character_id)
@@ -184,6 +211,45 @@ def test_dashboard_recent_activity_rows_include_done_only(conn, character_id, mo
         limit=10,
     )
     assert rows == []
+
+
+def test_dashboard_recent_activity_rows_use_descriptive_label_for_numeric_rows(
+    conn,
+    character_id,
+    monkeypatch,
+):
+    connection, run_id = conn
+    connection.execute(
+        """
+        UPDATE nodes
+        SET label = ?, row_json = ?
+        WHERE run_id = ? AND sheet_name = ? AND row_index = ?
+        """,
+        (
+            "50",
+            json.dumps({"fate": "Mint Condition"}),
+            run_id,
+            "Side Stuff",
+            5,
+        ),
+    )
+    connection.commit()
+
+    monkeypatch.setattr(db, "now", lambda: "2026-05-30T09:00:00")
+    db.set_row_state(connection, character_id, run_id, "Side Stuff", 5, "done")
+
+    rows = db.dashboard_recent_activity_rows(
+        connection,
+        run_id,
+        character_id,
+        limit=10,
+    )
+    assert any(
+        str(r.get("sheet_name") or "") == "Side Stuff"
+        and int(r.get("row_index") or 0) == 5
+        and str(r.get("label") or "") == "Mint Condition"
+        for r in rows
+    )
 
 
 def test_dashboard_weekly_sheet_improvements_tracks_positive_net_done(conn, character_id, monkeypatch):
