@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.0.11 — 2026-09-15
+
+### Grand Company Quest Branches
+- Fixed the level-20 Grand Company selection arc so `The Company You Keep` variants remain three separate faction chains instead of cascading across factions.
+- Completing an officer follow-up now completes only its matching choice quest: `Wood's Will Be Done` -> Twin Adder, `Till Sea Swallows All` -> Maelstrom, and `For Coin and Country` -> Immortal Flames.
+- The three Grand Company branches are now mutually exclusive across both the selection quests and officer follow-ups. Completing either row in a faction branch excludes both rows in the other two branches.
+- Rebuilt the tracker database from the 7.55 workbook to apply the corrected quest-edge graph.
+
+### Ingest and Import Reliability
+- Workbook ingest now rebuilds a staging SQLite database and atomically promotes it only after successful completion, preserving the active tracker database when an ingest fails.
+- Character import reservation is now atomic, preventing two imports from being started for the same character at the same time.
+- Import uploads now stream to disk in 1 MB chunks, enforce a 25 MB limit, and remove partial files when a save fails.
+- Completed Lodestone probe and character import job records now expire after 24 hours and are capped to prevent long-running server memory growth.
+
+### Import Report Safety and Structure
+- Escaped imported unmatched-item report fields before rendering HTML, preventing payload text from being interpreted as markup.
+- Extracted unmatched-item report rendering into `app/import_reports.py` to keep the web controller focused on request handling.
+- Added regression coverage for Grand Company branch behavior, failed-ingest preservation, upload limits, import reservation, job retention, and report escaping.
+
 ## v1.0.9 — 2026-06-01
 
 ### Overview and Progress Insights
