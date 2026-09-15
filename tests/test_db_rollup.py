@@ -78,6 +78,61 @@ def test_chain_completion_cascades_backward(conn, character_id):
     assert db.effective_state(connection, character_id, run_id, "Story Quests", 4) == "done"
 
 
+def test_chain_prerequisite_applies_exclusive_choice(conn, character_id):
+    connection, run_id = conn
+    connection.execute(
+        "UPDATE nodes SET baseline_state = 'todo' WHERE run_id = ? AND sheet_name = 'Side Stuff'",
+        (run_id,),
+    )
+    connection.executemany(
+        """
+        INSERT INTO edges (
+            run_id, sheet_name, edge_type, source_row_index, source_label,
+            target_row_index, target_label, resolved
+        ) VALUES (?, 'Side Stuff', ?, ?, NULL, ?, NULL, 1)
+        """,
+        [
+            (run_id, "sequence", 3, 5),
+            (run_id, "exclusive", 3, 4),
+        ],
+    )
+    connection.commit()
+
+    new_state, changed = db.toggle_row(connection, character_id, run_id, "Side Stuff", 5)
+
+    assert new_state == "done"
+    assert set(changed) == {3, 4, 5}
+    assert db.effective_state(connection, character_id, run_id, "Side Stuff", 3) == "done"
+    assert db.effective_state(connection, character_id, run_id, "Side Stuff", 4) == "excluded"
+
+
+def test_direct_choice_applies_exclusive_alternatives(conn, character_id):
+    connection, run_id = conn
+    connection.execute(
+        """
+        UPDATE nodes SET baseline_state = 'todo'
+        WHERE run_id = ? AND sheet_name = 'Side Stuff' AND row_index = 3
+        """,
+        (run_id,),
+    )
+    connection.execute(
+        """
+        INSERT INTO edges (
+            run_id, sheet_name, edge_type, source_row_index, source_label,
+            target_row_index, target_label, resolved
+        ) VALUES (?, 'Side Stuff', 'exclusive', 3, NULL, 5, NULL, 1)
+        """,
+        (run_id,),
+    )
+    connection.commit()
+
+    new_state, changed = db.toggle_row(connection, character_id, run_id, "Side Stuff", 3)
+
+    assert new_state == "done"
+    assert set(changed) == {3, 5}
+    assert db.effective_state(connection, character_id, run_id, "Side Stuff", 5) == "excluded"
+
+
 def test_chain_revert_cascades_forward(conn, character_id):
     connection, run_id = conn
     # Complete the whole chain first.

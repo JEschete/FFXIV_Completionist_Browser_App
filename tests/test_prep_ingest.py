@@ -6,6 +6,11 @@ the per-row content hash.
 """
 from __future__ import annotations
 
+import sqlite3
+
+import pytest
+import prep_xlsx_to_sqlite as prep
+
 
 def _sheets(conn, run_id):
     return {r["sheet_name"]: r for r in conn.execute(
@@ -22,6 +27,32 @@ def test_ingest_run_recorded(conn):
     assert row["sheet_count"] == 4          # menu + 3 content sheets
     assert row["row_count"] == 8            # 3 + 3 + 2 trackable rows
     assert row["completed_at"]             # ingest stamps completion
+
+
+def test_failed_ingest_leaves_active_database_unchanged(
+    synthetic_workbook,
+    template_db,
+    tmp_path,
+    monkeypatch,
+):
+    active_db = tmp_path / "active.sqlite"
+    active_db.write_bytes(template_db.read_bytes())
+
+    def fail_load_workbook(*_args, **_kwargs):
+        raise OSError("synthetic workbook read failure")
+
+    monkeypatch.setattr(prep, "load_workbook", fail_load_workbook)
+    with pytest.raises(OSError, match="synthetic workbook"):
+        prep.ingest(synthetic_workbook, active_db)
+
+    connection = sqlite3.connect(active_db)
+    try:
+        run_count = connection.execute("SELECT COUNT(*) FROM ingest_runs").fetchone()[0]
+    finally:
+        connection.close()
+
+    assert run_count == 1
+    assert not list(tmp_path.glob("*.staging"))
 
 
 def test_sheet_parentage_and_kind(conn):
@@ -94,6 +125,15 @@ def test_chain_edges_only_in_chain_sections(conn):
         (run_id,),
     ).fetchone()["c"]
     assert side_count == 0
+
+
+def test_grand_company_quest_labels_stay_on_their_faction_tracks():
+    assert prep._chain_track_key("The Company You Keep (Twin Adder)") == "Twin Adder"
+    assert prep._chain_track_key("Wood's Will Be Done") == "Twin Adder"
+    assert prep._chain_track_key("The Company You Keep (Maelstrom)") == "Maelstrom"
+    assert prep._chain_track_key("Till Sea Swallows All") == "Maelstrom"
+    assert prep._chain_track_key("The Company You Keep (Immortal Flames)") == "Immortal Flames"
+    assert prep._chain_track_key("For Coin and Country") == "Immortal Flames"
 
 
 def test_section_nodes_have_no_hash_but_rows_do(conn):

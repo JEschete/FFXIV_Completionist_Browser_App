@@ -21,6 +21,8 @@ import sqlite3
 import subprocess
 import sys
 import time
+import traceback
+import uuid
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -144,6 +146,32 @@ def section_is_chain(sheet_name: str, section_label: str | None) -> bool:
     if section_label and "chain" in section_label.lower():
         return True
     return False
+
+
+# The MSQ Grand Company arc lists the same quest three times, once per faction
+# (e.g. "The Company You Keep (Maelstrom)"), followed by each faction's own
+# follow-up quest. These are mutually exclusive alternatives -- a character
+# only ever completes one -- not a linear sequence, so they must not cascade
+# against one another. Track each faction's chain position separately by
+# keying the "previous row in this chain" lookup on the label's faction
+# suffix (falling back to a shared key for un-suffixed rows).
+_GC_FACTION_SUFFIX_RE = re.compile(
+    r"\((Maelstrom|Twin Adder|Immortal Flames)\)\s*$"
+)
+_GC_OFFICER_QUEST_FACTIONS = {
+    "wood's will be done": "Twin Adder",
+    "till sea swallows all": "Maelstrom",
+    "for coin and country": "Immortal Flames",
+}
+
+
+def _chain_track_key(label: str | None) -> str | None:
+    if not label:
+        return None
+    match = _GC_FACTION_SUFFIX_RE.search(label)
+    if match:
+        return match.group(1)
+    return _GC_OFFICER_QUEST_FACTIONS.get(label.strip().lower())
 
 
 # Within a chain section, restart the prerequisite chain whenever this column's
@@ -1151,19 +1179,27 @@ def _maybe_capture_pre_ingest_baseline(conn: sqlite3.Connection) -> None:
     try:
         from app import progress_report
 
-        snapshot = progress_report.build_snapshot(conn, source="ingest-script-pre-rebuild")
+        run_id = app_db.latest_run_id(conn)
+        if run_id is None:
+            return
+        snapshot = progress_report.build_snapshot(
+            conn, run_id, source="ingest-script-pre-rebuild"
+        )
         if snapshot.get("characters"):
-            progress_report.save_snapshot(snapshot, progress_report.BASELINE_PATH)
+            progress_report.save_baseline_snapshot(snapshot)
     except Exception as exc:
         print(f"[warn] Skipped pre-ingest baseline snapshot: {exc}")
 
 
 # --- ingest -----------------------------------------------------------------
 
-def ingest(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
+def _ingest_in_place(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
     log_memory_checkpoint(mem_log, "ingest: start")
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path)
+    # sqlite3.Row supports both row["col"] and row[0], so this doesn't break
+    # the positional-index reads elsewhere in this module.
+    conn.row_factory = sqlite3.Row
 
     _maybe_capture_pre_ingest_baseline(conn)
 
@@ -1253,11 +1289,13 @@ def ingest(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
 
         node_rows: list[tuple] = []
         seq_edges: list[tuple] = []
+        exclusive_edges: list[tuple] = []
         unlock_edges: list[tuple] = []
         label_to_row: dict[str, int] = {}
+        grand_company_branch_rows: list[tuple[int, str, str]] = []
         current_section: str | None = None
         seq_in_section = 0
-        prev_track_row: int | None = None
+        prev_track_rows: dict[str | None, int | None] = {}
         section_banner_count = 0
         first_section_banner_title: str | None = None
         section_sort_state = section_sort.SectionSortState(
@@ -1289,7 +1327,7 @@ def ingest(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
                     first_section_banner_title = (a_val or sheet_name).title()
                 current_section = (a_val or "").title() or sheet_name
                 seq_in_section = 0
-                prev_track_row = None
+                prev_track_rows = {}
                 prev_sub_chain_value = None
                 section_payload: dict[str, object] = dict(data)
                 if section_sort.supports_sheet(sheet_name):
@@ -1318,7 +1356,7 @@ def ingest(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
             if is_inline_section_marker(a_val, data):
                 current_section = a_val
                 seq_in_section = 0
-                prev_track_row = None
+                prev_track_rows = {}
                 prev_sub_chain_value = None
                 node_rows.append(
                     (
@@ -1365,6 +1403,9 @@ def ingest(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
             )
             if label:
                 label_to_row.setdefault(label.strip().lower(), r_idx)
+                faction = _chain_track_key(label)
+                if faction is not None:
+                    grand_company_branch_rows.append((r_idx, label, faction))
 
             # Only emit prerequisite edges inside *real* chain sections.
             # Sidequest collections / FATEs / crafting logs share section
@@ -1377,8 +1418,10 @@ def ingest(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
                     prev_sub_chain_value is not None
                     and cur_sub != prev_sub_chain_value
                 ):
-                    prev_track_row = None
+                    prev_track_rows = {}
                 prev_sub_chain_value = cur_sub
+            track_key = _chain_track_key(label)
+            prev_track_row = prev_track_rows.get(track_key)
             if row_type == "checkbox" and prev_track_row is not None and in_chain:
                 seq_edges.append(
                     (
@@ -1392,7 +1435,7 @@ def ingest(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
                         1,
                     )
                 )
-            prev_track_row = r_idx
+            prev_track_rows[track_key] = r_idx
             seq_in_section += 1
 
             if unlock_col and unlock_col["key"] in data:
@@ -1409,6 +1452,26 @@ def ingest(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
                             0,
                         )
                     )
+
+        # Each Grand Company branch contains its selection quest and officer
+        # follow-up. Choosing either branch row excludes both rows belonging to
+        # the other two factions, without joining the three paths into one chain.
+        for source_row, source_label, source_faction in grand_company_branch_rows:
+            for target_row, target_label, target_faction in grand_company_branch_rows:
+                if source_faction == target_faction:
+                    continue
+                exclusive_edges.append(
+                    (
+                        run_id,
+                        sheet_name,
+                        "exclusive",
+                        source_row,
+                        source_label,
+                        target_row,
+                        target_label,
+                        1,
+                    )
+                )
 
         resolved_unlocks = []
         for e in unlock_edges:
@@ -1473,15 +1536,26 @@ def ingest(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
             """,
             seq_edges + resolved_unlocks,
         )
+        if exclusive_edges:
+            conn.executemany(
+                """
+                INSERT INTO edges (
+                    run_id, sheet_name, edge_type,
+                    source_row_index, source_label, target_row_index,
+                    target_label, resolved
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                exclusive_edges,
+            )
         log_memory_checkpoint(
             mem_log,
-            f"sheet {sheet_index}/{sheet_count}: edges inserted {sheet_name} count={len(seq_edges) + len(resolved_unlocks)}",
+            f"sheet {sheet_index}/{sheet_count}: edges inserted {sheet_name} count={len(seq_edges) + len(resolved_unlocks) + len(exclusive_edges)}",
         )
 
         total_rows += track_total
         print(
             f"  [{sheet_index:3}] {sheet_name:<52} rows={track_total:<5} "
-            f"edges={len(seq_edges) + len(resolved_unlocks)} parent={parent}"
+            f"edges={len(seq_edges) + len(resolved_unlocks) + len(exclusive_edges)} parent={parent}"
         )
         log_memory_checkpoint(
             mem_log,
@@ -1766,6 +1840,44 @@ def ingest(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
     print(f"\nIngest complete -> run {run_id}")
     print(f"  sheets : {sheet_count}")
     print(f"  rows   : {total_rows}")
+
+
+def _copy_database_for_staging(source_path: Path, staging_path: Path) -> None:
+    """Create a SQLite-consistent staging copy, including WAL-resident data."""
+    if not source_path.exists():
+        return
+    source = sqlite3.connect(source_path)
+    staging = sqlite3.connect(staging_path)
+    try:
+        source.backup(staging)
+    finally:
+        staging.close()
+        source.close()
+
+
+def ingest(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -> None:
+    """Safely rebuild the tracker database from a workbook.
+
+    The active database is never modified in place: a staging copy is rebuilt
+    first, then atomically promoted once the complete ingest succeeds.
+    """
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    staging_path = db_path.with_name(f".{db_path.name}.{uuid.uuid4().hex}.staging")
+    try:
+        _copy_database_for_staging(db_path, staging_path)
+        _ingest_in_place(xlsx_path, staging_path, mem_log=mem_log)
+        os.replace(staging_path, db_path)
+    except Exception as exc:
+        # _ingest_in_place predates staging and may still have a local SQLite
+        # connection during an exception. Its traceback retains that frame, so
+        # release the frame locals before removing the staging file on Windows.
+        traceback.clear_frames(exc.__traceback__)
+        gc.collect()
+        try:
+            staging_path.unlink()
+        except OSError:
+            pass
+        raise
 
 
 def resolve_xlsx(explicit: Path | None) -> Path:

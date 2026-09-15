@@ -1935,6 +1935,43 @@ def is_chain_row(
     ).fetchone() is not None
 
 
+def exclude_exclusive_alternatives(
+    conn: sqlite3.Connection,
+    character_id: int,
+    run_id: int,
+    sheet_name: str,
+    row_index: int,
+    changed: list[int],
+    starting_class: str | None = None,
+) -> None:
+    """Exclude rows explicitly marked as alternatives to a completed row."""
+    exclusive_rows = conn.execute(
+        """
+        SELECT target_row_index FROM edges
+        WHERE run_id = ? AND sheet_name = ? AND edge_type = 'exclusive'
+          AND source_row_index = ? AND target_row_index IS NOT NULL
+        """,
+        (run_id, sheet_name, row_index),
+    ).fetchall()
+    for exclusive in exclusive_rows:
+        exclusive_index = int(exclusive["target_row_index"])
+        if effective_state(
+            conn, character_id, run_id, sheet_name, exclusive_index, starting_class
+        ) == "excluded":
+            continue
+        set_row_state(
+            conn,
+            character_id,
+            run_id,
+            sheet_name,
+            exclusive_index,
+            "excluded",
+            commit=False,
+            starting_class=starting_class,
+        )
+        changed.append(exclusive_index)
+
+
 def toggle_row(
     conn: sqlite3.Connection,
     character_id: int,
@@ -1978,6 +2015,33 @@ def toggle_row(
         )
         if row_index not in changed:
             changed.append(row_index)
+        return new_state, changed
+
+    if new_state == "done":
+        from app import progress_io
+
+        changed = [row_index]
+        with progress_io.batch(conn, character_id):
+            set_row_state(
+                conn,
+                character_id,
+                run_id,
+                sheet_name,
+                row_index,
+                new_state,
+                commit=False,
+                starting_class=starting_class,
+            )
+            exclude_exclusive_alternatives(
+                conn,
+                character_id,
+                run_id,
+                sheet_name,
+                row_index,
+                changed,
+                starting_class,
+            )
+        conn.commit()
         return new_state, changed
 
     set_row_state(
@@ -2067,14 +2131,30 @@ def complete_with_prerequisites(
 
     changed: list[int] = []
     with progress_io.batch(conn, character_id):
+        def set_done_with_exclusivity(target_index: int) -> None:
+            if effective_state(
+                conn, character_id, run_id, sheet_name, target_index, starting_class
+            ) != "done":
+                set_row_state(
+                    conn, character_id, run_id, sheet_name, target_index, "done",
+                    commit=False, starting_class=starting_class,
+                )
+                changed.append(target_index)
+
+            exclude_exclusive_alternatives(
+                conn,
+                character_id,
+                run_id,
+                sheet_name,
+                target_index,
+                changed,
+                starting_class,
+            )
+
         if effective_state(
             conn, character_id, run_id, sheet_name, row_index, starting_class
         ) != "done":
-            set_row_state(
-                conn, character_id, run_id, sheet_name, row_index, "done",
-                commit=False, starting_class=starting_class,
-            )
-            changed.append(row_index)
+            set_done_with_exclusivity(row_index)
 
         seen = {row_index}
         stack = [row_index]
@@ -2093,14 +2173,7 @@ def complete_with_prerequisites(
                 if idx in seen:
                     continue
                 seen.add(idx)
-                if effective_state(
-                    conn, character_id, run_id, sheet_name, idx, starting_class
-                ) != "done":
-                    set_row_state(
-                        conn, character_id, run_id, sheet_name, idx, "done",
-                        commit=False, starting_class=starting_class,
-                    )
-                    changed.append(idx)
+                set_done_with_exclusivity(idx)
                 stack.append(idx)
 
     if changed:

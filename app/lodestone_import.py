@@ -1268,7 +1268,7 @@ def _apply_lodestone_class_job_levels(
 
     rows = conn.execute(
         """
-        SELECT n.row_index, n.label, n.row_json,
+        SELECT n.row_index, n.label, n.row_json, n.section_label,
                s.value_key,
                p.progress_percent
         FROM nodes n
@@ -1289,6 +1289,13 @@ def _apply_lodestone_class_job_levels(
     skipped = 0
 
     for row in rows:
+        # Desynthesis rows share job/class labels (e.g. "Armorer") but are
+        # not represented on Lodestone; skip them to avoid mismatching their
+        # 0-770 desynth level with the same-named class/job level.
+        section_label = str(row["section_label"] or "").strip().casefold()
+        if "desynthesis" in section_label:
+            continue
+
         label = str(row["label"] or "").strip()
         if not label:
             continue

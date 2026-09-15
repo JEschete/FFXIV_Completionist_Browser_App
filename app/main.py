@@ -32,7 +32,15 @@ if __package__ in {None, ""}:
 
 from contextlib import asynccontextmanager
 
-from app import db, game_engine, lodestone_import, progress_io, progress_report, section_sort
+from app import (
+    db,
+    game_engine,
+    import_reports,
+    lodestone_import,
+    progress_io,
+    progress_report,
+    section_sort,
+)
 
 RECONCILE_RUN_LOCK = threading.Lock()
 LAST_RECONCILED_RUN_TOKEN: tuple[Any, ...] | None = None
@@ -467,6 +475,10 @@ CHAR_IMPORT_UPLOAD_DIR = LODESTONE_OUTPUT_DIR / "import_uploads"
 CHAR_IMPORT_UNMATCHED_DIR = LODESTONE_OUTPUT_DIR / "unmatched"
 CHAR_IMPORT_HISTORY_DIR = LODESTONE_OUTPUT_DIR / "import_history"
 MAX_PERSISTED_LOG_FILES_PER_TYPE = 10
+MAX_IMPORT_UPLOAD_BYTES = 25 * 1024 * 1024
+IMPORT_UPLOAD_CHUNK_BYTES = 1024 * 1024
+MAX_TERMINAL_RUNS_PER_TYPE = 100
+TERMINAL_RUN_TTL = dt.timedelta(hours=24)
 THEME_COOKIE = "ffxiv_theme"
 THEME_SCHEME_COOKIE = "ffxiv_theme_scheme"
 THEME_ALLOWED_SCHEME_SETTINGS = {"default", "dark", "light"}
@@ -1279,8 +1291,24 @@ def save_uploaded_payload(upload: UploadFile) -> Path:
     safe_name = _safe_upload_name(upload.filename or "payload.json")
     timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     out_path = CHAR_IMPORT_UPLOAD_DIR / f"{timestamp}_{uuid.uuid4().hex[:8]}_{safe_name}"
-    data = upload.file.read()
-    out_path.write_bytes(data)
+    temp_path = out_path.with_suffix(out_path.suffix + ".part")
+    total_bytes = 0
+    try:
+        with temp_path.open("wb") as output:
+            while chunk := upload.file.read(IMPORT_UPLOAD_CHUNK_BYTES):
+                total_bytes += len(chunk)
+                if total_bytes > MAX_IMPORT_UPLOAD_BYTES:
+                    raise ValueError(
+                        f"Import files must be at most {MAX_IMPORT_UPLOAD_BYTES // (1024 * 1024)} MB."
+                    )
+                output.write(chunk)
+        temp_path.replace(out_path)
+    except Exception:
+        try:
+            temp_path.unlink()
+        except OSError:
+            pass
+        raise
     return out_path
 
 
@@ -1375,6 +1403,28 @@ def _update_lodestone_run(run_id: str, **updates: Any) -> None:
         existing.update(updates)
 
 
+def _prune_terminal_runs(runs: dict[str, dict[str, Any]]) -> None:
+    now = dt.datetime.now()
+    terminal: list[tuple[dt.datetime, str]] = []
+    for run_id, run in list(runs.items()):
+        status = str(run.get("status") or "").lower()
+        if status in {"queued", "running"}:
+            continue
+        finished_raw = str(run.get("finished_at") or "")
+        try:
+            finished_at = dt.datetime.fromisoformat(finished_raw)
+        except ValueError:
+            finished_at = dt.datetime.min
+        if finished_at == dt.datetime.min or now - finished_at > TERMINAL_RUN_TTL:
+            runs.pop(run_id, None)
+        else:
+            terminal.append((finished_at, run_id))
+
+    terminal.sort(reverse=True)
+    for _, stale_run_id in terminal[MAX_TERMINAL_RUNS_PER_TYPE:]:
+        runs.pop(stale_run_id, None)
+
+
 def _append_lodestone_run_log(run_id: str, message: str) -> None:
     line = ""
     log_path: Path | None = None
@@ -1437,6 +1487,46 @@ def _update_character_import_run(run_id: str, **updates: Any) -> None:
         if not existing:
             return
         existing.update(updates)
+
+
+def _reserve_character_import_run(
+    run_id: str,
+    *,
+    import_type: str,
+    input_method: str,
+    character_id: int,
+    character_name: str,
+    payload_path: Path,
+    clear_existing: bool,
+    lodestone_level_mode: str,
+    log_path: Path,
+    queued_log_line: str,
+) -> dict[str, Any] | None:
+    """Atomically reserve a character for one queued import job."""
+    with CHAR_IMPORT_RUNS_LOCK:
+        _prune_terminal_runs(CHAR_IMPORT_RUNS)
+        for existing in CHAR_IMPORT_RUNS.values():
+            if int(existing.get("character_id") or -1) != character_id:
+                continue
+            if str(existing.get("status") or "").lower() in {"queued", "running"}:
+                return {
+                    "id": str(existing.get("id") or ""),
+                    "status": str(existing.get("status") or "running"),
+                }
+        CHAR_IMPORT_RUNS[run_id] = {
+            "id": run_id,
+            "import_type": import_type,
+            "input_method": input_method,
+            "status": "queued",
+            "character_id": character_id,
+            "character_name": character_name,
+            "payload_path": str(payload_path),
+            "clear_existing": clear_existing,
+            "lodestone_level_mode": lodestone_level_mode,
+            "log_path": str(log_path),
+            "logs": [queued_log_line],
+        }
+    return None
 
 
 def _append_character_import_run_log(run_id: str, message: str) -> None:
@@ -4124,7 +4214,23 @@ def _submit_character_import(
             status_code=303,
         )
 
-    active_run = _active_character_import_run(character_id)
+    run_id = uuid.uuid4().hex
+    log_path = CHAR_IMPORT_LOG_DIR / f"{run_id}.log"
+    clear_existing_flag = clear_existing == "1"
+    import_label = "Desktop import" if normalized_source == "desktop-app" else "Lodestone import"
+    queued_log_line = f"[{dt.datetime.now().strftime('%H:%M:%S')}] {import_label} queued"
+    active_run = _reserve_character_import_run(
+        run_id,
+        import_type=normalized_source,
+        input_method=normalized_input_method,
+        character_id=character_id,
+        character_name=str(char["name"]),
+        payload_path=resolved_path,
+        clear_existing=clear_existing_flag,
+        lodestone_level_mode=normalized_level_mode,
+        log_path=log_path,
+        queued_log_line=queued_log_line,
+    )
     if active_run is not None:
         run_ref = str(active_run.get("id") or "").strip()
         detail = f" (run_id={run_ref})" if run_ref else ""
@@ -4132,30 +4238,11 @@ def _submit_character_import(
             f"/characters?error={quote(f'An import is already in progress for this character{detail}. Wait for it to finish.')}&import_source={quote(normalized_source)}&import_input={quote(normalized_input_method)}&lodestone_level_mode={quote(normalized_level_mode)}",
             status_code=303,
         )
-
-    run_id = uuid.uuid4().hex
-    log_path = CHAR_IMPORT_LOG_DIR / f"{run_id}.log"
-    clear_existing_flag = clear_existing == "1"
-    import_label = "Desktop import" if normalized_source == "desktop-app" else "Lodestone import"
     _append_lodestone_log_file(
         log_path,
         f"[{dt.datetime.now().strftime('%H:%M:%S')}] {import_label} created for character_id={character_id} source={resolved_path}",
     )
     _prune_files_by_pattern(CHAR_IMPORT_LOG_DIR, pattern="*.log")
-    with CHAR_IMPORT_RUNS_LOCK:
-        CHAR_IMPORT_RUNS[run_id] = {
-            "id": run_id,
-            "import_type": normalized_source,
-            "input_method": normalized_input_method,
-            "status": "queued",
-            "character_id": character_id,
-            "character_name": char["name"],
-            "payload_path": str(resolved_path),
-            "clear_existing": clear_existing_flag,
-            "lodestone_level_mode": normalized_level_mode,
-            "log_path": str(log_path),
-            "logs": [f"[{dt.datetime.now().strftime('%H:%M:%S')}] {import_label} queued"],
-        }
 
     worker = threading.Thread(
         target=_run_character_import_job,
@@ -4340,46 +4427,14 @@ def character_import_unmatched_page(run_id: str):
     if not isinstance(items, list):
         items = []
 
-    rows: list[str] = []
+    report_items: list[dict[str, Any]] = []
     for item in items:
         if not isinstance(item, dict):
             continue
-        bucket = str(item.get("bucket") or "unknown")
-        label = str(item.get("label") or "")
-        reason = str(item.get("reason") or "")
-        rows.append(
-            f"<tr><td>{bucket}</td><td>{label}</td><td>{reason}</td></tr>"
-        )
-
-    body = "\n".join(rows) if rows else "<tr><td colspan='3'>No unmatched items.</td></tr>"
-    html = f"""
-<!doctype html>
-<html lang='en'>
-<head>
-  <meta charset='utf-8' />
-  <meta name='viewport' content='width=device-width, initial-scale=1.0' />
-  <title>Unmatched Items - {character_name}</title>
-  <style>
-    body {{ font-family: Segoe UI, Arial, sans-serif; margin: 20px; background: #0f1218; color: #e7ecf5; }}
-    a {{ color: #8ec2ff; }}
-    table {{ border-collapse: collapse; width: 100%; max-width: 1100px; background: #171d28; }}
-    th, td {{ border: 1px solid #2c3647; padding: 8px 10px; text-align: left; }}
-    th {{ background: #202a3b; }}
-    .meta {{ color: #a8b2c3; margin-bottom: 12px; }}
-  </style>
-</head>
-<body>
-  <h1>Unmatched Items</h1>
-  <div class='meta'>Run ID: {run_id} | Character: {character_name} | Count: {len(rows)}</div>
-  <p><a href='/characters/import-unmatched.json?run_id={quote(run_id)}'>Download JSON report</a></p>
-  <table>
-        <thead><tr><th>Category</th><th>Label</th><th>Reason</th></tr></thead>
-    <tbody>{body}</tbody>
-  </table>
-</body>
-</html>
-"""
-    return HTMLResponse(html)
+        report_items.append(item)
+    return HTMLResponse(
+        import_reports.render_unmatched_import_report(run_id, character_name, report_items)
+    )
 
 
 @app.get("/characters/import-unmatched.json")
@@ -4599,6 +4654,7 @@ def lodestone_probe_run(
     )
     _prune_files_by_pattern(LODESTONE_LOG_DIR, pattern="*.log")
     with LODESTONE_RUNS_LOCK:
+        _prune_terminal_runs(LODESTONE_RUNS)
         LODESTONE_RUNS[run_id] = {
             "id": run_id,
             "status": "queued",

@@ -6,11 +6,15 @@ contains the character's rows.
 """
 from __future__ import annotations
 
+import datetime as dt
 import json
 import re
 import sqlite3
+import uuid
 
+import app.main as main_mod
 from app import db, progress_io, progress_report
+import pytest
 
 
 def _seed_second_ingest_run(connection: sqlite3.Connection, run_id: int) -> int:
@@ -293,6 +297,110 @@ def test_whats_new_page_renders(client):
     assert resp.status_code == 200
     assert "What's New in Latest Ingest" in resp.text
     assert "No previous ingest run yet" in resp.text
+
+
+def test_unmatched_import_report_escapes_payload_values(client, tmp_path):
+    run_id = uuid.uuid4().hex
+    report_path = tmp_path / "unmatched.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {
+                        "bucket": "<script>alert(1)</script>",
+                        "label": "<img src=x onerror=alert(1)>",
+                        "reason": "<b>unmatched</b>",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    with main_mod.CHAR_IMPORT_RUNS_LOCK:
+        main_mod.CHAR_IMPORT_RUNS[run_id] = {
+            "id": run_id,
+            "character_name": "<script>character</script>",
+            "unmatched_report_path": str(report_path),
+        }
+    try:
+        response = client.get(f"/characters/import-unmatched?run_id={run_id}")
+        assert response.status_code == 200
+        assert "<script>alert(1)</script>" not in response.text
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in response.text
+        assert "&lt;img src=x onerror=alert(1)&gt;" in response.text
+    finally:
+        with main_mod.CHAR_IMPORT_RUNS_LOCK:
+            main_mod.CHAR_IMPORT_RUNS.pop(run_id, None)
+
+
+def test_save_uploaded_payload_rejects_oversized_files(monkeypatch, tmp_path):
+    class ChunkedUpload:
+        filename = "payload.json"
+
+        def __init__(self):
+            self.file = self
+            self._chunks = [b"a" * 5, b"b" * 5, b""]
+
+        def read(self, _size):
+            return self._chunks.pop(0)
+
+    monkeypatch.setattr(main_mod, "CHAR_IMPORT_UPLOAD_DIR", tmp_path)
+    monkeypatch.setattr(main_mod, "MAX_IMPORT_UPLOAD_BYTES", 8)
+
+    with pytest.raises(ValueError, match="at most"):
+        main_mod.save_uploaded_payload(ChunkedUpload())
+
+    assert not list(tmp_path.glob("*.part"))
+
+
+def test_character_import_reservation_is_atomic(monkeypatch, tmp_path):
+    monkeypatch.setattr(main_mod, "CHAR_IMPORT_RUNS", {})
+    first = main_mod._reserve_character_import_run(
+        "first",
+        import_type="lodestone-json",
+        input_method="server-file",
+        character_id=42,
+        character_name="Adventurer",
+        payload_path=tmp_path / "payload.json",
+        clear_existing=False,
+        lodestone_level_mode="keep-highest",
+        log_path=tmp_path / "first.log",
+        queued_log_line="queued",
+    )
+    second = main_mod._reserve_character_import_run(
+        "second",
+        import_type="lodestone-json",
+        input_method="server-file",
+        character_id=42,
+        character_name="Adventurer",
+        payload_path=tmp_path / "payload.json",
+        clear_existing=False,
+        lodestone_level_mode="keep-highest",
+        log_path=tmp_path / "second.log",
+        queued_log_line="queued",
+    )
+
+    assert first is None
+    assert second == {"id": "first", "status": "queued"}
+
+
+def test_terminal_run_retention_preserves_active_work(monkeypatch):
+    monkeypatch.setattr(main_mod, "TERMINAL_RUN_TTL", dt.timedelta(seconds=1))
+    runs = {
+        "expired": {
+            "status": "completed",
+            "finished_at": "2000-01-01T00:00:00",
+        },
+        "active": {"status": "running"},
+        "recent": {
+            "status": "failed",
+            "finished_at": dt.datetime.now().isoformat(),
+        },
+    }
+
+    main_mod._prune_terminal_runs(runs)
+
+    assert set(runs) == {"active", "recent"}
 
 
 def test_whats_new_page_lists_new_items_from_latest_run(client):
