@@ -1217,7 +1217,12 @@ def _ingest_in_place(xlsx_path: Path, db_path: Path, *, mem_log: bool = False) -
 
     print(f"Loading workbook {xlsx_path} ...")
     log_memory_checkpoint(mem_log, "ingest: loading workbook data_only=True")
-    wb = load_workbook(filename=xlsx_path, data_only=True)
+    try:
+        wb = load_workbook(filename=xlsx_path, data_only=True)
+    except Exception:
+        conn.close()
+        log_memory_checkpoint(mem_log, "ingest: connection closed after workbook load failure")
+        raise
     log_memory_checkpoint(mem_log, "ingest: workbook loaded")
     sheet_names = set(wb.sheetnames)
     sheet_count = len(wb.sheetnames)
